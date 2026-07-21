@@ -1,0 +1,205 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin require-restart="true">
+    <id>com.github.hechtcarmel.jetbrainsindexmcpplugin</id>
+    <name>IDE Index MCP Server</name>
+    <vendor email="hechtcarmel@gmail.com" url="https://github.com/hechtcarmel">hechtcarmel</vendor>
+    <description><![CDATA[
+<p><b>Supercharge your AI coding assistant</b> with the IDE's powerful code intelligence through the
+<a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a>.</p>
+
+<p>If this plugin saves you time, consider <a href="https://buymeacoffee.com/hechtcarmel">buying me a coffee</a>! ☕</p>
+
+<h3>Multi-Language Support</h3>
+<p>Advanced code intelligence tools work across multiple languages when their plugins are available:</p>
+<ul>
+    <li><b>Java & Kotlin</b> - IntelliJ IDEA, Android Studio</li>
+    <li><b>Python</b> - PyCharm (all editions), IntelliJ IDEA with Python plugin</li>
+    <li><b>JavaScript & TypeScript</b> - WebStorm, IntelliJ IDEA Ultimate, PhpStorm</li>
+    <li><b>Go</b> - GoLand, IntelliJ IDEA Ultimate with Go plugin</li>
+    <li><b>PHP</b> - PhpStorm, IntelliJ IDEA Ultimate with PHP plugin</li>
+    <li><b>Rust</b> - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion</li>
+    <li><b>Markdown</b> - heading outlines in file structure via the bundled Markdown plugin</li>
+</ul>
+
+<h3>Universal Tools (All Supported IDEs)</h3>
+<p>These tools work in every supported JetBrains IDE:</p>
+<ul>
+    <li><b>Find References</b> - Locate all usages of any symbol across your project</li>
+    <li><b>Go to Definition</b> - Jump to symbol declarations instantly</li>
+    <li><b>Find Class</b> - Fast class/interface search by name with camelCase/substring/wildcard matching</li>
+    <li><b>Find File</b> - Fast file search by name using IDE's file index</li>
+    <li><b>Symbol Search</b> - Find classes, methods, functions, and fields by name with IntelliJ Go to Symbol matching (disabled by default)</li>
+    <li><b>Search Text</b> - Text search using IDE's pre-built word index with context filtering</li>
+    <li><b>Code Diagnostics</b> - Access errors, warnings, and available quick fixes</li>
+    <li><b>Index Status</b> - Check if the IDE is ready for code intelligence</li>
+    <li><b>Sync Files</b> - Force-sync IDE state with external file changes on demand</li>
+    <li><b>Build Project</b> - Trigger IDE build with structured error/warning output (disabled by default)</li>
+    <li><b>Read File</b> - Read file content by path or qualified name, including library sources (disabled by default)</li>
+    <li><b>Open File</b> - Open a file in the editor with optional navigation (disabled by default)</li>
+    <li><b>Get Active File</b> - Get currently active editor file(s) with cursor position (disabled by default)</li>
+</ul>
+
+<h3>Extended Tools (Language-Aware)</h3>
+<p>These tools activate based on available language plugins:</p>
+<ul>
+    <li><b>Type Hierarchy</b> - Explore class inheritance chains (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
+    <li><b>Call Hierarchy</b> - Trace method/function call relationships (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)</li>
+    <li><b>Find Implementations</b> - Discover all implementations of interfaces and abstract methods (Java, Kotlin, Python, JS/TS, PHP, Rust)</li>
+    <li><b>Find Super Methods</b> - Navigate through method override hierarchies (Java, Kotlin, Python, JS/TS, PHP)</li>
+    <li><b>File Structure</b> - View hierarchical file structure like IDE's Structure view (Java, Kotlin, Python, JS/TS, PHP, Markdown) (disabled by default)</li>
+</ul>
+
+<h3>Refactoring Tools</h3>
+<ul>
+    <li><b>Rename Refactoring</b> - Safe symbol renaming with automatic reference updates - works across ALL languages, fully headless</li>
+    <li><b>Reformat Code</b> - Reformat using project code style with import optimization (disabled by default)</li>
+    <li><b>Optimize Imports</b> - Remove unused imports and organize remaining imports without reformatting (disabled by default)</li>
+    <li><b>Safe Delete</b> - Remove code safely with usage checking (Java/Kotlin only)</li>
+</ul>
+
+<h3>Project Lifecycle Management</h3>
+<p>When working across many projects simultaneously, idle ones consume unnecessary memory and
+leave editors open for no reason. Lifecycle management automatically sleeps and wakes projects
+based on window focus and MCP activity:</p>
+<ul>
+    <li><b>Automatic sleep/wake</b> - Projects transition from active → background → dormant → closed as they sit idle, and reopen transparently on the next MCP call</li>
+    <li><b>Four modes</b> - Active (full IDE), Background (Power Save on, MCP functional), Dormant (editors closed, PSI cache freed), Closed (fully unloaded, auto-reopens in ~10s)</li>
+    <li><b>Zero-config enrollment</b> - Projects join lifecycle management automatically on their first MCP tool call</li>
+    <li><b>Explicit controls</b> - <code>ide_set_project_mode</code>, <code>ide_get_project_modes</code>, <code>ide_project_status</code>, <code>ide_release_project</code></li>
+    <li><b>Lifecycle event log</b> - <code>ide_lifecycle_log</code> shows a timestamped history of every state transition with trigger reasons, for diagnosing unexpected behaviour</li>
+    <li><b>Configurable thresholds</b> - Timing for each transition is set in Settings → Index MCP Server</li>
+</ul>
+
+<h3>Why This Plugin?</h3>
+<ul>
+    <li><b>True semantic understanding</b> - Uses the IDE's AST and index, not text matching</li>
+    <li><b>Cross-project awareness</b> - Works across modules, files, and library dependencies</li>
+    <li><b>Multi-language</b> - Automatically detects and uses language-specific handlers</li>
+    <li><b>Safe refactoring</b> - All changes support undo (Ctrl/Cmd+Z)</li>
+    <li><b>Zero external calls</b> - Everything runs locally in your IDE</li>
+</ul>
+
+<h3>Supported AI Assistants</h3>
+<ul>
+    <li>Claude Code (CLI)</li>
+    <li>Claude Desktop</li>
+    <li>Codex CLI</li>
+    <li>Cursor</li>
+    <li>Windsurf</li>
+    <li>VS Code with MCP extension</li>
+    <li>Any MCP-compatible client</li>
+</ul>
+
+<h3>Quick Start</h3>
+<ol>
+    <li>Install plugin and restart IDE</li>
+    <li>Open <b>Index MCP Server</b> tool window (bottom panel)</li>
+    <li>Click <b>"Install on Coding Agents"</b></li>
+    <li>Select your AI assistant and follow the instructions</li>
+</ol>
+
+<p>See the <a href="https://github.com/hechtcarmel/jetbrains-index-mcp-plugin">GitHub repository</a>
+for detailed documentation and examples.</p>
+]]>    </description>
+
+    <!-- Rider exclusion - plugin uses IntelliJ PSI APIs not compatible with Rider's ReSharper backend -->
+    <incompatible-with>com.intellij.modules.rider</incompatible-with>
+
+    <!-- Platform dependency (required) -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- Optional Java support -->
+    <depends optional="true" config-file="java-features.xml">com.intellij.modules.java</depends>
+
+    <!-- Optional Kotlin support -->
+    <depends optional="true" config-file="kotlin-features.xml">org.jetbrains.kotlin</depends>
+
+    <!-- Optional Python support (PyCharm, IntelliJ Ultimate with Python plugin) -->
+    <depends optional="true" config-file="python-features.xml">com.intellij.modules.python</depends>
+
+    <!-- Optional JavaScript support (WebStorm, IntelliJ Ultimate with JS plugin) -->
+    <depends optional="true" config-file="javascript-features.xml">JavaScript</depends>
+
+    <!-- Optional Go support (GoLand, IntelliJ Ultimate with Go plugin) -->
+    <depends optional="true" config-file="go-features.xml">org.jetbrains.plugins.go</depends>
+
+    <!-- Optional PHP support (PhpStorm, IntelliJ Ultimate with PHP plugin) -->
+    <depends optional="true" config-file="php-features.xml">com.jetbrains.php</depends>
+
+    <!-- Optional Rust support (RustRover, IntelliJ Ultimate with Rust plugin, CLion) -->
+    <depends optional="true" config-file="rust-features.xml">com.jetbrains.rust</depends>
+
+    <!-- Optional Markdown support (bundled Markdown plugin) -->
+    <depends optional="true" config-file="markdown-features.xml">org.intellij.plugins.markdown</depends>
+
+    <!-- Optional Maven support (bundled in IntelliJ IDEA, used by ide_import_modules) -->
+    <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
+
+    <resource-bundle>messages.McpBundle</resource-bundle>
+
+    <!-- Declare Kotlin K1/K2 plugin mode compatibility -->
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Project-level Command History Service -->
+        <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.history.CommandHistoryService"/>
+
+        <!-- Project-level Build Diagnostics Cache Service -->
+        <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService"/>
+
+        <!-- Project-level diagnostics analysis service -->
+        <projectService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.DiagnosticsAnalysisService"/>
+
+        <!-- Tool Window -->
+        <toolWindow id="Index MCP Server" anchor="bottom" icon="com.github.hechtcarmel.jetbrainsindexmcpplugin.icons.McpIcons.ToolWindow" factoryClass="com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowFactory"/>
+
+        <!-- Settings -->
+        <applicationService serviceImplementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings"/>
+        <applicationConfigurable id="mcp.settings" displayName="Index MCP Server" instance="com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable"/>
+
+        <!-- Startup Activity -->
+        <postStartupActivity implementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.startup.McpServerStartupActivity"/>
+
+        <!-- Lifecycle: per-project focus listener registration -->
+        <postStartupActivity implementation="com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectFocusActivity"/>
+
+        <!-- Lifecycle services are registered via @Service annotation; no XML entry needed -->
+
+        <!-- Notification Group -->
+        <notificationGroup id="Index MCP Server" displayType="BALLOON"/>
+    </extensions>
+
+    <!-- Lifecycle: listener for non-managed project open/close events -->
+    <applicationListeners>
+        <listener class="com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectLifecycleListener"
+                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
+    </applicationListeners>
+
+    <!-- Extension Point for Custom Tools -->
+    <extensionPoints>
+        <extensionPoint name="mcpTool" interface="com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.McpTool" dynamic="true"/>
+    </extensionPoints>
+
+    <actions>
+        <group id="McpServer.Actions" text="Index MCP Server">
+            <action id="McpServer.CopyUrl" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyServerUrlAction" text="Copy Server URL" description="Copy the MCP server URL to clipboard"/>
+            <action id="McpServer.CopyConfig" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.CopyClientConfigAction" text="Copy Client Config..." description="Copy MCP client configuration for AI assistants"/>
+            <action id="McpServer.ClearHistory" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ClearHistoryAction" text="Clear History" description="Clear command history"/>
+            <action id="McpServer.ExportHistory" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ExportHistoryAction" text="Export History..." description="Export command history to file"/>
+            <action id="McpServer.InstallSkill" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.InstallSkillAction" text="Get Companion Skill" description="Install or export the companion skill for AI coding agents"/>
+            <action id="McpServer.OpenSettings" class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.OpenSettingsAction" text="Settings" description="Open MCP Server settings"/>
+        </group>
+
+        <!-- Lifecycle actions — appear in Cmd+Shift+A (Find Action) -->
+        <action id="McpServer.OpenManagedProject"
+                class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.OpenManagedProjectAction"
+                text="MCP: Open Project"
+                description="Open or wake an MCP-managed project"/>
+        <action id="McpServer.ShowProjectStates"
+                class="com.github.hechtcarmel.jetbrainsindexmcpplugin.actions.ShowProjectStatesAction"
+                text="MCP: Show Project States"
+                description="Open MCP settings to view managed project states"/>
+    </actions>
+</idea-plugin>

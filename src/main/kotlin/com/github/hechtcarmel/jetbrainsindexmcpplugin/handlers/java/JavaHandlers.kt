@@ -1,0 +1,1774 @@
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
+import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.ClassInheritorsSearch
+import com.intellij.psi.search.searches.MethodReferencesSearch
+import com.intellij.psi.search.searches.OverridingMethodsSearch
+import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.Processor
+
+/**
+ * Registration entry point for Java language handlers.
+ *
+ * This class is loaded via reflection when the Java plugin is available.
+ * It registers all Java-specific handlers with the [LanguageHandlerRegistry].
+ */
+object JavaHandlers {
+
+    private val LOG = logger<JavaHandlers>()
+
+    /**
+     * Registers all Java handlers with the registry.
+     *
+     * Called via reflection from [LanguageHandlerRegistry].
+     */
+    @JvmStatic
+    fun register(registry: LanguageHandlerRegistry) {
+        if (!PluginDetectors.java.isAvailable) {
+            LOG.info("Java plugin not available, skipping Java handler registration")
+            return
+        }
+
+        registry.registerTypeHierarchyHandler(JavaTypeHierarchyHandler())
+        registry.registerImplementationsHandler(JavaImplementationsHandler())
+        registry.registerCallHierarchyHandler(JavaCallHierarchyHandler())
+        registry.registerSymbolReferenceHandler(JavaSymbolReferenceHandler())
+        registry.registerSuperMethodsHandler(JavaSuperMethodsHandler())
+        registry.registerStructureHandler(JavaStructureHandler())
+
+        // Also register for Kotlin (uses same Java PSI under the hood)
+        registry.registerTypeHierarchyHandler(KotlinTypeHierarchyHandler())
+        registry.registerImplementationsHandler(KotlinImplementationsHandler())
+        registry.registerCallHierarchyHandler(KotlinCallHierarchyHandler())
+        registry.registerSuperMethodsHandler(KotlinSuperMethodsHandler())
+        registry.registerStructureHandler(KotlinStructureHandler())
+
+        LOG.info("Registered Java and Kotlin handlers")
+    }
+}
+
+// Base class for Java handlers with common utilities
+abstract class BaseJavaHandler<T> : LanguageHandler<T> {
+
+    companion object {
+        private val LOG = logger<BaseJavaHandler<*>>()
+
+        /**
+         * Maximum depth for traversing parent chain when searching for Kotlin PSI elements.
+         * 50 levels is sufficient for even deeply nested code structures.
+         */
+        private const val MAX_PARENT_TRAVERSAL_DEPTH = 50
+
+        /**
+         * Maximum depth for searching parent chain for references.
+         * 3 levels covers common cases: identifier -> expression -> call expression.
+         */
+        private const val MAX_REFERENCE_SEARCH_DEPTH = 3
+
+        // Kotlin PSI classes (loaded via reflection to avoid compile-time dependency)
+        private val ktClassOrObjectClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtClassOrObject")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtClassOrObject class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedFunctionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtNamedFunction class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyAccessorClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtPropertyAccessor")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtPropertyAccessor class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtProperty")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtProperty class not found: ${e.message}")
+                null
+            }
+        }
+
+        // toLightClass extension function location
+        private val lightClassExtensionsClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt")
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin LightClassUtilsKt class not found: ${e.message}")
+                null
+            }
+        }
+    }
+
+    protected fun getRelativePath(project: Project, file: com.intellij.openapi.vfs.VirtualFile): String {
+        return ProjectUtils.getToolFilePath(project, file)
+    }
+
+    protected fun getLineNumber(project: Project, element: PsiElement): Int? {
+        return PsiSourcePosition.line(project, element)
+    }
+
+    protected fun getColumnNumber(project: Project, element: PsiElement): Int? {
+        return PsiSourcePosition.column(project, element)
+    }
+
+    protected fun getClassKind(psiClass: PsiClass): String {
+        return when {
+            psiClass.isInterface -> "INTERFACE"
+            psiClass.isEnum -> "ENUM"
+            psiClass.isAnnotationType -> "ANNOTATION"
+            psiClass.isRecord -> "RECORD"
+            psiClass.hasModifierProperty("abstract") -> "ABSTRACT_CLASS"
+            else -> "CLASS"
+        }
+    }
+
+    protected fun findContainingClass(element: PsiElement): PsiClass? {
+        if (element is PsiClass) return element
+        return PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
+    }
+
+    protected fun findContainingMethod(element: PsiElement): PsiMethod? {
+        if (element is PsiMethod) return element
+        return PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+    }
+
+    /**
+     * Resolves a method from a position, using semantic reference resolution first.
+     *
+     * This correctly handles:
+     * - Method calls: `obj.doWork()` → resolves to the `doWork` method declaration
+     * - Method declarations: cursor ON a method → returns that method
+     * - Kotlin functions: finds KtNamedFunction and converts to light method
+     *
+     * @param element The leaf PSI element at a position
+     * @return The resolved PsiMethod, or null if not found
+     */
+    protected fun resolveMethod(element: PsiElement): PsiMethod? {
+        // If element is already a method, return it
+        if (element is PsiMethod) return element
+
+        // Try reference resolution first (for method calls/references)
+        val resolved = resolveReference(element)
+        if (resolved is PsiMethod) return resolved
+
+        // Fallback based on language
+        return if (element.language.id == "kotlin") {
+            resolveKotlinMethod(element)
+        } else {
+            PsiTreeUtil.getParentOfType(element, PsiMethod::class.java)
+        }
+    }
+
+    /**
+     * Resolves a Kotlin function to its light method (PsiMethod).
+     * Walks up the parent chain to find a KtNamedFunction, KtPropertyAccessor, or KtProperty
+     * and converts via toLightMethods().
+     *
+     * Important: local `val`/`var` declarations are also KtProperty nodes, but toLightMethods()
+     * returns empty for them (no JVM method). In that case we continue walking up the parent chain
+     * instead of returning null, so that we can find the enclosing KtNamedFunction (e.g. a test
+     * method containing `val result = service.publishSchedule(...)`).
+     */
+    protected fun resolveKotlinMethod(element: PsiElement): PsiMethod? {
+        val lightClassExtensions = lightClassExtensionsClass ?: return null
+
+        // Find Kotlin declaration in parent chain
+        var current: PsiElement? = element
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_TRAVERSAL_DEPTH) {
+            // Check for KtNamedFunction, KtPropertyAccessor, or KtProperty
+            val isKotlinDeclaration = (ktNamedFunctionClass?.isInstance(current) == true) ||
+                (ktPropertyAccessorClass?.isInstance(current) == true) ||
+                (ktPropertyClass?.isInstance(current) == true)
+
+            if (isKotlinDeclaration) {
+                // Convert to light method via toLightMethods() extension function.
+                // For local val/var (KtProperty without a backing JVM method), toLightMethods()
+                // returns empty. In that case we continue walking up to find the enclosing function
+                // rather than returning null and losing the reference.
+                try {
+                    val toLightMethodsMethod = lightClassExtensions.getMethod("toLightMethods", PsiElement::class.java)
+                    val lightMethods = toLightMethodsMethod.invoke(null, current) as? List<*>
+                    val lightMethod = lightMethods?.firstOrNull() as? PsiMethod
+                    if (lightMethod != null) return lightMethod
+                    // Empty result (e.g. local val/var) — continue walking up the parent chain
+                } catch (e: ReflectiveOperationException) {
+                    LOG.debug("Failed to get light method for Kotlin element: ${e.javaClass.simpleName}: ${e.message}")
+                    // Continue walking up on reflection failure
+                }
+            }
+            current = current.parent
+            depth++
+        }
+        return null
+    }
+
+    /**
+     * Resolves a class from a position, using semantic reference resolution first.
+     *
+     * This correctly handles:
+     * - Type references: `MyClass obj` → resolves to `MyClass` declaration
+     * - Class declarations: cursor ON a class → returns that class
+     * - Kotlin classes: finds KtClassOrObject and converts to light class
+     *
+     * @param element The leaf PSI element at a position
+     * @return The resolved PsiClass, or null if not found
+     */
+    protected fun resolveClass(element: PsiElement): PsiClass? {
+        // If element is already a class, return it
+        if (element is PsiClass) return element
+
+        // Try reference resolution first (for type references)
+        val resolved = resolveReference(element)
+        if (resolved is PsiClass) return resolved
+
+        // Fallback based on language
+        return if (element.language.id == "kotlin") {
+            resolveKotlinClass(element)
+        } else {
+            PsiTreeUtil.getParentOfType(element, PsiClass::class.java)
+        }
+    }
+
+    /**
+     * Resolves a Kotlin class/object to its light class (PsiClass).
+     */
+    private fun resolveKotlinClass(element: PsiElement): PsiClass? {
+        val ktClassOrObject = ktClassOrObjectClass ?: return null
+        val lightClassExtensions = lightClassExtensionsClass ?: return null
+
+        // Find KtClassOrObject in parent chain
+        var current: PsiElement? = element
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_TRAVERSAL_DEPTH) {
+            if (ktClassOrObject.isInstance(current)) {
+                // Convert to light class via toLightClass extension function
+                return try {
+                    val toLightClassMethod = lightClassExtensions.getMethod("toLightClass", ktClassOrObject)
+                    toLightClassMethod.invoke(null, current) as? PsiClass
+                } catch (e: ReflectiveOperationException) {
+                    LOG.debug("Failed to get light class for Kotlin class: ${e.javaClass.simpleName}: ${e.message}")
+                    null
+                }
+            }
+            current = current.parent
+            depth++
+        }
+        return null
+    }
+
+    /**
+     * Resolves a reference from an element or its parents.
+     *
+     * Similar to [com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils.findReferenceInParent]
+     * but intentionally kept separate because this class adds Kotlin light class resolution
+     * via [resolveMethod] and [resolveClass].
+     *
+     * @param element The starting element
+     * @return The resolved element, or null
+     */
+    private fun resolveReference(element: PsiElement): PsiElement? {
+        // Try direct reference
+        element.reference?.resolve()?.let { return it }
+
+        // Try parent references (some PSI structures have reference on parent)
+        var current: PsiElement? = element
+        repeat(MAX_REFERENCE_SEARCH_DEPTH) {
+            current = current?.parent ?: return null
+            current?.reference?.resolve()?.let { return it }
+        }
+        return null
+    }
+
+    protected fun isJavaOrKotlinLanguage(element: PsiElement): Boolean {
+        val langId = element.language.id
+        return langId == "JAVA" || langId == "kotlin"
+    }
+}
+
+/**
+ * Java implementation of [TypeHierarchyHandler].
+ */
+class JavaTypeHierarchyHandler : BaseJavaHandler<TypeHierarchyData>(), TypeHierarchyHandler {
+
+    companion object {
+        private const val MAX_HIERARCHY_DEPTH = 100
+    }
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun getTypeHierarchy(
+        element: PsiElement,
+        project: Project,
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
+    ): TypeHierarchyData? {
+        // Use reference-aware resolution: if cursor is on a type reference,
+        // resolve to the actual class being referenced
+        val psiClass = resolveClass(element) ?: return null
+
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
+        val supertypes = getSupertypes(project, psiClass, searchScope = searchScope)
+        val subtypes = getSubtypes(project, psiClass, searchScope)
+
+        // Detect language from the navigation element (original source), not the light class wrapper.
+        // Light classes for Kotlin report language as "JAVA", but navigationElement preserves the original language.
+        val language = if (psiClass.navigationElement.language.id == "kotlin") "Kotlin" else "Java"
+
+        return TypeHierarchyData(
+            element = TypeElementData(
+                name = psiClass.qualifiedName ?: psiClass.name ?: "unknown",
+                qualifiedName = psiClass.qualifiedName,
+                file = psiClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                line = getLineNumber(project, psiClass),
+                kind = getClassKind(psiClass),
+                language = language
+            ),
+            supertypes = supertypes,
+            subtypes = subtypes
+        )
+    }
+
+    private fun getSupertypes(
+        project: Project,
+        psiClass: PsiClass,
+        visited: MutableSet<String> = mutableSetOf(),
+        depth: Int = 0,
+        searchScope: GlobalSearchScope
+    ): List<TypeElementData> {
+        if (depth > MAX_HIERARCHY_DEPTH) return emptyList()
+
+        val className = psiClass.qualifiedName ?: psiClass.name ?: return emptyList()
+        if (className in visited) return emptyList()
+        visited.add(className)
+
+        val supertypes = mutableListOf<TypeElementData>()
+
+        // Try resolved superclass first
+        val superClass = psiClass.superClass
+        if (superClass != null && superClass.qualifiedName != "java.lang.Object") {
+            if (shouldIncludeNavigationElement(searchScope, superClass)) {
+                val superSupertypes = getSupertypes(
+                    project,
+                    superClass,
+                    visited,
+                    depth + 1,
+                    searchScope
+                )
+                supertypes.add(TypeElementData(
+                    name = superClass.qualifiedName ?: superClass.name ?: "unknown",
+                    qualifiedName = superClass.qualifiedName,
+                    file = superClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                    line = getLineNumber(project, superClass),
+                    kind = getClassKind(superClass),
+                    language = if (superClass.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
+                    supertypes = superSupertypes.takeIf { it.isNotEmpty() }
+                ))
+            }
+        } else {
+            // Fallback: check unresolved extends list (when type resolution fails)
+            psiClass.extendsList?.referenceElements?.forEach { ref ->
+                val resolved = ref.resolve() as? PsiClass
+                if (resolved != null &&
+                    resolved.qualifiedName != "java.lang.Object" &&
+                    shouldIncludeNavigationElement(searchScope, resolved)
+                ) {
+                    val superSupertypes = getSupertypes(project, resolved, visited, depth + 1, searchScope)
+                    supertypes.add(TypeElementData(
+                        name = resolved.qualifiedName ?: resolved.name ?: "unknown",
+                        qualifiedName = resolved.qualifiedName,
+                        file = resolved.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        line = getLineNumber(project, resolved),
+                        kind = getClassKind(resolved),
+                        language = if (resolved.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
+                        supertypes = superSupertypes.takeIf { it.isNotEmpty() }
+                    ))
+                } else {
+                    // Can't resolve, but report the declared type name
+                    val typeName = ref.qualifiedName ?: ref.referenceName ?: "unknown"
+                    if (typeName != "java.lang.Object") {
+                        supertypes.add(TypeElementData(
+                            name = typeName,
+                            qualifiedName = ref.qualifiedName,
+                            file = null,
+                            line = null,
+                            kind = "CLASS",
+                            language = "Java"
+                        ))
+                    }
+                }
+            }
+        }
+
+        // Try resolved interfaces first
+        val interfaces = psiClass.interfaces
+        if (interfaces.isNotEmpty()) {
+            for (iface in interfaces) {
+                if (shouldIncludeNavigationElement(searchScope, iface)) {
+                    val ifaceSupertypes = getSupertypes(project, iface, visited, depth + 1, searchScope)
+                    supertypes.add(TypeElementData(
+                        name = iface.qualifiedName ?: iface.name ?: "unknown",
+                        qualifiedName = iface.qualifiedName,
+                        file = iface.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        line = getLineNumber(project, iface),
+                        kind = "INTERFACE",
+                        language = if (iface.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
+                        supertypes = ifaceSupertypes.takeIf { it.isNotEmpty() }
+                    ))
+                }
+            }
+        } else {
+            // Fallback: check unresolved implements list (when type resolution fails)
+            psiClass.implementsList?.referenceElements?.forEach { ref ->
+                val resolved = ref.resolve() as? PsiClass
+                if (resolved != null && shouldIncludeNavigationElement(searchScope, resolved)) {
+                    val ifaceSupertypes = getSupertypes(project, resolved, visited, depth + 1, searchScope)
+                    supertypes.add(TypeElementData(
+                        name = resolved.qualifiedName ?: resolved.name ?: "unknown",
+                        qualifiedName = resolved.qualifiedName,
+                        file = resolved.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        line = getLineNumber(project, resolved),
+                        kind = "INTERFACE",
+                        language = if (resolved.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
+                        supertypes = ifaceSupertypes.takeIf { it.isNotEmpty() }
+                    ))
+                } else {
+                    // Can't resolve, but report the declared type name
+                    val typeName = ref.qualifiedName ?: ref.referenceName ?: "unknown"
+                    supertypes.add(TypeElementData(
+                        name = typeName,
+                        qualifiedName = ref.qualifiedName,
+                        file = null,
+                        line = null,
+                        kind = "INTERFACE",
+                        language = "Java"
+                    ))
+                }
+            }
+        }
+
+        return supertypes
+    }
+
+    private fun getSubtypes(
+        project: Project,
+        psiClass: PsiClass,
+        searchScope: GlobalSearchScope
+    ): List<TypeElementData> {
+        val results = mutableListOf<TypeElementData>()
+        try {
+            ClassInheritorsSearch.search(psiClass, searchScope, true).forEach(Processor { subClass ->
+                if (shouldIncludeNavigationElement(searchScope, subClass)) {
+                    results.add(TypeElementData(
+                        name = subClass.qualifiedName ?: subClass.name ?: "unknown",
+                        qualifiedName = subClass.qualifiedName,
+                        file = subClass.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+                        line = getLineNumber(project, subClass),
+                        kind = getClassKind(subClass),
+                        language = if (subClass.language.id == "kotlin") "Kotlin" else "Java"
+                    ))
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
+        }
+        return results
+    }
+}
+
+/**
+ * Java implementation of [ImplementationsHandler].
+ */
+class JavaImplementationsHandler : BaseJavaHandler<List<ImplementationData>>(), ImplementationsHandler {
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun findImplementations(
+        element: PsiElement,
+        project: Project,
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
+    ): List<ImplementationData>? {
+        // Use reference-aware resolution: if cursor is on a method call/reference,
+        // resolve to the actual method being referenced, not the containing method
+        val method = resolveMethod(element)
+        if (method != null) {
+            return findMethodImplementations(project, method, createNavigationSearchScope(project, scope, excludeGenerated))
+        }
+
+        // Use reference-aware resolution for classes too
+        val psiClass = resolveClass(element)
+        if (psiClass != null) {
+            return findClassImplementations(project, psiClass, createNavigationSearchScope(project, scope, excludeGenerated))
+        }
+
+        return null
+    }
+
+    private fun findMethodImplementations(
+        project: Project,
+        method: PsiMethod,
+        searchScope: GlobalSearchScope
+    ): List<ImplementationData> {
+        val results = mutableListOf<ImplementationData>()
+        try {
+            OverridingMethodsSearch.search(method, searchScope, true).forEach(Processor { overridingMethod ->
+                val file = overridingMethod.containingFile?.virtualFile
+                if (file != null && shouldIncludeNavigationElement(searchScope, overridingMethod)) {
+                    results.add(ImplementationData(
+                        name = "${overridingMethod.containingClass?.name}.${overridingMethod.name}",
+                        file = getRelativePath(project, file),
+                        line = getLineNumber(project, overridingMethod) ?: 0,
+                        column = getColumnNumber(project, overridingMethod) ?: 0,
+                        kind = "METHOD",
+                        language = if (overridingMethod.language.id == "kotlin") "Kotlin" else "Java"
+                    ))
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
+        }
+        return results
+    }
+
+    private fun findClassImplementations(
+        project: Project,
+        psiClass: PsiClass,
+        searchScope: GlobalSearchScope
+    ): List<ImplementationData> {
+        val results = mutableListOf<ImplementationData>()
+        try {
+            ClassInheritorsSearch.search(psiClass, searchScope, true).forEach(Processor { inheritor ->
+                val file = inheritor.containingFile?.virtualFile
+                if (file != null && shouldIncludeNavigationElement(searchScope, inheritor)) {
+                    results.add(ImplementationData(
+                        name = inheritor.qualifiedName ?: inheritor.name ?: "unknown",
+                        file = getRelativePath(project, file),
+                        line = getLineNumber(project, inheritor) ?: 0,
+                        column = getColumnNumber(project, inheritor) ?: 0,
+                        kind = getClassKind(inheritor),
+                        language = if (inheritor.language.id == "kotlin") "Kotlin" else "Java"
+                    ))
+                }
+                results.size < 100
+            })
+        } catch (_: Exception) {
+            // Handle gracefully
+        }
+        return results
+    }
+}
+
+/**
+ * Java implementation of [CallHierarchyHandler].
+ */
+class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHierarchyHandler {
+
+    companion object {
+        private const val MAX_RESULTS_PER_LEVEL = 20
+        private const val MAX_STACK_DEPTH = 50
+
+        // Cached via lazy — getMethod() is non-trivial and called in a loop for every KtCallExpression
+        private val ktCallExpressionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
+            } catch (_: ClassNotFoundException) { null }
+        }
+
+        private val getCalleeExpressionMethod by lazy {
+            try {
+                ktCallExpressionClass?.getMethod("getCalleeExpression")
+            } catch (_: Exception) { null }
+        }
+    }
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun getCallHierarchy(
+        element: PsiElement,
+        project: Project,
+        direction: String,
+        depth: Int,
+        scope: BuiltInSearchScope,
+        excludeGenerated: Boolean
+    ): CallHierarchyData? {
+        // Use reference-aware resolution: if cursor is on a method call,
+        // resolve to the actual method being called
+        val method = resolveMethod(element) ?: return null
+        val visited = mutableSetOf<String>()
+        val searchScope = createNavigationSearchScope(project, scope, excludeGenerated)
+
+        val calls = if (direction == "callers") {
+            findCallersRecursive(project, method, depth, visited, searchScope = searchScope)
+        } else {
+            findCalleesRecursive(project, method, depth, visited, searchScope = searchScope)
+        }
+
+        return CallHierarchyData(
+            element = createCallElement(project, method),
+            calls = calls
+        )
+    }
+
+    private fun findCallersRecursive(
+        project: Project,
+        method: PsiMethod,
+        depth: Int,
+        visited: MutableSet<String>,
+        stackDepth: Int = 0,
+        searchScope: GlobalSearchScope
+    ): List<CallElementData> {
+        if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
+
+        val methodKey = getMethodKey(method)
+        if (methodKey in visited) return emptyList()
+        visited.add(methodKey)
+
+        return try {
+            val methodsToSearch = mutableSetOf(method)
+            methodsToSearch.addAll(method.findDeepestSuperMethods().take(10))
+
+            val allReferences = mutableListOf<PsiElement>()
+            // Dedup key includes file path — textOffset alone is not globally unique across files
+            val seenKeys = mutableSetOf<String>()
+            for (methodToSearch in methodsToSearch) {
+                if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
+                MethodReferencesSearch.search(methodToSearch, searchScope, true)
+                    .forEach(Processor { reference ->
+                        val file = reference.element.containingFile?.virtualFile?.path ?: ""
+                        if (seenKeys.add("$file:${reference.element.textOffset}")) {
+                            allReferences.add(reference.element)
+                        }
+                        allReferences.size < MAX_RESULTS_PER_LEVEL * 2
+                    })
+            }
+
+            // For Kotlin methods, always supplement with ReferencesSearch on the KtNamedFunction.
+            // MethodReferencesSearch operates on the JVM-desugared PsiMethod, which for `suspend fun`
+            // has a compiler-added `Continuation` parameter that never appears in Kotlin source call
+            // sites. This causes MethodReferencesSearch to miss all callers of suspend funs in
+            // concrete classes. ReferencesSearch on the KtNamedFunction resolves this — it is the
+            // same approach used by ide_find_references (FindUsagesTool), which always works.
+            // Deduplication via seenKeys prevents double-counting when both searches find the same ref.
+            // Note: do NOT guard this with `if (allReferences.isEmpty())`. That original guard caused
+            // the fix to be silently skipped whenever MethodReferencesSearch returned any result
+            // (even declaration-site or annotation references that later get filtered out).
+            for (methodToSearch in methodsToSearch) {
+                if (allReferences.size >= MAX_RESULTS_PER_LEVEL * 2) break
+                val navElement = methodToSearch.navigationElement ?: continue
+                if (navElement.language.id != "kotlin") continue
+                // Use element.useScope (no explicit scope arg) — matches FindUsagesTool behaviour
+                ReferencesSearch.search(navElement, searchScope)
+                    .forEach(Processor { reference ->
+                        val file = reference.element.containingFile?.virtualFile?.path ?: ""
+                        if (seenKeys.add("$file:${reference.element.textOffset}")) {
+                            allReferences.add(reference.element)
+                        }
+                        allReferences.size < MAX_RESULTS_PER_LEVEL * 2
+                    })
+            }
+
+            val results = mutableListOf<CallElementData>()
+            for (refElement in allReferences) {
+                if (results.size >= MAX_RESULTS_PER_LEVEL) break
+                val containingMethod = PsiTreeUtil.getParentOfType(refElement, PsiMethod::class.java)
+                    ?: resolveKotlinMethod(refElement)
+                if (containingMethod != null && containingMethod != method && !methodsToSearch.contains(containingMethod)) {
+                    val children = if (depth > 1) {
+                        findCallersRecursive(
+                            project,
+                            containingMethod,
+                            depth - 1,
+                            visited,
+                            stackDepth + 1,
+                            searchScope
+                        )
+                    } else null
+                    if (shouldIncludeNavigationElement(searchScope, containingMethod)) {
+                        results.add(createCallElement(project, containingMethod, children))
+                    } else if (children != null) {
+                        results.addAll(children)
+                    }
+                }
+            }
+            results.distinctBy { it.name + it.file + it.line }.take(MAX_RESULTS_PER_LEVEL)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun findCalleesRecursive(
+        project: Project,
+        method: PsiMethod,
+        depth: Int,
+        visited: MutableSet<String>,
+        stackDepth: Int = 0,
+        searchScope: GlobalSearchScope
+    ): List<CallElementData> {
+        if (stackDepth > MAX_STACK_DEPTH || depth <= 0) return emptyList()
+
+        val methodKey = getMethodKey(method)
+        if (methodKey in visited) return emptyList()
+        visited.add(methodKey)
+
+        val callees = mutableListOf<CallElementData>()
+        try {
+            // Try Java PSI first (works for Java methods that have a body)
+            method.body?.let { body ->
+                PsiTreeUtil.findChildrenOfType(body, PsiMethodCallExpression::class.java)
+                    .take(MAX_RESULTS_PER_LEVEL)
+                    .forEach { methodCall ->
+                        val calledMethod = methodCall.resolveMethod()
+                        if (calledMethod != null) {
+                            val children = if (depth > 1) {
+                                findCalleesRecursive(project, calledMethod, depth - 1, visited, stackDepth + 1, searchScope)
+                            } else null
+                            if (shouldIncludeNavigationElement(searchScope, calledMethod)) {
+                                val element = createCallElement(project, calledMethod, children)
+                                if (callees.none { it.name == element.name && it.file == element.file }) {
+                                    callees.add(element)
+                                }
+                            } else if (children != null) {
+                                children.forEach { child ->
+                                    if (callees.none { it.name == child.name && it.file == child.file }) {
+                                        callees.add(child)
+                                    }
+                                }
+                            }
+                        } else {
+                            // Fallback: can't resolve method, but report the call expression text
+                            val callText = methodCall.methodExpression.referenceName ?: methodCall.text.take(50)
+                            val unresolvedElement = CallElementData(
+                                name = "$callText(...) [unresolved]",
+                                file = "unknown",
+                                line = 0,
+                                column = 0,
+                                language = "Java",
+                                children = null
+                            )
+                            if (callees.none { it.name == unresolvedElement.name }) {
+                                callees.add(unresolvedElement)
+                            }
+                        }
+                    }
+            }
+
+            // For Kotlin light methods, the body is null — find callees from the original Kotlin PSI
+            if (callees.isEmpty()) {
+                findKotlinCallees(project, method, depth, visited, stackDepth, callees, searchScope)
+            }
+        } catch (e: Exception) {
+            // Handle gracefully
+        }
+        return callees
+    }
+
+    /**
+     * Find callees from a Kotlin light method by locating its original KtNamedFunction
+     * and resolving references within the function body.
+     */
+    private fun findKotlinCallees(
+        project: Project,
+        method: PsiMethod,
+        depth: Int,
+        visited: MutableSet<String>,
+        stackDepth: Int,
+        callees: MutableList<CallElementData>,
+        searchScope: GlobalSearchScope
+    ) {
+        val callExprClass = ktCallExpressionClass ?: return
+
+        // Navigate from light method back to the original Kotlin PSI element
+        val navigationElement = method.navigationElement ?: return
+        if (navigationElement.language.id != "kotlin") return
+
+        // Find all call expressions in the Kotlin function body via reflection
+        @Suppress("UNCHECKED_CAST")
+        val callExpressions = PsiTreeUtil.findChildrenOfType(navigationElement, callExprClass as Class<PsiElement>)
+            .take(MAX_RESULTS_PER_LEVEL)
+
+        for (callExpr in callExpressions) {
+            if (callees.size >= MAX_RESULTS_PER_LEVEL) break
+
+            // Resolve the call expression's reference to find the called method
+            val calledMethod = callExpr.references
+                .asSequence()
+                .mapNotNull { ref ->
+                    try { ref.resolve() } catch (_: Exception) { null }
+                }
+                .filterIsInstance<PsiMethod>()
+                .firstOrNull()
+                // Fallback: try resolving via the callExpression's calleeExpression
+                ?: resolveKotlinCalleeFromExpression(callExpr)
+
+            if (calledMethod != null) {
+                val children = if (depth > 1) {
+                    findCalleesRecursive(project, calledMethod, depth - 1, visited, stackDepth + 1, searchScope)
+                } else null
+                if (shouldIncludeNavigationElement(searchScope, calledMethod)) {
+                    val element = createCallElement(project, calledMethod, children)
+                    if (callees.none { it.name == element.name && it.file == element.file }) {
+                        callees.add(element)
+                    }
+                } else if (children != null) {
+                    children.forEach { child ->
+                        if (callees.none { it.name == child.name && it.file == child.file }) {
+                            callees.add(child)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Try to resolve a Kotlin call expression's callee by navigating into the calleeExpression
+     * and resolving its reference. Uses a cached Method reference to avoid repeated reflection
+     * lookups in the call loop.
+     */
+    private fun resolveKotlinCalleeFromExpression(callExpr: PsiElement): PsiMethod? {
+        return try {
+            // KtCallExpression has getCalleeExpression() which returns the name reference
+            val calleeMethod = getCalleeExpressionMethod ?: return null
+            val calleeExpr = calleeMethod.invoke(callExpr) as? PsiElement ?: return null
+            // The callee expression's reference resolves to the called method/function
+            val resolved = calleeExpr.reference?.resolve()
+            when (resolved) {
+                is PsiMethod -> resolved
+                else -> {
+                    // May be a KtNamedFunction — convert to light method
+                    if (resolved != null && resolved.language.id == "kotlin") {
+                        resolveKotlinMethod(resolved)
+                    } else null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getMethodKey(method: PsiMethod): String {
+        val className = method.containingClass?.qualifiedName ?: ""
+        val params = method.parameterList.parameters.joinToString(",") {
+            try { it.type.canonicalText } catch (e: Exception) { "?" }
+        }
+        return "$className.${method.name}($params)"
+    }
+
+    private fun createCallElement(project: Project, method: PsiMethod, children: List<CallElementData>? = null): CallElementData {
+        val file = method.containingFile?.virtualFile
+        val methodName = buildString {
+            method.containingClass?.name?.let { append(it).append(".") }
+            append(method.name)
+            append("(")
+            append(method.parameterList.parameters.joinToString(", ") {
+                try { it.type.presentableText } catch (e: Exception) { "?" }
+            })
+            append(")")
+        }
+        return CallElementData(
+            name = methodName,
+            file = file?.let { getRelativePath(project, it) } ?: "unknown",
+            line = getLineNumber(project, method) ?: 0,
+            column = getColumnNumber(project, method) ?: 0,
+            language = if (method.navigationElement.language.id == "kotlin") "Kotlin" else "Java",
+            children = children?.takeIf { it.isNotEmpty() }
+        )
+    }
+}
+
+/**
+ * Java implementation of [SuperMethodsHandler].
+ */
+class JavaSuperMethodsHandler : BaseJavaHandler<SuperMethodsData>(), SuperMethodsHandler {
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun findSuperMethods(element: PsiElement, project: Project): SuperMethodsData? {
+        // Use reference-aware resolution: if cursor is on a method call,
+        // resolve to the actual method being referenced
+        val method = resolveMethod(element) ?: return null
+        val containingClass = method.containingClass ?: return null
+
+        val file = method.containingFile?.virtualFile
+        val methodData = MethodData(
+            name = method.name,
+            signature = buildMethodSignature(method),
+            containingClass = containingClass.qualifiedName ?: containingClass.name ?: "unknown",
+            file = file?.let { getRelativePath(project, it) } ?: "unknown",
+            line = getLineNumber(project, method) ?: 0,
+            column = getColumnNumber(project, method) ?: 0,
+            language = if (method.language.id == "kotlin") "Kotlin" else "Java"
+        )
+
+        val hierarchy = buildHierarchy(project, method)
+
+        return SuperMethodsData(
+            method = methodData,
+            hierarchy = hierarchy
+        )
+    }
+
+    private fun buildHierarchy(
+        project: Project,
+        method: PsiMethod,
+        visited: MutableSet<String> = mutableSetOf(),
+        depth: Int = 1
+    ): List<SuperMethodData> {
+        val hierarchy = mutableListOf<SuperMethodData>()
+
+        for (superMethod in method.findSuperMethods()) {
+            val key = "${superMethod.containingClass?.qualifiedName}.${superMethod.name}"
+            if (key in visited) continue
+            visited.add(key)
+
+            val containingClass = superMethod.containingClass
+            val file = superMethod.containingFile?.virtualFile
+
+            hierarchy.add(SuperMethodData(
+                name = superMethod.name,
+                signature = buildMethodSignature(superMethod),
+                containingClass = containingClass?.qualifiedName ?: containingClass?.name ?: "unknown",
+                containingClassKind = containingClass?.let { getClassKind(it) } ?: "UNKNOWN",
+                file = file?.let { getRelativePath(project, it) },
+                line = getLineNumber(project, superMethod),
+                column = getColumnNumber(project, superMethod),
+                isInterface = containingClass?.isInterface == true,
+                depth = depth,
+                language = if (superMethod.language.id == "kotlin") "Kotlin" else "Java"
+            ))
+
+            hierarchy.addAll(buildHierarchy(project, superMethod, visited, depth + 1))
+        }
+
+        return hierarchy
+    }
+
+    private fun buildMethodSignature(method: PsiMethod): String {
+        val params = method.parameterList.parameters.joinToString(", ") {
+            "${it.type.presentableText} ${it.name}"
+        }
+        val returnType = method.returnType?.presentableText ?: "void"
+        return "${method.name}($params): $returnType"
+    }
+}
+
+// Kotlin handlers delegate to Java handlers since Kotlin uses Java PSI under the hood
+
+class KotlinTypeHierarchyHandler : TypeHierarchyHandler by JavaTypeHierarchyHandler() {
+    override val languageId = "kotlin"
+}
+
+class KotlinImplementationsHandler : ImplementationsHandler by JavaImplementationsHandler() {
+    override val languageId = "kotlin"
+}
+
+class KotlinCallHierarchyHandler : CallHierarchyHandler by JavaCallHierarchyHandler() {
+    override val languageId = "kotlin"
+}
+
+class KotlinSuperMethodsHandler : SuperMethodsHandler by JavaSuperMethodsHandler() {
+    override val languageId = "kotlin"
+}
+
+/**
+ * Java implementation of [StructureHandler].
+ *
+ * Extracts the hierarchical structure of Java source files including classes,
+ * interfaces, enums, methods, fields, and their nesting relationships.
+ */
+class JavaStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHandler {
+
+    override val languageId = "JAVA"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        val structure = mutableListOf<StructureNode>()
+
+        // Get all top-level classes, interfaces, enums
+        val classes: List<PsiClass> = when (file) {
+            is PsiJavaFile -> file.classes.toList()
+            else -> emptyList()
+        }
+
+        for (psiClass in classes) {
+            extractClassStructure(psiClass, project)?.let { structure.add(it) }
+        }
+
+        return structure
+    }
+
+    private fun extractClassStructure(psiClass: PsiClass, project: Project): StructureNode? {
+        val line = getLineNumber(project, psiClass) ?: return null
+        val children = mutableListOf<StructureNode>()
+
+        // Fields
+        for (field in psiClass.fields) {
+            extractFieldStructure(field, project)?.let { children.add(it) }
+        }
+
+        // Constructors
+        for (constructor in psiClass.constructors) {
+            extractMethodStructure(constructor, project)?.let { children.add(it) }
+        }
+
+        // Methods (excluding constructors, which are already listed above via psiClass.constructors)
+        for (method in psiClass.methods) {
+            if (!method.isConstructor) {
+                extractMethodStructure(method, project)?.let { children.add(it) }
+            }
+        }
+
+        // Inner classes
+        for (innerClass in psiClass.innerClasses) {
+            extractClassStructure(innerClass, project)?.let { children.add(it) }
+        }
+
+        return StructureNode(
+            name = psiClass.name ?: "anonymous",
+            kind = when {
+                psiClass.isInterface -> StructureKind.INTERFACE
+                psiClass.isEnum -> StructureKind.ENUM
+                psiClass.isAnnotationType -> StructureKind.ANNOTATION
+                psiClass.isRecord -> StructureKind.RECORD
+                psiClass.hasModifierProperty("abstract") -> StructureKind.CLASS
+                else -> StructureKind.CLASS
+            },
+            modifiers = extractModifiers(psiClass.modifierList),
+            signature = buildClassSignature(psiClass),
+            line = line,
+            children = children.sortedBy { it.line }
+        )
+    }
+
+    private fun extractFieldStructure(field: PsiField, project: Project): StructureNode? {
+        val line = getLineNumber(project, field) ?: return null
+        return StructureNode(
+            name = field.name,
+            kind = StructureKind.FIELD,
+            modifiers = extractModifiers(field.modifierList),
+            signature = field.type.presentableText,
+            line = line
+        )
+    }
+
+    private fun extractMethodStructure(method: PsiMethod, project: Project): StructureNode? {
+        val line = getLineNumber(project, method) ?: return null
+        return StructureNode(
+            name = method.name,
+            kind = if (method.isConstructor) StructureKind.CONSTRUCTOR else StructureKind.METHOD,
+            modifiers = extractModifiers(method.modifierList),
+            signature = buildMethodSignature(method),
+            line = line
+        )
+    }
+
+    private fun extractModifiers(modifierList: PsiModifierList?): List<String> {
+        if (modifierList == null) return emptyList()
+
+        val modifiers = mutableListOf<String>()
+
+        // Access modifiers
+        when {
+            modifierList.hasExplicitModifier("public") -> modifiers.add("public")
+            modifierList.hasExplicitModifier("private") -> modifiers.add("private")
+            modifierList.hasExplicitModifier("protected") -> modifiers.add("protected")
+        }
+
+        // Other modifiers
+        if (modifierList.hasExplicitModifier("static")) modifiers.add("static")
+        if (modifierList.hasExplicitModifier("final")) modifiers.add("final")
+        if (modifierList.hasExplicitModifier("abstract")) modifiers.add("abstract")
+        if (modifierList.hasExplicitModifier("synchronized")) modifiers.add("synchronized")
+        if (modifierList.hasExplicitModifier("native")) modifiers.add("native")
+        if (modifierList.hasModifierProperty("default")) modifiers.add("default")
+
+        return modifiers
+    }
+
+    private fun buildClassSignature(psiClass: PsiClass): String {
+        val typeParams = psiClass.typeParameters
+        val extends = psiClass.superClass
+        val implements = psiClass.interfaces
+
+        val parts = mutableListOf<String>()
+
+        // Type parameters
+        if (typeParams.isNotEmpty()) {
+            parts.add(typeParams.joinToString(", ", "<", ">") { it.name ?: "?" })
+        }
+
+        // Extends
+        if (extends != null && extends.qualifiedName != "java.lang.Object") {
+            parts.add("extends ${extends.name ?: "?"}")
+        }
+
+        // Implements
+        if (implements.isNotEmpty()) {
+            parts.add("implements ${implements.joinToString(", ") { it.name ?: "?" }}")
+        }
+
+        return if (parts.isNotEmpty()) parts.joinToString(" ") else ""
+    }
+
+    private fun buildMethodSignature(method: PsiMethod): String {
+        val returnType = if (method.isConstructor) "" else "${method.returnType?.presentableText} "
+        val params = method.parameterList.parameters.joinToString(", ") {
+            "${it.type.presentableText} ${it.name}"
+        }
+        return "$returnType($params)"
+    }
+}
+
+/**
+ * Kotlin implementation of [StructureHandler].
+ *
+ * Uses reflection to access Kotlin PSI classes since Kotlin files use a different
+ * PSI structure than Java files (KtFile vs PsiJavaFile).
+ */
+class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), StructureHandler {
+
+    companion object {
+        private val LOG = logger<KotlinStructureHandler>()
+
+        // Kotlin PSI classes (loaded via reflection)
+        private val ktFileClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtFile")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtFile class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedDeclarationClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedDeclaration")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtNamedDeclaration class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktClassClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtClass")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtClass class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktNamedFunctionClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtNamedFunction")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtNamedFunction class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktPropertyClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtProperty")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtProperty class not found: ${e.message}")
+                null
+            }
+        }
+
+        private val ktObjectDeclarationClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtObjectDeclaration")
+            } catch (e: ClassNotFoundException) {
+                LOG.warn("Kotlin KtObjectDeclaration class not found: ${e.message}")
+                null
+            }
+        }
+    }
+
+    override val languageId = "kotlin"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && element.language.id == "kotlin"
+    }
+
+    override fun isAvailable(): Boolean =
+        PluginDetectors.java.isAvailable && ktFileClass != null
+
+    override fun getFileStructure(file: PsiFile, project: Project): List<StructureNode> {
+        val structure = mutableListOf<StructureNode>()
+
+        // Check if this is a Kotlin file
+        if (ktFileClass?.isInstance(file) != true) {
+            LOG.debug("File is not a KtFile, delegating to Java handler")
+            return JavaStructureHandler().getFileStructure(file, project)
+        }
+
+        try {
+            // Get all declarations from the Kotlin file
+            val getDeclarationsMethod = file.javaClass.getMethod("getDeclarations")
+            val declarations = getDeclarationsMethod.invoke(file) as? List<*> ?: emptyList<Any?>()
+
+            for (declaration in declarations) {
+                if (declaration is PsiElement) {
+                    val node = extractDeclarationStructure(declaration, project)
+                    if (node != null) {
+                        structure.add(node)
+                    }
+                }
+            }
+
+            // For Kotlin script files (.kts), declarations live inside the script body.
+            // If no top-level declarations were found, check the script's block expression.
+            if (structure.isEmpty()) {
+                extractScriptStructure(file, project, structure)
+            }
+
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract Kotlin file structure: ${e.message}")
+            // Fallback: try Java handler
+            return JavaStructureHandler().getFileStructure(file, project)
+        }
+
+        return structure.sortedBy { it.line }
+    }
+
+    /**
+     * Extract structure from Kotlin script files (.kts).
+     * Script files have a KtScript child containing the script body with statements and declarations.
+     */
+    private fun extractScriptStructure(file: PsiFile, project: Project, structure: MutableList<StructureNode>) {
+        try {
+            val ktScriptClass = Class.forName("org.jetbrains.kotlin.psi.KtScript")
+
+            // Find KtScript child in the file
+            val script = PsiTreeUtil.findChildOfType(file, ktScriptClass as Class<PsiElement>) ?: return
+
+            // Get the block expression from the script
+            val getBlockMethod = script.javaClass.getMethod("getBlockExpression")
+            val blockExpression = getBlockMethod.invoke(script) as? PsiElement ?: return
+
+            // Extract declarations and top-level call expressions from the script body
+            val statements = blockExpression.children
+            for (statement in statements) {
+                // Try known declaration types first
+                val node = extractDeclarationStructure(statement, project)
+                if (node != null) {
+                    structure.add(node)
+                    continue
+                }
+
+                // For script files, also capture top-level function calls (e.g., plugins {}, dependencies {})
+                val ktCallExprClass = try {
+                    Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
+                } catch (_: ClassNotFoundException) { null }
+
+                if (ktCallExprClass?.isInstance(statement) == true) {
+                    val callNode = extractScriptCallStructure(statement, project)
+                    if (callNode != null) {
+                        structure.add(callNode)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.debug("Failed to extract Kotlin script structure: ${e.message}")
+        }
+    }
+
+    /**
+     * Extract structure from a top-level call expression in a Kotlin script (e.g., plugins {}, dependencies {}).
+     */
+    private fun extractScriptCallStructure(callExpr: PsiElement, project: Project): StructureNode? {
+        return try {
+            val getCalleeMethod = callExpr.javaClass.getMethod("getCalleeExpression")
+            val callee = getCalleeMethod.invoke(callExpr) as? PsiElement
+            val name = callee?.text ?: return null
+            val line = getLineNumber(project, callExpr) ?: return null
+
+            StructureNode(
+                name = "$name { ... }",
+                kind = StructureKind.FUNCTION,
+                line = line,
+                signature = name,
+                modifiers = emptyList(),
+                children = emptyList()
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun extractDeclarationStructure(
+        declaration: PsiElement,
+        project: Project
+    ): StructureNode? {
+        return when {
+            ktClassClass?.isInstance(declaration) == true ->
+                extractClassStructure(declaration, project)
+            ktNamedFunctionClass?.isInstance(declaration) == true ->
+                extractFunctionStructure(declaration, project)
+            ktPropertyClass?.isInstance(declaration) == true ->
+                extractPropertyStructure(declaration, project)
+            ktObjectDeclarationClass?.isInstance(declaration) == true ->
+                extractObjectStructure(declaration, project)
+            else -> null
+        }
+    }
+
+    private fun extractClassStructure(ktClass: PsiElement, project: Project): StructureNode {
+        val children = mutableListOf<StructureNode>()
+
+        try {
+            // Get class body and extract declarations
+            val getBodyMethod = ktClass.javaClass.getMethod("getBody")
+            val body = getBodyMethod.invoke(ktClass) as? PsiElement
+
+            body?.let {
+                val getChildrenMethod = it.javaClass.getMethod("getChildren")
+                val bodyChildren = getChildrenMethod.invoke(it) as? Array<*> ?: emptyArray<Any?>()
+
+                for (child in bodyChildren) {
+                    if (child is PsiElement) {
+                        val node = extractDeclarationStructure(child, project)
+                        if (node != null) {
+                            children.add(node)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.warn("Failed to extract Kotlin class structure: ${e.message}")
+        }
+
+        return StructureNode(
+            name = getName(ktClass) ?: "unknown",
+            kind = getClassKind(ktClass),
+            modifiers = getKotlinModifiers(ktClass),
+            signature = buildKotlinClassSignature(ktClass),
+            line = getLineNumber(project, ktClass) ?: 0,
+            children = children.sortedBy { it.line }
+        )
+    }
+
+    private fun extractFunctionStructure(function: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(function) ?: "unknown",
+            kind = StructureKind.FUNCTION,
+            modifiers = getKotlinModifiers(function),
+            signature = buildKotlinFunctionSignature(function),
+            line = getLineNumber(project, function) ?: 0
+        )
+    }
+
+    private fun extractPropertyStructure(property: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(property) ?: "unknown",
+            kind = StructureKind.PROPERTY,
+            modifiers = getKotlinModifiers(property),
+            signature = buildKotlinPropertySignature(property),
+            line = getLineNumber(project, property) ?: 0
+        )
+    }
+
+    private fun extractObjectStructure(obj: PsiElement, project: Project): StructureNode {
+        return StructureNode(
+            name = getName(obj) ?: "unknown",
+            kind = StructureKind.OBJECT,
+            modifiers = getKotlinModifiers(obj),
+            signature = "",
+            line = getLineNumber(project, obj) ?: 0
+        )
+    }
+
+    private fun getName(element: PsiElement): String? {
+        return try {
+            if (ktNamedDeclarationClass?.isInstance(element) == true) {
+                val getNameMethod = element.javaClass.getMethod("getName")
+                getNameMethod.invoke(element) as? String
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getClassKind(ktClass: PsiElement): StructureKind {
+        return try {
+            val isInterfaceMethod = ktClass.javaClass.getMethod("isInterface")
+            val isInterface = isInterfaceMethod.invoke(ktClass) as? Boolean == true
+            val isEnumMethod = ktClass.javaClass.getMethod("isEnum")
+            val isEnum = isEnumMethod.invoke(ktClass) as? Boolean == true
+            val isDataMethod = ktClass.javaClass.getMethod("isData")
+            val isData = isDataMethod.invoke(ktClass) as? Boolean == true
+
+            when {
+                isInterface -> StructureKind.INTERFACE
+                isEnum -> StructureKind.ENUM
+                isData -> StructureKind.CLASS
+                else -> StructureKind.CLASS
+            }
+        } catch (e: Exception) {
+            StructureKind.CLASS
+        }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun getKotlinModifiers(element: PsiElement): List<String> {
+        // TODO: Extract Kotlin modifiers (public, private, suspend, etc.)
+        // Currently returns empty list as Kotlin modifier API is complex
+        return emptyList()
+    }
+
+    private fun buildKotlinClassSignature(ktClass: PsiElement): String {
+        return try {
+            val getSuperTypeListMethod = ktClass.javaClass.getMethod("getSuperTypeList")
+            val superTypeList = getSuperTypeListMethod.invoke(ktClass) as? PsiElement
+
+            if (superTypeList != null) {
+                val getEntriesMethod = superTypeList.javaClass.getMethod("getEntries")
+                val entries = getEntriesMethod.invoke(superTypeList) as? List<*> ?: emptyList<Any?>()
+
+                if (entries.isNotEmpty()) {
+                    val names = entries.mapNotNull {
+                        (it as? PsiElement)?.text
+                    }
+                    return ": ${names.joinToString(", ")}"
+                }
+            }
+            ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun buildKotlinFunctionSignature(function: PsiElement): String {
+        return try {
+            val getValueParameterListMethod = function.javaClass.getMethod("getValueParameterList")
+            val parameterList = getValueParameterListMethod.invoke(function) as? PsiElement
+
+            if (parameterList != null) {
+                val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
+                val parameters = getParametersMethod.invoke(parameterList) as? List<*> ?: emptyList<Any?>()
+
+                val params = parameters.filterIsInstance<PsiElement>().joinToString(", ") { param ->
+                    param.text
+                }
+                "($params)"
+            } else {
+                "()"
+            }
+        } catch (_: Exception) {
+            "()"
+        }
+    }
+
+    private fun buildKotlinPropertySignature(property: PsiElement): String {
+        return try {
+            val getReturnTypeReferenceMethod = property.javaClass.getMethod("getTypeReference")
+            val typeRef = getReturnTypeReferenceMethod.invoke(property) as? PsiElement
+            typeRef?.text ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+}
+
+/**
+ * Java implementation of [SymbolReferenceHandler].
+ *
+ * Resolves fully qualified symbol references (e.g., `com.example.MyClass#method(String)`)
+ * to PSI elements using Java PSI APIs.
+ */
+class JavaSymbolReferenceHandler : BaseJavaHandler<PsiNamedElement>(), SymbolReferenceHandler {
+
+    companion object {
+        // A valid Java identifier: starts with a letter, underscore, or dollar sign
+        private const val IDENTIFIER = """[a-zA-Z_$][a-zA-Z0-9_$]*"""
+
+        // Dotted qualified name: at least two segments (package + class) separated by dots
+        private const val QUALIFIED_NAME = """$IDENTIFIER(\.$IDENTIFIER)+"""
+
+        // example: int, boolean
+        private const val PRIMITIVE_TYPE = """(byte|short|int|long|float|double|boolean|char)"""
+
+        // example: String, int[], Object..., package.ClassName, package.ClassName[]
+        private const val PARAMETER_TYPE = """\s*($PRIMITIVE_TYPE|$QUALIFIED_NAME|$IDENTIFIER)(\[\])*(\.\.\.)?\s*"""
+
+        // example: (int, String[]), (List, java.util.Map)
+        private const val PARAMETER_LIST = """\(($PARAMETER_TYPE(,$PARAMETER_TYPE)*)?\)"""
+
+        // example: com.example.MyClass, com.example.MyClass#fieldName, com.example.MyClass#methodName(int, String)
+        internal val JAVA_SYMBOL_PATTERN = """^$QUALIFIED_NAME(#$IDENTIFIER($PARAMETER_LIST)?)?$""".toRegex()
+
+        private val SYMBOL_EXAMPLES = listOf(
+            "'com.example.ClassName'",
+            "'com.example.ClassName#memberName'",
+            "'com.example.ClassName#methodName(int[], String, java.util.List)'"
+        )
+    }
+
+    override val languageId = "JAVA"
+    override val languageName = "Java"
+
+    override fun canHandle(element: PsiElement): Boolean {
+        return isAvailable() && isJavaOrKotlinLanguage(element)
+    }
+
+    override fun isAvailable(): Boolean = PluginDetectors.java.isAvailable
+
+    override fun resolveSymbol(project: Project, symbol: String): Result<PsiNamedElement> {
+        val erasedSymbol = stripGenerics(symbol.trim())
+
+        if (!JAVA_SYMBOL_PATTERN.matches(erasedSymbol)) {
+            return ErrorMessages.invalidSymbolFormat(symbol, SYMBOL_EXAMPLES).toArgumentFailure()
+        }
+
+        val memberSeparatorIndex = erasedSymbol.indexOf('#')
+        val classFqn: String
+        val memberPart: String?
+
+        if (memberSeparatorIndex >= 0) {
+            classFqn = erasedSymbol.substring(0, memberSeparatorIndex)
+            memberPart = erasedSymbol.substring(memberSeparatorIndex + 1)
+        } else {
+            classFqn = erasedSymbol
+            memberPart = null
+        }
+
+        val psiClass = findClass(project, classFqn)
+            ?: return ErrorMessages.typeNotFound(classFqn, project.name).toArgumentFailure()
+
+        if (memberPart == null) {
+            return Result.success(psiClass)
+        }
+
+        val parenOpenIndex = memberPart.indexOf('(')
+        val parenCloseIndex = memberPart.lastIndexOf(')')
+        if (parenOpenIndex >= 0 && parenCloseIndex > parenOpenIndex) {
+            return resolveMethodWithParams(psiClass, classFqn, memberPart, parenOpenIndex, parenCloseIndex)
+        }
+
+        return resolveMemberByName(psiClass, classFqn, memberPart)
+    }
+
+    private fun findClass(project: Project, classFqn: String): PsiClass? {
+        val facade = JavaPsiFacade.getInstance(project)
+        return facade.findClass(classFqn, GlobalSearchScope.projectScope(project))
+            ?: facade.findClass(classFqn, GlobalSearchScope.allScope(project))
+    }
+
+    private fun resolveMethodWithParams(
+        psiClass: PsiClass,
+        classFqn: String,
+        memberPart: String,
+        parenOpenIndex: Int,
+        parenCloseIndex: Int
+    ): Result<PsiNamedElement> {
+        val methodName = memberPart.substring(0, parenOpenIndex)
+        val paramsString = memberPart.substring(parenOpenIndex + 1, parenCloseIndex)
+        val requestedParams = if (paramsString.isBlank()) emptyList()
+        else paramsString.split(',').map { it.trim() }
+
+        val allMethods = findMostDerivedMethods(psiClass, methodName)
+
+        if (allMethods.isEmpty()) {
+            return ErrorMessages.memberNotFoundInType(methodName, classFqn).toArgumentFailure()
+        }
+
+        val matchingMethods = allMethods.filter { method ->
+            matchesParameterTypes(method, requestedParams)
+        }
+
+        return when {
+            matchingMethods.isEmpty() -> {
+                val signatures = buildDisambiguatingSignatures(methodName, allMethods)
+                ErrorMessages.noMethodsMatch(memberPart, classFqn, signatures).toArgumentFailure()
+            }
+            matchingMethods.size == 1 -> Result.success(matchingMethods[0])
+            else -> {
+                val signatures = buildDisambiguatingSignatures(methodName, allMethods, matchingMethods)
+                ErrorMessages.multipleMethodsMatch(memberPart, classFqn, signatures).toArgumentFailure()
+            }
+        }
+    }
+
+    private fun resolveMemberByName(
+        psiClass: PsiClass,
+        classFqn: String,
+        memberName: String
+    ): Result<PsiNamedElement> {
+        // Try field/enum constant first (true = search supertypes)
+        val field = psiClass.findFieldByName(memberName, true)
+        if (field != null && isInheritedBy(field, psiClass)) {
+            return Result.success(field)
+        }
+
+        // Try methods (searches supertypes, collapses overrides to most derived; includes constructors)
+        val methods = findMostDerivedMethods(psiClass, memberName)
+
+        return when {
+            methods.isEmpty() -> ErrorMessages.memberNotFoundInType(memberName, classFqn).toArgumentFailure()
+            methods.size == 1 -> Result.success(methods[0])
+            else -> {
+                val signatures = buildDisambiguatingSignatures(memberName, methods)
+                ErrorMessages.multipleMethodsMatch(memberName, classFqn, signatures).toArgumentFailure()
+            }
+        }
+    }
+
+    private fun findMostDerivedMethods(psiClass: PsiClass, name: String): List<PsiMethod> {
+        if (name == psiClass.name) {
+            // If member name matches class name, it's a constructor. Return all constructors.
+            return psiClass.constructors.toList()
+        }
+
+        val allMethods = if (psiClass.language.id == "JAVA") {
+            psiClass.findMethodsByName(name, true).toList()
+        } else {
+            // Languages like Kotlin may mangle method names (e.g., for properties).
+            // So we check both the method name and the navigation element's name.
+            psiClass.allMethods.filter {
+                it.name == name || (it.navigationElement as? PsiNamedElement)?.name == name
+            }
+        }
+
+        val visibleMethods= allMethods.filter { isInheritedBy(it, psiClass) }
+
+        if (visibleMethods.size <= 1) return visibleMethods
+
+        val superMethods = mutableSetOf<PsiMethod>()
+        for (method in visibleMethods) {
+            if (method in superMethods) continue
+            superMethods.addAll(method.findSuperMethods())
+        }
+        return visibleMethods.filter { it !in superMethods }
+    }
+
+    /**
+     * Returns true when [member] is visible to [queryClass] through inheritance.
+     *
+     * Java visibility rules for inherited members:
+     * - **private**: visible only within the declaring class
+     * - **package-private** (default): visible only if [queryClass] is in the same package
+     * - **protected / public**: always inherited
+     */
+    private fun isInheritedBy(member: PsiMember, queryClass: PsiClass): Boolean {
+        val declaringClass = member.containingClass ?: return false
+        if (declaringClass == queryClass) return true
+        if (member.hasModifierProperty(PsiModifier.PRIVATE)) return false
+        if (member.hasModifierProperty(PsiModifier.PUBLIC) || member.hasModifierProperty(PsiModifier.PROTECTED)) return true
+        // Package-private: visible only if both classes are in the same package
+        val memberPackage = (declaringClass.containingFile as? PsiJavaFile)?.packageName
+        val queryPackage = (queryClass.containingFile as? PsiJavaFile)?.packageName
+        return memberPackage != null && memberPackage == queryPackage
+    }
+
+    private fun matchesParameterTypes(method: PsiMethod, requestedTypes: List<String>): Boolean {
+        if (requestedTypes.size != method.parameterList.parameters.size) return false
+        if (requestedTypes.isEmpty()) return true
+
+        return requestedTypes.zip(method.parameterList.parameters).all { (requested, parameter) ->
+            val presentable = stripGenerics(parameter.type.presentableText)
+            val canonical = stripGenerics(parameter.type.canonicalText)
+            requested == presentable || requested == canonical
+        }
+    }
+
+    private fun buildDisambiguatingSignatures(
+        methodName: String,
+        allMethods: List<PsiMethod>,
+        matchingMethods: List<PsiMethod> = allMethods
+    ): List<String> {
+        val ambiguousTypes = allMethods
+            .asSequence()
+            .flatMap { it.parameterList.parameters.asSequence() }
+            .groupBy(
+                { stripGenerics(it.type.presentableText) },
+                { stripGenerics(it.type.canonicalText) })
+            .filter { it.value.distinct().size > 1 }
+            .keys
+
+        return matchingMethods.map { method ->
+            val parameterTypes = method.parameterList.parameters.joinToString(", ") { parameter ->
+                val presentable = stripGenerics(parameter.type.presentableText)
+                if (presentable in ambiguousTypes) stripGenerics(parameter.type.canonicalText) else presentable
+            }
+            "$methodName($parameterTypes)"
+        }
+    }
+
+    internal fun stripGenerics(input: String): String {
+        if ('<' !in input) return input
+        val sb = StringBuilder(input.length)
+        var depth = 0
+        for (ch in input) {
+            when {
+                ch == '<' -> depth++
+                ch == '>' -> depth--
+                // Only append characters that are outside of generic angle brackets
+                depth == 0 -> sb.append(ch)
+                // Unbalanced generics, just return original string
+                depth < 0 -> return input
+            }
+        }
+        if (depth != 0) return input
+        return sb.toString()
+    }
+}

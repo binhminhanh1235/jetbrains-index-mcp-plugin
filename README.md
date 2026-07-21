@@ -1,0 +1,559 @@
+# IDE Index MCP Server
+
+![Build](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/workflows/Build/badge.svg)
+[![Version](https://img.shields.io/jetbrains/plugin/v/29174.svg)](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/29174.svg)](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server)
+
+A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, enabling AI coding assistants like Claude, Codex, Cursor, and Windsurf to leverage the IDE's powerful indexing and refactoring capabilities.
+
+**Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
+**May work** (untested): RubyMine, CLion, DataGrip
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
+
+<!-- Plugin description -->
+**IDE Index MCP Server** provides AI coding assistants with access to the IDE's powerful code intelligence features through the Model Context Protocol (MCP).
+
+### Features
+
+**Multi-Language Support**
+Advanced tools work across multiple languages based on available plugins:
+- **Java & Kotlin** - IntelliJ IDEA, Android Studio
+- **Python** - PyCharm (all editions), IntelliJ with Python plugin, including symbol-based definition/reference lookup
+- **JavaScript & TypeScript** - WebStorm, IntelliJ Ultimate, PhpStorm
+- **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
+- **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
+- **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
+- **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
+
+**Universal Tools (All Supported JetBrains IDEs)**
+- **Find References** - Locate all usages of any symbol across the project
+- **Go to Definition** - Navigate to symbol declarations
+- **Code Diagnostics** - Access errors, warnings, and quick fixes
+- **Index Status** - Check if code intelligence is ready
+- **Sync Files** - Force sync VFS/PSI cache after external file changes
+- **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
+- **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring (disabled by default)
+- **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
+- **Run Tests** — Execute tests programmatically with structured pass/fail output (disabled by default)
+- **Find Class** - Fast class/interface search by name with camelCase matching
+- **Find File** - Fast file search by name using IDE's file index
+- **Symbol Search** - Find code symbols by name with IntelliJ Go to Symbol matching (disabled by default)
+- **Search Text** - Text search using IDE's pre-built word index
+- **Read File** - Read file content by path or qualified name, including library sources (disabled by default)
+- **Open File** - Open a file in the editor with optional navigation (disabled by default)
+- **Get Active File** - Get currently active editor file(s) with cursor position (disabled by default)
+
+**Extended Tools (Language-Aware)**
+These tools activate based on installed language plugins:
+- **Type Hierarchy** - Explore class inheritance chains
+- **Call Hierarchy** - Trace method/function call relationships
+- **Find Implementations** - Discover interface/abstract implementations
+- **Find Super Methods** - Navigate method override hierarchies
+- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees and Markdown heading outlines (disabled by default)
+
+**Refactoring Tools**
+- **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
+- **Move File** - Move files with IDE-aware reference and package updates when supported
+- **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
+- **Optimize Imports** - Remove unused imports and organize imports without reformatting (disabled by default)
+- **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
+- **Java to Kotlin Conversion** - Convert Java to Kotlin using Intellij's built-in converter (Java only)
+
+**Project Lifecycle Management**
+
+When working across many projects simultaneously, idle ones consume memory unnecessarily and leave editors open for no reason. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity — no configuration required.
+
+- **Automatic sleep/wake** - Projects move from active → background (Power Save on) → dormant (editors closed, PSI cache freed) → closed (fully unloaded), and auto-reopen transparently on the next MCP call
+- **`ide_project_status`** - Combined snapshot of every open and managed project
+- **`ide_set_project_mode`** / **`ide_get_project_modes`** - Explicit mode control
+- **`ide_release_project`** - Unenroll a project from lifecycle management
+- **`ide_lifecycle_log`** - Timestamped event log with trigger reasons, for diagnosing unexpected behaviour. The ring buffer is always active; file output enables via Help → Diagnostic Tools → Debug Log Settings
+
+### Why Use This Plugin?
+
+Unlike simple text-based code analysis, this plugin gives AI assistants access to:
+- **True semantic understanding** through the IDE's AST and index
+- **Cross-project reference resolution** that works across files and modules
+- **Multi-language support** - automatically detects and uses language-specific handlers
+- **Headless and remote development support** - starts in regular IDE windows, JetBrains remote development sessions, and headless automation runs
+- **Safe refactoring operations** with automatic reference updates and undo support
+
+Perfect for AI-assisted development workflows where accuracy and safety matter.
+<!-- Plugin description end -->
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Community Integrations](#community-integrations)
+- [Client Configuration](#client-configuration)
+- [Available Tools](#available-tools)
+- [Multi-Project Support](#multi-project-support)
+- [Lifecycle Management](#lifecycle-management)
+- [Tool Window](#tool-window)
+- [Error Codes](#error-codes)
+- [Requirements](#requirements)
+- [Contributing](#contributing)
+
+## Installation
+
+### Using the IDE built-in plugin system
+
+<kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > <kbd>Search for "IDE Index MCP Server"</kbd> > <kbd>Install</kbd>
+
+### Using JetBrains Marketplace
+
+Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server) and install it by clicking the <kbd>Install to ...</kbd> button.
+
+### Manual Installation
+
+Download the [latest release](https://plugins.jetbrains.com/plugin/29174-ide-index-mcp-server/versions) and install it manually:
+<kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+
+## Quick Start
+
+1. **Install the plugin** and restart your JetBrains IDE
+2. **Open a project** - the MCP server starts automatically with IDE-specific defaults:
+   - IntelliJ IDEA: `intellij-index` on port **29170**
+   - PyCharm: `pycharm-index` on port **29172**
+   - WebStorm: `webstorm-index` on port **29173**
+   - Other IDEs: See [IDE-Specific Defaults](#ide-specific-defaults)
+3. **Configure your AI assistant** using the "Install on Coding Agents" button (easiest) or manually
+4. **Use the tool window** (bottom panel: "Index MCP Server") to copy configuration or monitor commands
+5. **Change port** (optional): Click "Change port, disable tools" in the toolbar or go to <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>
+
+### Using the "Install on Coding Agents" Button
+
+The easiest way to configure your AI assistant:
+1. Open the "Index MCP Server" tool window (bottom panel)
+2. Click the prominent **"Install on Coding Agents"** button on the right side of the toolbar
+3. A popup appears with two sections:
+   - **Install Now** - For Claude Code CLI and Codex CLI: Runs the installation command automatically
+   - **Copy Configuration** - For other clients: Copies the JSON config to your clipboard
+4. For "Copy Configuration" clients, paste the config into the appropriate config file
+
+## Community Integrations
+
+- [opencode-jetbrains-index](https://github.com/ineersa/opencode-jetbrains-index) - a third-party integration for OpenCode that uses this plugin
+
+> **Disclaimer**: This repository is not maintained by me. Please use its own issue tracker for integration-specific issues and support.
+
+## Client Configuration
+
+### Claude Code (CLI)
+
+Use the "Install on Coding Agents" button in the tool window, or run this command (adjust name and port for your IDE):
+
+```bash
+# IntelliJ IDEA
+claude mcp add --transport http --scope user intellij-index http://127.0.0.1:29170/index-mcp/streamable-http
+
+# PyCharm
+claude mcp add --transport http --scope user pycharm-index http://127.0.0.1:29172/index-mcp/streamable-http
+
+# WebStorm
+claude mcp add --transport http --scope user webstorm-index http://127.0.0.1:29173/index-mcp/streamable-http
+```
+
+Options:
+- `--scope user` - Adds globally for all projects
+- `--scope project` - Adds to current project only
+
+To remove: `claude mcp remove <server-name>` (e.g., `claude mcp remove intellij-index`)
+
+### Codex CLI
+
+Use the "Install on Coding Agents" button in the tool window, or run this command (adjust name and port for your IDE):
+
+```bash
+# IntelliJ IDEA
+codex mcp add intellij-index --url http://127.0.0.1:29170/index-mcp/streamable-http
+
+# PyCharm
+codex mcp add pycharm-index --url http://127.0.0.1:29172/index-mcp/streamable-http
+
+# WebStorm
+codex mcp add webstorm-index --url http://127.0.0.1:29173/index-mcp/streamable-http
+```
+
+To remove: `codex mcp remove <server-name>` (e.g., `codex mcp remove intellij-index`)
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project root or `~/.cursor/mcp.json` globally (adjust name and port for your IDE):
+
+```json
+{
+  "mcpServers": {
+    "intellij-index": {
+      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
+    }
+  }
+}
+```
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json` (adjust name and port for your IDE):
+
+```json
+{
+  "mcpServers": {
+    "intellij-index": {
+      "serverUrl": "http://127.0.0.1:29170/index-mcp/streamable-http"
+    }
+  }
+}
+```
+
+### VS Code (Generic MCP)
+
+```json
+{
+  "mcp.servers": {
+    "intellij-index": {
+      "url": "http://127.0.0.1:29170/index-mcp/streamable-http"
+    }
+  }
+}
+```
+
+> **Note**: Replace the server name and port with your IDE's defaults. See [IDE-Specific Defaults](#ide-specific-defaults) below.
+
+### IDE-Specific Defaults
+
+Each JetBrains IDE has a unique default port and server name to allow running multiple IDEs simultaneously without conflicts:
+
+| IDE | Server Name | Default Port |
+|-----|-------------|--------------|
+| IntelliJ IDEA | `intellij-index` | 29170 |
+| Android Studio | `android-studio-index` | 29171 |
+| PyCharm | `pycharm-index` | 29172 |
+| WebStorm | `webstorm-index` | 29173 |
+| GoLand | `goland-index` | 29174 |
+| PhpStorm | `phpstorm-index` | 29175 |
+| RubyMine | `rubymine-index` | 29176 |
+| CLion | `clion-index` | 29177 |
+| RustRover | `rustrover-index` | 29178 |
+| DataGrip | `datagrip-index` | 29179 |
+
+> **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
+
+## Available Tools
+
+The plugin provides **40 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>.
+
+### Universal Tools
+
+These tools work in all supported JetBrains IDEs.
+
+| Tool | Description |
+|------|-------------|
+| `ide_find_references` | Find all references to a symbol across the entire project |
+| `ide_find_definition` | Find the definition/declaration location of a symbol |
+| `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
+| `ide_find_file` | Search for files by name using IDE's file index |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |
+| `ide_search_text` | Text search using IDE's pre-built word index with context filtering |
+| `ide_diagnostics` | Analyze file problems with fresh editor diagnostics for open files or public batch diagnostics for closed files, plus optional build/test results; intentions are best-effort |
+| `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
+| `ide_sync_files` | Force sync IDE's virtual file system and PSI cache with external file changes |
+| `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
+| `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
+| `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
+| `ide_run_tests` | Execute tests programmatically with structured pass/fail output *(disabled by default)* |
+| `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
+| `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
+| `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
+| `ide_set_power_save_mode` | Enable or disable IDE Power Save Mode — suspends background inspections while keeping the index and all code intelligence operational *(disabled by default)* |
+| `ide_close_project` | Close an open project window and free its memory — refuses to close the last open project *(disabled by default)* |
+| `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open *(disabled by default)* |
+| `ide_install_plugin` | Install a plugin zip into the IDE, replacing any existing version — auto-detects `build/distributions/*.zip` when no path is given *(disabled by default)* |
+| `ide_restart` | Restart the IDE — terminates the MCP connection; call after `ide_install_plugin` *(disabled by default)* |
+| `ide_refactor_rename` | Rename a symbol or file and update all references across the project (all languages; use `targetType` for explicit file mode) |
+| `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
+| `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
+| `ide_optimize_imports` | Optimize imports without reformatting code *(disabled by default)* |
+
+### Extended Tools (Language-Aware)
+
+These tools activate based on available language plugins:
+
+| Tool | Description | Languages |
+|------|-------------|-----------|
+| `ide_type_hierarchy` | Get the complete type hierarchy (supertypes and subtypes) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| `ide_call_hierarchy` | Analyze method call relationships (callers or callees) | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
+| `ide_file_structure` | Get hierarchical file structure (similar to IDE's Structure view) *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+
+PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
+
+### Java-Specific Refactoring Tools
+
+| Tool | Description |
+|------|-------------|
+| `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
+| `ide_refactor_safe_delete` | Safely delete an element, checking for usages first (Java/Kotlin only) |
+
+> **Note**: Refactoring tools modify source files. All changes support undo via <kbd>Ctrl/Cmd+Z</kbd>.
+
+### Project Lifecycle Management Tools
+
+`ide_project_status` is enabled by default. All other lifecycle tools are disabled by default — enable them in Settings → Tools → Index MCP Server.
+
+| Tool | Description | Default |
+|------|-------------|---------|
+| `ide_project_status` | Combined snapshot: every open project and every managed project with open/managed/mode per row | Enabled |
+| `ide_set_project_mode` | Set a project's lifecycle mode: `active`, `background`, `dormant`, or `closed` | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes, including closed ones | Disabled |
+| `ide_set_all_project_modes` | Set all managed projects to the same mode at once (active/background/dormant) | Disabled |
+| `ide_enroll_all_projects` | Enroll every currently open project in lifecycle management | Disabled |
+| `ide_release_project` | Unenroll a project from lifecycle management | Disabled |
+| `ide_release_all_projects` | Release every managed project (including closed ones) from lifecycle management | Disabled |
+| `ide_lifecycle_log` | Query recent lifecycle events from a ring buffer; each event has a `trigger` field explaining the cause | Disabled |
+| `ide_set_lifecycle_log_file` | Enable or disable writing lifecycle events to `mcp-lifecycle.log` | Disabled |
+
+**Lifecycle modes** — transitions are automatic, driven by window focus and MCP activity:
+
+| Mode | Power Save | Editors | PSI Cache | Auto-transition |
+|------|-----------|---------|-----------|-----------------|
+| `active` | off | open | loaded | focus lost for N min → background |
+| `background` | on | open | loaded | N min idle → dormant |
+| `dormant` | on | closed | freed | N min idle → closed |
+| `closed` | — | — | freed | next MCP call → background (auto-reopens) |
+
+Timing thresholds are configurable in Settings. Projects enroll automatically on first MCP use and auto-reopen when an MCP tool targets a closed project — existing tools require no changes.
+
+**MCP availability guarantee:** the lifecycle manager never closes the last open managed project — it stays in `dormant` (memory mostly freed, MCP still reachable). If all projects are somehow closed (e.g., the user manually closes the last window), any MCP tool call without a `project_path` automatically reopens a managed-closed project to restore access.
+
+### Tool Availability by IDE
+
+**Fully Tested:**
+
+| IDE | Universal | Navigation | Refactoring |
+|-----|-----------|------------|-------------|
+| IntelliJ IDEA | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| Android Studio | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports + safe delete + Java→Kotlin |
+| PyCharm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| WebStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+| GoLand | ✓ 16 tools | ✓ 4 tools | ✓ rename + move + reformat + optimize imports |
+| RustRover | ✓ 16 tools | ✓ 5 tools | ✓ rename + move + reformat + optimize imports |
+| PhpStorm | ✓ 16 tools | ✓ 6 tools | ✓ rename + move + reformat + optimize imports |
+
+**May Work (Untested):**
+
+| IDE | Universal | Navigation | Refactoring |
+|-----|-----------|------------|-------------|
+| RubyMine | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| CLion | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+| DataGrip | ✓ 16 tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
+
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+
+For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
+
+## Multi-Project Support
+
+When multiple projects are open in a single IDE window, you must specify which project to use with the `project_path` parameter:
+
+```json
+{
+  "name": "ide_find_references",
+  "arguments": {
+    "project_path": "/Users/dev/myproject",
+    "file": "src/Main.kt",
+    "line": 10,
+    "column": 5
+  }
+}
+```
+
+If `project_path` is omitted:
+- **Single project open**: That project is used automatically
+- **Multiple projects open**: An error is returned with the list of available projects
+
+### Workspace Projects
+
+The plugin supports **workspace projects** where a single IDE window contains multiple sub-projects as modules with separate content roots. The `project_path` parameter accepts:
+
+- The **workspace root** path
+- A **sub-project path** (module content root)
+- A **subdirectory** of any open project
+
+When an error occurs, the response returns `available_projects`. By default this includes workspace sub-projects so AI agents can discover valid module content roots. If you want smaller error payloads, switch **Project list in error responses** to **Compact** in plugin settings to return only top-level project roots.
+
+## Lifecycle Management
+
+When you use the plugin across multiple projects simultaneously — common when an AI agent is working across a monorepo — open projects compete for memory even when they're not being actively used. Lifecycle management handles this automatically.
+
+Projects enroll on their first MCP tool call and are notified via balloon. From that point, transitions happen based on focus and MCP activity:
+
+1. **Focus lost** → after 2 minutes, Power Save Mode on (`background`)
+2. **No MCP calls** → after 2 more minutes, editors close and PSI cache is freed (`dormant`)
+3. **Still idle** → after 10 minutes, project window closes entirely (`closed`)
+4. **Next MCP call** → project reopens automatically, indexes, and responds normally
+
+No changes are needed in existing MCP tools — `ProjectResolver` handles the reopen transparently. The auto-reopen typically takes 5–15 seconds on first open; subsequent opens are faster.
+
+The lifecycle manager never closes the last open managed project: it stays dormant (memory mostly freed, MCP still reachable). If all projects are closed by other means, any tool call automatically reopens one managed project to restore MCP access.
+
+Use `ide_project_status` to see the current state of all projects at a glance, and `ide_lifecycle_log` to see what happened and why — useful when a project closed unexpectedly. Each log event has a `trigger` field: `timer:inactivity`, `timer:close`, `focus_gained`, `mcp_call`, `auto_open`, `user`, etc.
+
+Timing thresholds are configurable in Settings → Index MCP Server → Project Lifecycle Management.
+
+## Tool Window
+
+The plugin adds an "Index MCP Server" tool window (bottom panel) that shows:
+
+- **Server Status**: Running indicator with server URL and port
+- **Project Name**: Currently active project
+- **Command History**: Log of all MCP tool calls with:
+  - Timestamp
+  - Tool name
+  - Status (Success/Error/Pending)
+  - Parameters and results (expandable)
+  - Execution duration
+
+### Tool Window Actions
+
+| Action | Description |
+|--------|-------------|
+| Refresh | Refresh server status and command history |
+| Copy URL | Copy the MCP server URL to clipboard |
+| Clear History | Clear the command history |
+| Export History | Export history to JSON or CSV file |
+| **Install on Coding Agents** | Install MCP server on AI assistants (prominent button on right) |
+
+## Error Codes
+
+### JSON-RPC Standard Errors
+
+| Code | Name | Description |
+|------|------|-------------|
+| -32700 | Parse Error | Failed to parse JSON-RPC request |
+| -32600 | Invalid Request | Invalid JSON-RPC request format |
+| -32601 | Method Not Found | Unknown method name |
+| -32602 | Invalid Params | Invalid or missing parameters |
+| -32603 | Internal Error | Unexpected internal error |
+
+### Custom MCP Errors
+
+| Code | Name | Description |
+|------|------|-------------|
+| -32001 | Index Not Ready | IDE is in dumb mode (indexing in progress) |
+| -32002 | File Not Found | Specified file does not exist |
+| -32003 | Symbol Not Found | No symbol found at the specified position |
+| -32004 | Refactoring Conflict | Refactoring cannot be completed (e.g., name conflict) |
+
+## Settings
+
+Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd>:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Server Port | IDE-specific | MCP server port (range: 1024-65535, auto-restart on change). See [IDE-Specific Defaults](#ide-specific-defaults) |
+| Server Host | `127.0.0.1` | Listening host. Change to `0.0.0.0` for remote/WSL access |
+| Max History Size | 100 | Maximum number of commands to keep in history |
+| Project List in Error Responses | Expanded | Controls `available_projects` detail for invalid/missing `project_path` errors. `Expanded` includes workspace sub-projects; `Compact` returns only top-level project roots |
+| Sync External Changes | false | Sync external file changes before operations (**WARNING: significant performance impact**) |
+| Disabled Tools | Tool-specific | Per-tool enable/disable toggles. Disabled tools stay hidden and cannot be called until enabled |
+| **Lifecycle Management** | | |
+| Enable lifecycle management | true | Master toggle for the automatic sleep/wake state machine |
+| Active → Background (minutes) | 2 | Focus-loss grace period before switching to Power Save Mode |
+| Background → Dormant (minutes) | 2 | MCP-idle time before closing editors and freeing PSI caches |
+| Dormant → Closed (minutes) | 10 | Idle time before fully closing the project window |
+| Event log buffer size | 500 | How many events `ide_lifecycle_log` retains in memory (100–10,000) |
+
+## Requirements
+
+- **JetBrains IDE** 2025.1 or later (any IDE based on IntelliJ Platform)
+- **JVM** 21 or later
+- **MCP Protocol** 2025-03-26 (primary Streamable HTTP), with 2024-11-05 legacy SSE compatibility
+
+### Supported IDEs
+
+**Fully Tested:**
+- IntelliJ IDEA (Community/Ultimate)
+- Android Studio
+- PyCharm (Community/Professional)
+- WebStorm
+- GoLand
+- RustRover
+- PhpStorm
+
+**May Work (Untested):**
+- RubyMine
+- CLion
+- DataGrip
+
+> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE, but has only been tested on the IDEs listed above.
+
+## Architecture
+
+The plugin runs a **custom embedded Ktor CIO HTTP server** with **dual MCP transports**:
+
+### Streamable HTTP Transport (Primary, MCP 2025-03-26)
+
+```
+AI Assistant ──────► POST /index-mcp/streamable-http (initialize or request)
+                     ◄── JSON-RPC response or HTTP 202 Accepted
+             ──────► POST /index-mcp/streamable-http (follow-up requests/notifications)
+                     ◄── JSON-RPC response or HTTP 202 Accepted
+```
+
+The plugin uses stateless Streamable HTTP for the primary MCP transport. It does not
+issue `Mcp-Session-Id` headers, does not require session resumption, and does not
+implement or advertise authentication capabilities.
+
+### Legacy SSE Transport (MCP Inspector, older clients)
+
+```
+AI Assistant ──────► GET /index-mcp/sse              (establish SSE stream)
+                     ◄── event: endpoint             (receive POST URL with sessionId)
+             ──────► POST /index-mcp?sessionId=x     (JSON-RPC requests)
+                     ◄── HTTP 202 Accepted
+                     ◄── event: message              (JSON-RPC response via SSE)
+```
+
+This dual approach:
+- **Primary MCP transport** - Streamable HTTP per MCP `2025-03-26`
+- **MCP Inspector compatible** - Legacy SSE transport per MCP `2024-11-05`
+- **Configurable port** - IDE-specific default port, changeable in settings
+- Works with any MCP-compatible client
+- Single server instance across all open projects
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `./gradlew test`
+5. Submit a pull request
+
+### Development Setup
+
+```bash
+# Build the plugin
+./gradlew build
+
+# Run IDE with plugin installed
+./gradlew runIde
+
+# Run tests
+./gradlew test
+
+# Run plugin verification
+./gradlew runPluginVerifier
+```
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+---
+
+Plugin based on the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
