@@ -263,6 +263,10 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven) with structured errors *(disabled by default)* |
 | `ide_run_tests` | Execute tests programmatically with structured pass/fail output *(disabled by default)* |
+| `ide_verify_change` | Safely execute build and test suite inside a revert block, returning results before rollback |
+| `ide_get_dependencies` | Get project dependencies from the IDE's module model with module/library scopes |
+| `ide_get_project_overview` | Get a high-level summary of the project structure including modules and SDKs |
+| `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |

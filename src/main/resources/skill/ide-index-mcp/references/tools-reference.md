@@ -506,3 +506,28 @@ Restart the IDE. Terminates the MCP connection immediately — reconnect after t
 | `project_path` | string | no | Project root path |
 
 **Returns**: text confirmation; the connection drops right after.
+
+### ide_get_dependencies
+Get project dependencies from the IDE's module model, providing module-level and library-level dependencies with scopes (COMPILE, TEST, RUNTIME, PROVIDED).
+- `project_path` (string) - Path to the project root directory
+- `module` (string) - Module name or path. If omitted, returns project-level summary.
+- `includeTransitive` (boolean) - Include transitive dependencies. Default: false.
+- `scope` (enum) - Scope filter. Default: all. [all, compile, test, runtime]
+
+### ide_get_project_overview
+Get a high-level summary of the project structure, including modules, SDKs, project paths, and root libraries.
+- `project_path` (string) - Path to the project root directory
+
+### ide_get_signature
+Get the signature (parameters, return type) of a method, function, or class at a position without reading the entire file.
+- `project_path` (string) - Path to the project root directory
+- `file` (string) - Relative path to the file
+- `line` (integer) - 1-based line number
+- `column` (integer) - 1-based column number
+
+### ide_verify_change
+Execute a command inside a smart revert block. The tool reverts all file changes after execution, allowing you to run build or tests to verify changes safely.
+- `project_path` (string) - Path to the project root directory
+- `command` (enum) - The command to run before reverting. [build, test]
+- `testArgs` (object) - Arguments for the ide_run_tests tool, required if command is 'test'
+- `buildArgs` (object) - Arguments for the ide_build_project tool, required if command is 'build'

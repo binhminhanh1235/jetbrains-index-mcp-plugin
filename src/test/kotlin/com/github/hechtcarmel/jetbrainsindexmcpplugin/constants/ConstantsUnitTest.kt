@@ -14,6 +14,7 @@ class ConstantsUnitTest : TestCase() {
         assertEquals("ide_find_implementations", ToolNames.FIND_IMPLEMENTATIONS)
         assertEquals("ide_find_symbol", ToolNames.FIND_SYMBOL)
         assertEquals("ide_find_super_methods", ToolNames.FIND_SUPER_METHODS)
+        assertEquals("ide_get_signature", ToolNames.GET_SIGNATURE)
     }
 
     fun testToolNamesIntelligenceTools() {
@@ -23,6 +24,9 @@ class ConstantsUnitTest : TestCase() {
     fun testToolNamesProjectTools() {
         assertEquals("ide_index_status", ToolNames.INDEX_STATUS)
         assertEquals("ide_build_project", ToolNames.BUILD_PROJECT)
+        assertEquals("ide_get_dependencies", ToolNames.GET_DEPENDENCIES)
+        assertEquals("ide_get_project_overview", ToolNames.GET_PROJECT_OVERVIEW)
+        assertEquals("ide_verify_change", ToolNames.VERIFY_CHANGE)
     }
 
     fun testToolNamesRefactoringTools() {
@@ -57,10 +61,15 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.FIND_FILE,
             ToolNames.SEARCH_TEXT,
             ToolNames.READ_FILE,
+            ToolNames.GET_SIGNATURE,
             ToolNames.DIAGNOSTICS,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.BUILD_PROJECT,
+            ToolNames.VERIFY_CHANGE,
+            ToolNames.RUN_TESTS,
+            ToolNames.GET_DEPENDENCIES,
+            ToolNames.GET_PROJECT_OVERVIEW,
             ToolNames.IMPORT_MODULES,
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_SAFE_DELETE,

@@ -16,6 +16,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_find_definition` | Find symbol definition location | Enabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
+| `ide_get_signature` | Get method/function/class signature at a position | Enabled |
 | `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
 | `ide_search_text` | Text search using word index | Enabled |
 | `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
@@ -25,6 +26,9 @@ These tools work in every supported JetBrains IDE:
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_build_project` | Build project with structured errors | Disabled |
 | `ide_run_tests` | Execute tests programmatically with structured results | Disabled |
+| `ide_verify_change` | Execute build and test suite inside a smart revert block | Enabled |
+| `ide_get_dependencies` | Get project dependencies with module/library scopes | Enabled |
+| `ide_get_project_overview` | Get high-level summary of project structure | Enabled |
 | `ide_read_file` | Read file content by path or qualified name | Disabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Disabled |
 | `ide_open_file` | Open file in editor with navigation | Disabled |
@@ -83,6 +87,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_find_definition](#ide_find_definition)
   - [ide_find_class](#ide_find_class)
   - [ide_find_file](#ide_find_file)
+  - [ide_get_signature](#ide_get_signature)
   - [ide_search_text](#ide_search_text)
   - [ide_find_symbol](#ide_find_symbol)
   - [ide_diagnostics](#ide_diagnostics)
@@ -92,6 +97,9 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_import_modules](#ide_import_modules)
   - [ide_build_project](#ide_build_project)
   - [ide_run_tests](#ide_run_tests)
+  - [ide_verify_change](#ide_verify_change)
+  - [ide_get_dependencies](#ide_get_dependencies)
+  - [ide_get_project_overview](#ide_get_project_overview)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
   - [ide_open_file](#ide_open_file)

@@ -14,6 +14,7 @@ object ToolNames {
     const val FIND_FILE = "ide_find_file"
     const val SEARCH_TEXT = "ide_search_text"
     const val READ_FILE = "ide_read_file"
+    const val GET_SIGNATURE = "ide_get_signature"
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
@@ -23,8 +24,11 @@ object ToolNames {
     const val SYNC_FILES = "ide_sync_files"
     const val BUILD_PROJECT = "ide_build_project"
     const val IMPORT_MODULES = "ide_import_modules"
+    const val GET_DEPENDENCIES = "ide_get_dependencies"
+    const val GET_PROJECT_OVERVIEW = "ide_get_project_overview"
     const val RELOAD_PROJECT = "ide_reload_project"
     const val RUN_TESTS = "ide_run_tests"
+    const val VERIFY_CHANGE = "ide_verify_change"
 
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
@@ -77,7 +81,10 @@ object ToolNames {
         FIND_SUPER_METHODS,
         FIND_SYMBOL,
         GET_ACTIVE_FILE,
+        GET_DEPENDENCIES,
         GET_PROJECT_MODES,
+        GET_PROJECT_OVERVIEW,
+        GET_SIGNATURE,
         IMPORT_MODULES,
         INDEX_STATUS,
         INSTALL_PLUGIN,
@@ -94,14 +101,15 @@ object ToolNames {
         RELEASE_ALL_PROJECTS,
         RELEASE_PROJECT,
         RELOAD_PROJECT,
-        RUN_TESTS,
         RESTART_IDE,
+        RUN_TESTS,
         SEARCH_TEXT,
         SET_ALL_PROJECT_MODES,
         LIFECYCLE_LOG_FILE,
         SET_POWER_SAVE_MODE,
         SET_PROJECT_MODE,
         SYNC_FILES,
-        TYPE_HIERARCHY
+        TYPE_HIERARCHY,
+        VERIFY_CHANGE
     )
 }

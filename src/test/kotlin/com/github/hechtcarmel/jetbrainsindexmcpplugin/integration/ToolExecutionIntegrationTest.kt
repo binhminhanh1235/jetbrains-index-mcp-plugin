@@ -468,6 +468,7 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             // Navigation tools
             ToolNames.FIND_REFERENCES,
             ToolNames.FIND_DEFINITION,
+            ToolNames.GET_SIGNATURE,
             ToolNames.TYPE_HIERARCHY,
             ToolNames.CALL_HIERARCHY,
             ToolNames.FIND_IMPLEMENTATIONS,
@@ -483,6 +484,10 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.DIAGNOSTICS,
             // Project tools
             ToolNames.BUILD_PROJECT,
+            ToolNames.RUN_TESTS,
+            ToolNames.VERIFY_CHANGE,
+            ToolNames.GET_DEPENDENCIES,
+            ToolNames.GET_PROJECT_OVERVIEW,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             // Refactoring tools
@@ -513,6 +518,9 @@ class ToolExecutionIntegrationTest : BasePlatformTestCase() {
             ToolNames.SET_ALL_PROJECT_MODES,
             ToolNames.SET_PROJECT_MODE
         )
+        if (PluginDetectors.maven.isAvailable) {
+            expectedTools.add(ToolNames.IMPORT_MODULES)
+        }
         if (PluginDetectors.java.isAvailable && PluginDetectors.kotlin.isAvailable) {
             expectedTools.add(ToolNames.CONVERT_JAVA_TO_KOTLIN)
         }

@@ -5,6 +5,10 @@
 ## [Unreleased]
 ### Added
 - **`ide_run_tests`** — programmatic test execution with structured results (disabled by default)
+- **`ide_get_dependencies`** — get project dependencies from the IDE's module model, providing module-level and library-level dependencies with scopes.
+- **`ide_get_project_overview`** — get a high-level summary of the project structure, including modules, SDKs, project paths, and root libraries.
+- **`ide_get_signature`** — get the signature (parameters, return type) of a method, function, or class at a position without reading the entire file.
+- **`ide_verify_change`** — safely execute test suites and project builds and revert all changes automatically after capturing the results.
 
 
 ## [4.27.0] - 2026-07-02

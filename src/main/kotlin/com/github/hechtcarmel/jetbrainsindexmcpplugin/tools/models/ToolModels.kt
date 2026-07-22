@@ -376,3 +376,93 @@ data class TextMatch(
     val context: String,       // line content
     val contextType: String    // "CODE", "COMMENT", "STRING_LITERAL"
 )
+
+// ide_get_dependencies output
+@Serializable
+data class DependenciesResult(
+    val module: String,
+    val moduleDependencies: List<ModuleDependency>,
+    val libraryDependencies: List<LibraryDependency>,
+    val totalCount: Int
+)
+
+@Serializable
+data class ModuleDependency(
+    val name: String,
+    val scope: String,
+    val isExported: Boolean
+)
+
+@Serializable
+data class LibraryDependency(
+    val name: String,
+    val groupId: String?,
+    val artifactId: String?,
+    val version: String?,
+    val scope: String,
+    val isExported: Boolean
+)
+
+// ide_get_project_overview output
+@Serializable
+data class ProjectOverviewResult(
+    val name: String,
+    val basePath: String,
+    val moduleCount: Int,
+    val modules: List<ModuleOverview>,
+    val languages: List<String>,
+    val frameworks: List<String>,
+    val buildSystem: String?,
+    val topLevelPackages: List<String>,
+    val entryPoints: List<EntryPoint>?,
+    val testFrameworks: List<String>
+)
+
+@Serializable
+data class ModuleOverview(
+    val name: String,
+    val sourceRoots: Int,
+    val testRoots: Int
+)
+
+@Serializable
+data class EntryPoint(
+    val file: String,
+    val type: String
+)
+
+// ide_get_signature output
+@Serializable
+data class SignatureResult(
+    val name: String,
+    val signature: String,
+    val kind: String,
+    val returnType: String?,
+    val parameters: List<ParameterInfo>?,
+    val modifiers: List<String>?,
+    val containingClass: String?,
+    val file: String,
+    val line: Int,
+    val language: String?
+)
+
+@Serializable
+data class ParameterInfo(
+    val name: String,
+    val type: String?,
+    val defaultValue: String?
+)
+
+// ide_verify_change output
+@Serializable
+data class VerifyChangeResult(
+    val success: Boolean,
+    val syncComplete: Boolean,
+    val diagnosticsPass: Boolean,
+    val errorCount: Int,
+    val errors: List<ProblemInfo>?,
+    val testsRun: Boolean,
+    val testSummary: TestSummary?,
+    val testResults: List<TestResultInfo>?,
+    val durationMs: Long
+)
