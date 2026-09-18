@@ -4,6 +4,7 @@ object ParamNames {
     // Common parameters
     const val PROJECT_PATH = "project_path"
     const val FILE = "file"
+    const val FILES = "files"
     const val LINE = "line"
     const val COLUMN = "column"
     const val NAME = "name"

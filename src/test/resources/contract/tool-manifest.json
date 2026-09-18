@@ -1,6 +1,85 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 51
+# tools: 57
+
+## ide_batch_diagnostics
+description:
+  Run diagnostics on multiple files in a single call. Returns errors and warnings for all specified files.
+schema:
+  {
+    "properties":
+    {
+      "files":
+      {
+        "description": "Array of file paths to run diagnostics on",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "includeBuildErrors":
+      {
+        "description": "Include compiler build errors (default: true)",
+        "type": "boolean"
+      },
+      "includeTestResults":
+      {
+        "description": "Include test failure results (default: false)",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      },
+      "severity":
+      {
+        "description": "Severity filter",
+        "enum":
+        [
+          "errors",
+          "warnings",
+          "all"
+        ],
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "files"
+    ],
+    "type": "object"
+  }
+
+## ide_batch_optimize_imports
+description:
+  Optimize imports in multiple files with a single call. Removes unused imports and organizes remaining imports per project style.
+schema:
+  {
+    "properties":
+    {
+      "files":
+      {
+        "description": "Array of file paths to optimize imports for",
+        "items":
+        {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "files"
+    ],
+    "type": "object"
+  }
 
 ## ide_build_project
 description:
@@ -1626,6 +1705,46 @@ schema:
     "type": "object"
   }
 
+## ide_get_dependencies
+description:
+  Get project dependencies from the IDE's module model. 
+  Provides module-level and library-level dependencies with scopes (COMPILE, TEST, RUNTIME, PROVIDED).
+  Useful for understanding what external libraries or internal modules are available.
+schema:
+  {
+    "properties":
+    {
+      "includeTransitive":
+      {
+        "description": "Include transitive dependencies. Default: false.",
+        "type": "boolean"
+      },
+      "module":
+      {
+        "description": "Module name or path. If omitted, returns project-level summary.",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      },
+      "scope":
+      {
+        "description": "Scope filter. Default: all.",
+        "enum":
+        [
+          "all",
+          "compile",
+          "test",
+          "runtime"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
 ## ide_get_project_modes
 description:
   List all MCP-managed projects and their current lifecycle mode.
@@ -1648,6 +1767,62 @@ schema:
         "type": "string"
       }
     },
+    "type": "object"
+  }
+
+## ide_get_project_overview
+description:
+  Get a structured overview of the project architecture.
+  Returns modules, languages, frameworks, build systems, top-level packages, and entry points.
+  Useful when first exploring a new codebase.
+schema:
+  {
+    "properties":
+    {
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+
+## ide_get_signature
+description:
+  Get the signature (parameters, return type) of a method, function, or class at a position.
+  Useful when you need to know how to call a function without reading the entire file.
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Path to the file relative to project root",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number",
+        "type": "integer"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file",
+      "line",
+      "column"
+    ],
     "type": "object"
   }
 
@@ -3664,5 +3839,41 @@ schema:
         "type": "object"
       }
     },
+    "type": "object"
+  }
+
+## ide_verify_change
+description:
+  Verify a code change by syncing the file system, checking for compilation/syntax errors, and optionally running nearby tests.
+  Replaces calling ide_sync_files, ide_diagnostics, and ide_run_tests individually.
+schema:
+  {
+    "properties":
+    {
+      "file":
+      {
+        "description": "The file that was changed",
+        "type": "string"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      },
+      "runTests":
+      {
+        "description": "Also run nearby test files. Default: false",
+        "type": "boolean"
+      },
+      "timeoutSeconds":
+      {
+        "description": "Total timeout in seconds. Default: 120",
+        "type": "integer"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
     "type": "object"
   }

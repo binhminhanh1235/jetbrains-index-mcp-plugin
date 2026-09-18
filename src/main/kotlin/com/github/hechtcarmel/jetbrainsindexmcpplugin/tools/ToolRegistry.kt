@@ -6,8 +6,10 @@ import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.BatchDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ProjectDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.GetSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
@@ -31,7 +33,9 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjec
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RunTestsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CreateModuleTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetProjectOverviewTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.InstallPluginTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
@@ -39,6 +43,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenWorkspac
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RestartIdeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.VerifyChangeTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.BatchOptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.EditMemberTool
@@ -251,9 +257,11 @@ class ToolRegistry {
         register(FindUsagesTool())
         register(FindDefinitionTool())
         register(SymbolInfoTool())
+        register(GetSignatureTool())
 
         // Intelligence tools
         register(GetDiagnosticsTool())
+        register(BatchDiagnosticsTool())
         register(ProjectDiagnosticsTool())
 
         // Project tools
@@ -263,6 +271,9 @@ class ToolRegistry {
         register(ReloadProjectTool())
         register(LinkBuildSystemTool())
         register(RunTestsTool())
+        register(GetDependenciesTool())
+        register(GetProjectOverviewTool())
+        register(VerifyChangeTool())
         register(CreateModuleTool())
         if (PluginDetectors.maven.isAvailable) {
             register(ImportModulesTool())
@@ -279,6 +290,7 @@ class ToolRegistry {
         register(MoveFileTool())
         register(ReformatCodeTool())
         register(OptimizeImportsTool())
+        register(BatchOptimizeImportsTool())
 
         // Advanced refactoring tools (universal - disabled by default)
         register(ReplaceTextInFileTool())

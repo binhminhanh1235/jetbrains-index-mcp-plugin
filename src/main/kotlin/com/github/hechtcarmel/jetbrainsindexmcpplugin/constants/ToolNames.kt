@@ -15,9 +15,11 @@ object ToolNames {
     const val SEARCH_TEXT = "ide_search_text"
     const val READ_FILE = "ide_read_file"
     const val SYMBOL_INFO = "ide_symbol_info"
+    const val GET_SIGNATURE = "ide_get_signature"
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
+    const val BATCH_DIAGNOSTICS = "ide_batch_diagnostics"
     const val PROJECT_DIAGNOSTICS = "ide_project_diagnostics"
 
     // Project tools
@@ -30,6 +32,9 @@ object ToolNames {
     const val RELOAD_PROJECT = "ide_reload_project"
     const val LIST_TESTS = "ide_list_tests"
     const val RUN_TESTS = "ide_run_tests"
+    const val GET_DEPENDENCIES = "ide_get_dependencies"
+    const val GET_PROJECT_OVERVIEW = "ide_get_project_overview"
+    const val VERIFY_CHANGE = "ide_verify_change"
 
     // Refactoring tools
     const val REFACTOR_RENAME = "ide_refactor_rename"
@@ -37,6 +42,7 @@ object ToolNames {
     const val REFACTOR_MOVE = "ide_move_file"
     const val REFORMAT_CODE = "ide_reformat_code"
     const val OPTIMIZE_IMPORTS = "ide_optimize_imports"
+    const val BATCH_OPTIMIZE_IMPORTS = "ide_batch_optimize_imports"
     const val CONVERT_JAVA_TO_KOTLIN = "ide_convert_java_to_kotlin"
 
     // Advanced refactoring tools
@@ -79,6 +85,8 @@ object ToolNames {
      * Keep this list in sync when adding or removing tool name constants.
      */
     val ALL: List<String> = listOf(
+        BATCH_DIAGNOSTICS,
+        BATCH_OPTIMIZE_IMPORTS,
         BUILD_PROJECT,
         CALL_HIERARCHY,
         CHANGE_SIGNATURE,
@@ -98,7 +106,10 @@ object ToolNames {
         FIND_SUPER_METHODS,
         FIND_SYMBOL,
         GET_ACTIVE_FILE,
+        GET_DEPENDENCIES,
         GET_PROJECT_MODES,
+        GET_PROJECT_OVERVIEW,
+        GET_SIGNATURE,
         IMPORT_MODULES,
         INDEX_STATUS,
         INSERT_MEMBER,
@@ -132,6 +143,7 @@ object ToolNames {
         STRUCTURAL_SEARCH_REPLACE,
         SYMBOL_INFO,
         SYNC_FILES,
-        TYPE_HIERARCHY
+        TYPE_HIERARCHY,
+        VERIFY_CHANGE
     )
 }
