@@ -12,3 +12,6 @@ docs/superpowers
 .idea/
 scripts/build-install.sh
 HANDOFF.md
+backups/
+release/
+

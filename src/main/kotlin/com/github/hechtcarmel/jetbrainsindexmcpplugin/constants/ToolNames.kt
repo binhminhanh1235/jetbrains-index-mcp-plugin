@@ -18,6 +18,7 @@ object ToolNames {
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
+    const val BATCH_DIAGNOSTICS = "ide_batch_diagnostics"
 
     // Project tools
     const val INDEX_STATUS = "ide_index_status"
@@ -36,6 +37,7 @@ object ToolNames {
     const val REFACTOR_MOVE = "ide_move_file"
     const val REFORMAT_CODE = "ide_reformat_code"
     const val OPTIMIZE_IMPORTS = "ide_optimize_imports"
+    const val BATCH_OPTIMIZE_IMPORTS = "ide_batch_optimize_imports"
     const val CONVERT_JAVA_TO_KOTLIN = "ide_convert_java_to_kotlin"
 
     // Editor tools
@@ -71,6 +73,7 @@ object ToolNames {
         CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
         DIAGNOSTICS,
+        BATCH_DIAGNOSTICS,
         ENROLL_ALL_PROJECTS,
         FILE_STRUCTURE,
         FIND_CLASS,
@@ -93,6 +96,7 @@ object ToolNames {
         OPEN_FILE,
         OPEN_PROJECT,
         OPTIMIZE_IMPORTS,
+        BATCH_OPTIMIZE_IMPORTS,
         PROJECT_STATUS,
         READ_FILE,
         REFACTOR_RENAME,

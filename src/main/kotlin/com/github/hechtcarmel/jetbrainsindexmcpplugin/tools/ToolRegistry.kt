@@ -7,6 +7,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.BatchDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
@@ -40,6 +41,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesToo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.VerifyChangeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.BatchOptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
@@ -252,6 +254,7 @@ class ToolRegistry {
 
         // Intelligence tools
         register(GetDiagnosticsTool())
+        register(BatchDiagnosticsTool())
 
         // Project tools
         register(GetIndexStatusTool())
@@ -276,6 +279,7 @@ class ToolRegistry {
         register(MoveFileTool())
         register(ReformatCodeTool())
         register(OptimizeImportsTool())
+        register(BatchOptimizeImportsTool())
 
         // Fast search tools (universal)
         register(FindClassTool())
