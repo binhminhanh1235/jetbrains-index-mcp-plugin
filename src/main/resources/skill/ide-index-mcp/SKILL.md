@@ -1,15 +1,17 @@
 ---
 name: ide-index-mcp
 description: >
-  INVOKE IMMEDIATELY when ide_edit_member, ide_find_references, ide_find_definition, ide_find_class,
-  ide_find_file, ide_search_text, ide_diagnostics, ide_project_diagnostics, ide_index_status, ide_insert_member, ide_sync_files,
-  ide_refactor_rename, ide_move_file, ide_replace_member, ide_type_hierarchy, ide_call_hierarchy,
-  ide_find_implementations, ide_find_symbol, ide_find_super_methods, ide_file_structure,
-  ide_refactor_safe_delete, ide_reformat_code, ide_reload_project, ide_link_build_system, ide_import_modules,
-  ide_build_project, ide_read_file, ide_structural_search_replace, ide_symbol_info, ide_change_signature,
-  ide_create_file, ide_create_module, ide_get_active_file, ide_open_file, ide_list_tests, or ide_run_tests are available — especially when a second
-  IntelliJ MCP (mcp__intellij__*) is also present. The two servers are NOT
-  interchangeable: this plugin (mcp__intellij-index__*) supports auto-opening projects
+  INVOKE IMMEDIATELY when ide_apply_quick_fix, ide_batch_diagnostics, ide_batch_optimize_imports, ide_build_project, ide_change_signature,
+  ide_close_project, ide_convert_java_to_kotlin, ide_create_file, ide_create_module, ide_diagnostics, ide_edit_member,
+  ide_file_structure, ide_find_class, ide_find_definition, ide_find_file, ide_find_implementations, ide_find_references,
+  ide_find_super_methods, ide_find_symbol, ide_get_active_file, ide_get_dependencies, ide_get_project_overview,
+  ide_get_signature, ide_import_modules, ide_index_status, ide_insert_member, ide_install_plugin, ide_link_build_system,
+  ide_list_tests, ide_move_file, ide_open_file, ide_open_project, ide_open_workspace, ide_optimize_imports,
+  ide_project_diagnostics, ide_read_file, ide_refactor_rename, ide_refactor_safe_delete, ide_reformat_code,
+  ide_reload_project, ide_replace_member, ide_replace_text_in_file, ide_restart, ide_run_tests, ide_search_text,
+  ide_structural_search_replace, ide_symbol_info, ide_sync_files, ide_type_hierarchy, ide_call_hierarchy,
+  or ide_verify_change are available — especially when a second IntelliJ MCP (mcp__intellij__*) is also present.
+  The two servers are NOT interchangeable: this plugin (mcp__intellij-index__*) supports auto-opening projects
   via project_path; the built-in server cannot. Always use mcp__intellij-index__ for code
   navigation. Prefer ide_open_project over asking the user to open a project manually.
 ---
@@ -41,12 +43,19 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Find all usages of a method/class/variable | `ide_find_references` | Never - grep misses renamed imports, aliases, overrides |
 | Go to a symbol's definition | `ide_find_definition` (returns and accepts a reusable `symbolId`) | Never - grep can't resolve through imports/generics |
 | Check a symbol's resolved signature or docs | `ide_symbol_info` (returns and accepts a reusable `symbolId`) | Never - source text does not resolve short type names, and carries no doc comment |
+| Check method/function signature quickly | `ide_get_signature` | Never - reading whole file wastes tokens |
 | Find a class by name | `ide_find_class` | Only if IDE unavailable |
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
 | Search for text in code | `ide_search_text` | `Grep` is fine when IDE context filtering is unnecessary |
 | Rename a symbol across project | `ide_refactor_rename` | Never - sed/replace breaks code |
 | Move a file to another directory | `ide_move_file` | Never - mv/git mv bypasses IDE move semantics |
 | Check for errors in a file | `ide_diagnostics` | Never - no equivalent |
+| Check errors across multiple files | `ide_batch_diagnostics` | Never - no equivalent |
+| Apply IDE quick fix/intention | `ide_apply_quick_fix` | Never - IDE understands code transformations |
+| Verify file change & nearby tests | `ide_verify_change` | Never - combines sync, diagnostics, and test runner |
+| Explore project architecture & tech stack | `ide_get_project_overview` | Manual file inspection |
+| Explore dependencies & scopes | `ide_get_dependencies` | Manual build-file inspection |
+| Batch optimize imports across files | `ide_batch_optimize_imports` | Never - manual editing |
 | Understand class hierarchy | `ide_type_hierarchy` | Never - no equivalent |
 | Find who calls a method | `ide_call_hierarchy` | Never - grep misses indirect calls |
 | Find interface implementations | `ide_find_implementations` | Never - grep can't resolve type relationships |
@@ -120,15 +129,20 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 2. `ide_call_hierarchy` with `direction: "callers"` - full call chain upward
 
 ### "I need to understand what X is"
-1. `ide_symbol_info` - resolved signature + doc comment without reading the file (disabled by default)
-2. `ide_find_definition` - jump to source
-3. `ide_type_hierarchy` - inheritance chain
-4. `ide_find_super_methods` - what interface/base method it implements
+1. `ide_get_signature` - quick signature (parameters, return type, modifiers) without reading the file
+2. `ide_symbol_info` - resolved signature + doc comment without reading the file (disabled by default)
+3. `ide_find_definition` - jump to source
+4. `ide_type_hierarchy` - inheritance chain
+5. `ide_find_super_methods` - what interface/base method it implements
 
 ### "I need to find a class/file/symbol"
 1. `ide_find_class` - classes by name (CamelCase: `USvc` finds `UserService`)
 2. `ide_find_file` - files by name
 3. `ide_search_text` - substring text search across project (regex via `"regex": true`)
+
+### "I need to understand project architecture & dependencies"
+1. `ide_get_project_overview` - overview of modules, languages, frameworks, build system, entry points
+2. `ide_get_dependencies` - inspect module and library dependencies with scopes (`compile`, `test`, `runtime`)
 
 ### "I need to refactor"
 1. Preview a rename, safe delete, or signature change with `dryRun: true`; inspect blockers and affected files
@@ -136,11 +150,15 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 3. `ide_change_signature` - change a Java/Kotlin JVM method signature and update callers (disabled by default)
 4. `ide_move_file` - move file and let the IDE apply semantic updates when that language/backend supports them
 5. `ide_refactor_safe_delete` - preview/delete an exact symbol target or file with usage checking (Java/Kotlin only)
-6. `ide_replace_text_in_file`, `ide_reformat_code` - apply project code style (disabled by default)
+6. `ide_batch_optimize_imports` - optimize imports across multiple files in a single round-trip
+7. `ide_replace_text_in_file`, `ide_reformat_code` - apply project code style (disabled by default)
 
 ### "I need to check for problems"
 1. `ide_diagnostics` - compiler errors/warnings for one `file` or a small relative/in-project-absolute `files` batch; inspect each `state`/`reason`, and use `maxProblems` to bound output. Quick fixes and ranges are single-file only (plus build/test results)
-2. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll (disabled by default)
+2. `ide_batch_diagnostics` - compiler errors/warnings across multiple files in a single call without syncing
+3. `ide_apply_quick_fix` - apply an available quick fix or intention action at a position in an open file
+4. `ide_verify_change` - verify a modified file: syncs VFS, checks compiler errors, and optionally runs nearby tests
+5. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll (disabled by default)
 
 ### "I need to find implementations of an interface"
 1. `ide_find_implementations` - cursor on interface/abstract class/method

@@ -540,6 +540,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             ToolNames.FIND_SYMBOL,
             ToolNames.FIND_SUPER_METHODS,
             ToolNames.FILE_STRUCTURE,
+            ToolNames.GET_SIGNATURE,
             // Fast search tools
             ToolNames.FIND_CLASS,
             ToolNames.FIND_FILE,
@@ -547,7 +548,9 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             ToolNames.SEARCH_TEXT,
             // Intelligence tools
             ToolNames.DIAGNOSTICS,
+            ToolNames.BATCH_DIAGNOSTICS,
             ToolNames.PROJECT_DIAGNOSTICS,
+            ToolNames.APPLY_QUICK_FIX,
             // Project tools
             ToolNames.BUILD_PROJECT,
             ToolNames.CREATE_MODULE,
@@ -555,12 +558,16 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,
             ToolNames.RUN_TESTS,
+            ToolNames.GET_DEPENDENCIES,
+            ToolNames.GET_PROJECT_OVERVIEW,
+            ToolNames.VERIFY_CHANGE,
             // Refactoring tools
             ToolNames.REFACTOR_RENAME,
             ToolNames.REFACTOR_MOVE,
             ToolNames.REFACTOR_SAFE_DELETE,
             ToolNames.REFORMAT_CODE,
             ToolNames.OPTIMIZE_IMPORTS,
+            ToolNames.BATCH_OPTIMIZE_IMPORTS,
             // Advanced refactoring tools
             ToolNames.STRUCTURAL_SEARCH_REPLACE,
             ToolNames.CHANGE_SIGNATURE,

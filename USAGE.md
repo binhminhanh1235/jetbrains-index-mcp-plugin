@@ -15,14 +15,20 @@ These tools work in every supported JetBrains IDE:
 | `ide_find_references` | Find all references to a symbol | Enabled |
 | `ide_find_definition` | Find symbol definition location | Enabled |
 | `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Disabled |
+| `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position | Enabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
 | `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
 | `ide_search_text` | Text search using IntelliJ Find in Files (substring + regex) | Enabled |
 | `ide_diagnostics` | Analyze one file or a bounded multi-file batch with per-file coverage states, plus optional build/test results | Enabled |
+| `ide_batch_diagnostics` | Run diagnostics on multiple files in a single call | Enabled |
+| `ide_apply_quick_fix` | Apply an available quick fix or intention action at a position in an open file | Enabled |
 | `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata; long analyses return an `analysisId` to poll | Disabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache for relative or in-project absolute paths, including deleted paths through existing parents | Enabled |
+| `ide_verify_change` | Verify a file change (sync VFS + diagnostics + optional nearby tests) | Enabled |
+| `ide_get_project_overview` | Structured overview of project architecture (modules, languages, frameworks, entry points) | Enabled |
+| `ide_get_dependencies` | Get module and library dependencies with scopes | Enabled |
 | `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
 | `ide_import_modules` | Import external Maven projects as modules | Disabled |
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
@@ -36,6 +42,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
 | `ide_optimize_imports` | Optimize imports without reformatting code | Disabled |
+| `ide_batch_optimize_imports` | Optimize imports in multiple files in one call | Enabled |
 | `ide_structural_search_replace` | Pattern-based code search and transformation (Java, Kotlin) | Disabled |
 | `ide_change_signature` | Preview or change a Java/Kotlin JVM method signature by exact/nested target, updating callers automatically | Disabled |
 | `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ | Disabled |
@@ -99,14 +106,20 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_find_references](#ide_find_references)
   - [ide_find_definition](#ide_find_definition)
   - [ide_symbol_info](#ide_symbol_info)
+  - [ide_get_signature](#ide_get_signature)
   - [ide_find_class](#ide_find_class)
   - [ide_find_file](#ide_find_file)
   - [ide_search_text](#ide_search_text)
   - [ide_find_symbol](#ide_find_symbol)
   - [ide_diagnostics](#ide_diagnostics)
+  - [ide_batch_diagnostics](#ide_batch_diagnostics)
+  - [ide_apply_quick_fix](#ide_apply_quick_fix)
   - [ide_project_diagnostics](#ide_project_diagnostics)
   - [ide_index_status](#ide_index_status)
   - [ide_sync_files](#ide_sync_files)
+  - [ide_verify_change](#ide_verify_change)
+  - [ide_get_project_overview](#ide_get_project_overview)
+  - [ide_get_dependencies](#ide_get_dependencies)
   - [ide_reload_project](#ide_reload_project)
   - [ide_import_modules](#ide_import_modules)
   - [ide_open_workspace](#ide_open_workspace)
@@ -128,6 +141,7 @@ see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse`
   - [ide_move_file](#ide_move_file)
   - [ide_reformat_code](#ide_reformat_code)
   - [ide_optimize_imports](#ide_optimize_imports)
+  - [ide_batch_optimize_imports](#ide_batch_optimize_imports)
   - [ide_structural_search_replace](#ide_structural_search_replace)
   - [ide_change_signature](#ide_change_signature)
   - [ide_create_file](#ide_create_file)
@@ -582,6 +596,65 @@ as the `symbol` argument. A callable includes its resolved parameter list, becau
 `Container#name` form is rejected as ambiguous as soon as the method is overloaded. On the other
 `signatureSource` paths the container is a best-effort dotted AST path rather than a resolved FQN,
 so address those symbols by position instead.
+
+---
+
+### ide_get_signature
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get the signature (parameters, return type) of a method, function, or class at a position.
+Useful when you need to know how to call a function without reading the entire file.
+
+**Use when:**
+- Checking method parameters and return types without reading the whole file
+- Understanding function signatures when writing call sites
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Project-relative file path |
+| `line` | integer | Yes | 1-based line number |
+| `column` | integer | Yes | 1-based column number |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_signature",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "name": "findUser",
+  "signature": "public User findUser(String id)",
+  "kind": "method",
+  "returnType": "User",
+  "parameters": [
+    {
+      "name": "id",
+      "type": "String"
+    }
+  ],
+  "containingClass": "UserService",
+  "file": "src/main/java/com/example/UserService.java",
+  "line": 15,
+  "language": "JAVA"
+}
+```
 
 ---
 
@@ -1058,6 +1131,131 @@ Long analyses use the same long-poll pattern as `ide_build_project`: each call b
 
 ---
 
+### ide_batch_diagnostics
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Run diagnostics on multiple files in a single MCP call. Returns errors and warnings for all specified files.
+
+**Use when:**
+- Checking multiple modified files for compilation errors without multiple round-trips
+- Rapidly validating code health across a set of files after editing
+- Use after `ide_sync_files` or `ide_verify_change` when VFS is already synchronized
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | Yes | Array of file paths to run diagnostics on |
+| `severity` | string | No | Severity filter: `"errors"` (default), `"warnings"`, or `"all"` |
+| `includeBuildErrors` | boolean | No | Include compiler build errors (default: true) |
+| `includeTestResults` | boolean | No | Include test failure results (default: false) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_batch_diagnostics",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/OrderService.java"
+      ],
+      "severity": "errors"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "filesChecked": 2,
+  "hasErrors": true,
+  "results": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "problemCount": 1,
+      "analysisFresh": true,
+      "analysisTimedOut": false,
+      "problems": [
+        {
+          "message": "Cannot resolve symbol 'User'",
+          "severity": "ERROR",
+          "line": 15,
+          "column": 12
+        }
+      ]
+    },
+    {
+      "file": "src/main/java/com/example/OrderService.java",
+      "problemCount": 0,
+      "analysisFresh": true,
+      "analysisTimedOut": false
+    }
+  ]
+}
+```
+
+---
+
+### ide_apply_quick_fix
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Apply an available quick fix or intention action at a specific position in an open file.
+The file must be open in the editor. Use `ide_diagnostics` first to discover available intentions/quick fixes at a position, then call this tool to apply one.
+
+**Use when:**
+- Automatically fixing compile errors or warnings discovered by `ide_diagnostics`
+- Applying IDE quick fixes (import missing class, add type annotation, fix syntax)
+- Previewing available quick fixes without applying them (`preview: true`)
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Project-relative path to the file |
+| `line` | integer | No | 1-based line number for the quick fix position (default: 1) |
+| `column` | integer | No | 1-based column number (default: 1) |
+| `fixIndex` | integer | No | 0-based index of the fix to apply (default: 0) |
+| `fixName` | string | No | Case-insensitive substring of the fix name to apply (takes precedence over `fixIndex`) |
+| `preview` | boolean | No | If true, return available fixes without applying (default: false) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_apply_quick_fix",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 12,
+      "fixName": "Import class"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "appliedFix": "Import class 'com.example.model.User'",
+  "message": "Successfully applied quick fix: Import class 'com.example.model.User'"
+}
+```
+
+---
+
 ### ide_index_status
 
 > **Availability**: Universal Tool - works in all JetBrains IDEs
@@ -1148,6 +1346,180 @@ unsafe path fails the call without partially refreshing earlier paths. Absolute 
 against every allowed project/content root even when `project_path` selects another root; relative
 paths stay confined when a specific content root is selected. Neither form can escape the resolved
 project's allowed roots, and the call fails explicitly if none can be resolved safely.
+
+---
+
+### ide_verify_change
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Verify a code change by syncing the file system, checking for compilation/syntax errors, and optionally running nearby tests.
+Replaces calling `ide_sync_files`, `ide_diagnostics`, and `ide_run_tests` individually.
+
+**Use when:**
+- After modifying a file, performing an immediate verification in a single MCP call
+- Checking compilation errors and regression tests near the changed file
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | The file that was changed (project-relative path) |
+| `runTests` | boolean | No | Also run nearby test files (default: false) |
+| `timeoutSeconds` | integer | No | Total timeout in seconds (default: 120) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_verify_change",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "runTests": true
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "syncComplete": true,
+  "diagnosticsPass": true,
+  "errorCount": 0,
+  "testsRun": true,
+  "testRun": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "durationMs": 1200,
+    "success": true
+  },
+  "durationMs": 1850
+}
+```
+
+---
+
+### ide_get_project_overview
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get a structured overview of the project architecture.
+Returns modules, source roots, detected languages, frameworks, build systems, top-level packages, and entry points.
+
+**Use when:**
+- First exploring a new codebase
+- Understanding project architecture, technology stack, and module structure
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_project_overview",
+    "arguments": {}
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "name": "my-service",
+  "basePath": "/Users/dev/my-service",
+  "moduleCount": 2,
+  "modules": [
+    {
+      "name": "core",
+      "productionSourceRoots": 1,
+      "testSourceRoots": 1
+    },
+    {
+      "name": "api",
+      "productionSourceRoots": 1,
+      "testSourceRoots": 1
+    }
+  ],
+  "languages": ["Java", "Kotlin"],
+  "frameworks": ["Spring"],
+  "buildSystem": "Gradle",
+  "topLevelPackages": ["com.example.core", "com.example.api"],
+  "entryPoints": [],
+  "testFrameworks": ["JUnit"]
+}
+```
+
+---
+
+### ide_get_dependencies
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get project dependencies from the IDE's module model.
+Provides module-level and library-level dependencies with scopes (`COMPILE`, `TEST`, `RUNTIME`, `PROVIDED`).
+
+**Use when:**
+- Understanding external libraries and internal module dependencies
+- Checking library versions and dependency scopes
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `module` | string | No | Module name or path. If omitted, returns primary module dependencies |
+| `includeTransitive` | boolean | No | Include transitive dependencies (default: false) |
+| `scope` | string | No | Scope filter: `"all"` (default), `"compile"`, `"test"`, `"runtime"` |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_dependencies",
+    "arguments": {
+      "module": "core",
+      "scope": "compile"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "module": "core",
+  "moduleDependencies": [],
+  "libraryDependencies": [
+    {
+      "name": "Gradle: org.springframework:spring-core:5.3.9",
+      "groupId": "org.springframework",
+      "artifactId": "spring-core",
+      "version": "5.3.9",
+      "scope": "COMPILE",
+      "isExported": false
+    }
+  ],
+  "totalCount": 1
+}
+```
 
 ---
 
@@ -2278,6 +2650,63 @@ Optimize imports in a file: remove unused imports and organize the remaining imp
       "file": "src/main/java/com/example/UserService.java"
     }
   }
+}
+```
+
+---
+
+### ide_batch_optimize_imports
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Optimize imports in multiple files with a single call. Removes unused imports and organizes remaining imports according to project code style.
+Replaces calling `ide_optimize_imports` multiple times with a single round-trip.
+
+**Use when:**
+- Cleaning up unused imports across multiple files after refactoring
+- Formatting imports in bulk across a module or directory
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | Yes | Array of file paths to optimize imports for |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_batch_optimize_imports",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/OrderService.java"
+      ]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "filesProcessed": 2,
+  "successCount": 2,
+  "failureCount": 0,
+  "results": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "status": "ok"
+    },
+    {
+      "file": "src/main/java/com/example/OrderService.java",
+      "status": "ok"
+    }
+  ]
 }
 ```
 

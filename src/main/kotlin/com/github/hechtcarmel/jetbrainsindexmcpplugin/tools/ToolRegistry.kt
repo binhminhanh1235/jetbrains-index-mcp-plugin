@@ -6,6 +6,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ApplyQuickFixTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.BatchDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ProjectDiagnosticsTool
@@ -263,6 +264,7 @@ class ToolRegistry {
         register(GetDiagnosticsTool())
         register(BatchDiagnosticsTool())
         register(ProjectDiagnosticsTool())
+        register(ApplyQuickFixTool())
 
         // Project tools
         register(GetIndexStatusTool())

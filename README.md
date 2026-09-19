@@ -29,9 +29,15 @@ Advanced tools work across multiple languages based on available plugins:
 **Universal Tools (All Supported JetBrains IDEs)**
 - **Find References** - Locate all usages of any symbol across the project
 - **Go to Definition** - Navigate to symbol declarations
+- **Get Signature** - Retrieve parameters and return type of a method, function, or class at a position without reading the file
 - **Code Diagnostics** - Access errors, warnings, and quick fixes
+- **Batch Diagnostics** - Run diagnostics on multiple files in a single MCP call with configurable severity
+- **Apply Quick Fix** - Apply an available quick fix or intention action at a position in an open file
 - **Index Status** - Check if code intelligence is ready
 - **Sync Files** - Force sync VFS/PSI cache after external file changes
+- **Verify Change** - Fast verification of a file change by syncing VFS, running diagnostics, and optionally executing nearby tests
+- **Get Project Overview** - Structured overview of project architecture (modules, languages, frameworks, entry points)
+- **Get Dependencies** - Inspect module and library dependencies with scope filtering
 - **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
 - **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring (disabled by default)
 - **Open Workspace** - Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence (disabled by default)
@@ -57,6 +63,7 @@ These tools activate based on installed language plugins:
 - **Move File** - Move files with IDE-aware reference and package updates when supported
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
 - **Optimize Imports** - Remove unused imports and organize imports without reformatting (disabled by default)
+- **Batch Optimize Imports** - Optimize imports across multiple files in a single call
 - **Edit Member** - Replace an entire member declaration (signature + body) with new content (Java/Kotlin, disabled by default)
 - **Insert Member** - Insert a new member at a structural position (Java/Kotlin, disabled by default)
 - **Replace Member** - Replace method body or field initializer only, preserving the signature (Java/Kotlin, disabled by default)
@@ -258,7 +265,7 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 
 ## Exposed Tools
 
-The plugin provides **52 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Exposed Tools</kbd>.
+The plugin provides **59 MCP tools** organized by availability. Tools marked *(disabled by default)* can be enabled in <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP Server</kbd> > <kbd>Exposed Tools</kbd>.
 
 ### Universal Tools
 
@@ -269,14 +276,20 @@ These tools work in all supported JetBrains IDEs.
 | `ide_find_references` | Find all references to a symbol across the entire project, optionally restricted to path globs via `paths` |
 | `ide_find_definition` | Find the definition/declaration location of a symbol; accepts top-level `symbolId`, position, or qualified-name selectors plus an equivalent nested `target`, and returns a reusable `symbolId` |
 | `ide_symbol_info` | Resolved signature and documentation for a symbol — accepts the same flat or nested targets as `ide_find_definition`; parameter and return types expanded to fully qualified names (Java), structured `parameters`, modifiers, containing declaration, and the doc comment as plain text, without reading the file *(disabled by default)* |
+| `ide_get_signature` | Get the signature (parameters, return type, modifiers) of a method, function, or class at a position without reading the entire file |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
 | `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |
 | `ide_search_text` | Text search using IntelliJ Find in Files with context filtering (substring and regex matching), optionally restricted to path globs via `paths` |
 | `ide_diagnostics` | Analyze one `file` or up to 100 supplied `files` under one shared timeout budget, with per-file coverage states and configurable `maxProblems`; accepts relative or in-project absolute paths, plus optional build/test results; intentions are best-effort and single-file only |
+| `ide_batch_diagnostics` | Run diagnostics on multiple files in a single call with configurable severity and error/test filtering |
+| `ide_apply_quick_fix` | Apply an available quick fix or intention action at a specific position in an open file |
 | `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata: a `complete` flag plus per-file `analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed` states, so an empty result can never be mistaken for a clean project. Long analyses return an `analysisId` to poll *(disabled by default)* |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache for relative or in-project absolute paths, including deleted targets via their nearest existing parent |
+| `ide_verify_change` | Fast verification of a file change by syncing VFS, checking compiler/syntax diagnostics, and optionally executing nearby test files |
+| `ide_get_project_overview` | Structured overview of project architecture: modules, source roots, detected languages, frameworks, build systems, top-level packages, and entry points |
+| `ide_get_dependencies` | Get module and library dependencies from the IDE module model with scope filtering (`all`, `compile`, `test`, `runtime`) and optional transitive inclusion |
 | `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
 | `ide_link_build_system` | Link an unlinked Maven/Gradle project for dependency resolution *(disabled by default)* |
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
@@ -296,6 +309,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
 | `ide_optimize_imports` | Optimize imports without reformatting code *(disabled by default)* |
+| `ide_batch_optimize_imports` | Optimize imports in multiple files in one call, removing unused imports and organizing per code style |
 | `ide_structural_search_replace` | Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine, optionally restricted to path globs via `paths` (Java, Kotlin) *(disabled by default)* |
 | `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ — use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files *(disabled by default)* |
 | `ide_replace_text_in_file` | Find and replace text in a file using IntelliJ's Document API — changes immediately visible to index and PSI without `ide_sync_files` *(disabled by default)* |

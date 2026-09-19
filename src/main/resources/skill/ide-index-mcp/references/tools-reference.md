@@ -152,6 +152,18 @@ because the bare name is rejected as ambiguous once a method is overloaded. On t
 `quick_navigation` / `element_text` paths the container is a best-effort dotted AST path, not a
 resolved FQN, so it is descriptive rather than round-trippable — address those by position.
 
+### ide_get_signature
+Get the signature (parameters, return type) of a method, function, or class at a position without reading the entire file.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Project-relative file path |
+| `line` | integer | yes | 1-based line number |
+| `column` | integer | yes | 1-based column number |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ name, signature, kind, returnType?, parameters?: [{ name, type?, defaultValue? }], modifiers?, containingClass?, file, line, language }`
+
 ### ide_find_class
 Search for classes/interfaces by name using IDE's class index. Equivalent to Ctrl+N / Cmd+O.
 
@@ -413,6 +425,34 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's request 
 **Returns**: `{ complete, status: "completed"|"timed_out", filesConsidered, filesAnalyzed, filesAnalyzedOpenDaemon, filesAnalyzedClosedBatch, filesTimedOut, filesFailed, filesSkipped, filesNotAnalyzed, incompleteFiles: [{file, state, reason?}], incompleteFilesTruncated, problems: [{message, severity, file, line, column, endLine?, endColumn?}], problemCount, errorCount, warningCount, problemsTruncated, durationMs, analysisMessage }`, or while still executing: `{ status: "running", analysisId, elapsedSeconds, filesProcessed, filesConsidered, timeoutSeconds, message }`
 **Notes**: Open files are analyzed with fresh daemon highlights (`open_daemon`); closed files use the IDE's public batch analysis (`closed_batch`), which covers errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope. Treat empty `problems` as a clean signal only when `complete` is true.
 
+### ide_batch_diagnostics
+Run diagnostics on multiple files in a single MCP call. Returns errors and warnings for all specified files without syncing VFS.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | yes | Array of file paths to run diagnostics on |
+| `severity` | enum | no | Severity filter: `errors` (default), `warnings`, `all` |
+| `includeBuildErrors` | boolean | no | Include compiler build errors (default: true) |
+| `includeTestResults` | boolean | no | Include test failure results (default: false) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ filesChecked, hasErrors, results: [{ file, problemCount, analysisFresh, analysisTimedOut, analysisMessage?, problems?: [{ message, severity, line, column }] }] }`
+
+### ide_apply_quick_fix
+Apply an available quick fix or intention action at a specific position in a file. The file must be open in the editor. Use `ide_diagnostics` first to discover available intentions/quick fixes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | Project-relative path to the file |
+| `line` | integer | no | 1-based line number (default: 1) |
+| `column` | integer | no | 1-based column number (default: 1) |
+| `fixIndex` | integer | no | 0-based index of the fix to apply (default: 0) |
+| `fixName` | string | no | Case-insensitive substring of the fix name to apply |
+| `preview` | boolean | no | If true, return available fixes without applying (default: false) |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, appliedFix, message }`
+
 ---
 
 ## Refactoring Tools
@@ -502,6 +542,16 @@ Optimize imports in a file: remove unused imports and organize remaining imports
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ success, affectedFiles, changesCount, message }`
+
+### ide_batch_optimize_imports
+Optimize imports in multiple files with a single call. Removes unused imports and organizes remaining imports per project style.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | yes | Array of file paths to optimize imports for |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ filesProcessed, successCount, failureCount, results: [{ file, status }] }`
 
 ### ide_convert_java_to_kotlin (disabled by default, Java + Kotlin plugins)
 Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Handles classes, interfaces, enums, annotations, methods, fields, and Java 8+ features (lambdas, streams). Automatically formats and optimizes imports. Original Java files are deleted after successful conversion; some advanced constructs may need manual adjustment.
@@ -672,6 +722,39 @@ Force sync IDE's virtual file system with external file changes.
 **Returns**: `{ syncedPaths, syncedAll, message, refreshedRoots, deletedPaths }`
 `syncedPaths` reports normalized targets, `refreshedRoots` reports absolute system-independent roots actually refreshed, and `deletedPaths` identifies targets absent on disk. Discovery ancestors and deletion parents receive shallow refreshes; only explicitly requested existing targets receive recursive refreshes. A shallow ancestor does not replace a recursive target in `refreshedRoots`. Absolute paths match every allowed root even when another content root is selected. The full batch is validated inside project/content roots before refresh begins, all invalid entries are returned together, and an empty safe-root set is an explicit error.
 Call this when files were created/modified outside the IDE and search tools miss them.
+
+### ide_verify_change
+Verify a code change by syncing the file system, checking for compilation/syntax errors, and optionally running nearby tests.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | yes | The file that was changed (project-relative path) |
+| `runTests` | boolean | no | Also run nearby test files. Default: false |
+| `timeoutSeconds` | integer | no | Total timeout in seconds. Default: 120 |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ success, syncComplete, diagnosticsPass, errorCount, errors?: [{message, severity, line, column}], testsRun, testRun?: {total, passed, failed, ignored, durationMs, success}, durationMs }`
+
+### ide_get_project_overview
+Get a structured overview of the project architecture (modules, languages, frameworks, build systems, top-level packages, and entry points).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ name, basePath, moduleCount, modules: [{name, productionSourceRoots, testSourceRoots}], languages, frameworks, buildSystem?, topLevelPackages, entryPoints: [{file, type}], testFrameworks }`
+
+### ide_get_dependencies
+Get project dependencies from the IDE's module model, providing module-level and library-level dependencies with scopes (`COMPILE`, `TEST`, `RUNTIME`, `PROVIDED`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `module` | string | no | Module name or path. If omitted, returns primary module dependencies |
+| `includeTransitive` | boolean | no | Include transitive dependencies. Default: false |
+| `scope` | enum | no | Scope filter: `all` (default), `compile`, `test`, `runtime` |
+| `project_path` | string | no | Project root path |
+
+**Returns**: `{ module, moduleDependencies: [{name, scope, isExported}], libraryDependencies: [{name, groupId?, artifactId?, version?, scope, isExported}], totalCount }`
 
 ### ide_build_project (disabled by default)
 Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)).

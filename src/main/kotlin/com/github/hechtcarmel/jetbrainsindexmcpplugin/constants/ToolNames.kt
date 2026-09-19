@@ -21,6 +21,7 @@ object ToolNames {
     const val DIAGNOSTICS = "ide_diagnostics"
     const val BATCH_DIAGNOSTICS = "ide_batch_diagnostics"
     const val PROJECT_DIAGNOSTICS = "ide_project_diagnostics"
+    const val APPLY_QUICK_FIX = "ide_apply_quick_fix"
 
     // Project tools
     const val INDEX_STATUS = "ide_index_status"
@@ -85,6 +86,7 @@ object ToolNames {
      * Keep this list in sync when adding or removing tool name constants.
      */
     val ALL: List<String> = listOf(
+        APPLY_QUICK_FIX,
         BATCH_DIAGNOSTICS,
         BATCH_OPTIMIZE_IMPORTS,
         BUILD_PROJECT,

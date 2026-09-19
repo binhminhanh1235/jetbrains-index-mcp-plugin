@@ -30,6 +30,7 @@ class ConstantsUnitTest : TestCase() {
             ToolNames.SYMBOL_INFO,
             ToolNames.DIAGNOSTICS,
             ToolNames.PROJECT_DIAGNOSTICS,
+            ToolNames.APPLY_QUICK_FIX,
             ToolNames.EDIT_MEMBER,
             ToolNames.INDEX_STATUS,
             ToolNames.SYNC_FILES,

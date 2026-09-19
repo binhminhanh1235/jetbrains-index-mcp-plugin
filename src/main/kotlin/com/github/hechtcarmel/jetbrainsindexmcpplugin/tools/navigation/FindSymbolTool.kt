@@ -10,6 +10,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
@@ -23,6 +24,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -62,27 +64,42 @@ class FindSymbolTool : AbstractMcpTool() {
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty(ParamNames.LANGUAGE, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include symbols defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
+        .booleanProperty("compact", "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.", required = false)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                FindSymbolResult(
-                    symbols = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                    CompactSymbolResult(
+                        symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore
+                    )
+                }
+            } else {
+                buildPaginatedResult<SymbolMatch, FindSymbolResult>(pageResult) { items, page ->
+                    FindSymbolResult(
+                        symbols = items,
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale
+                    )
+                }
             }
         }
 
@@ -147,18 +164,31 @@ class FindSymbolTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(token, pageSize, project)) { items, page ->
-            FindSymbolResult(
-                symbols = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(token, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                CompactSymbolResult(
+                    symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<SymbolMatch, FindSymbolResult>(pageResult) { items, page ->
+                FindSymbolResult(
+                    symbols = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
     }
 

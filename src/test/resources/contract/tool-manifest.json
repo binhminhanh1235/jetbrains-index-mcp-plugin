@@ -1,6 +1,63 @@
 # MCP tool manifest — golden snapshot
 # Regenerate: ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
-# tools: 57
+# tools: 58
+
+## ide_apply_quick_fix
+description:
+  Apply an available quick fix or intention action at a specific position in a file.
+  The file must be open in the editor. Use ide_diagnostics first to discover available
+  intentions/quick fixes at a position, then call this tool to apply one.
+  
+  Selection: provide fixIndex (0-based index from diagnostics intentions list) OR
+  fixName (substring of the fix text). Omit both to apply the first available fix.
+  
+  Returns: applied fix name, success status, and a hint to call ide_verify_change after.
+schema:
+  {
+    "properties":
+    {
+      "column":
+      {
+        "description": "1-based column number (default: 1)",
+        "type": "integer"
+      },
+      "file":
+      {
+        "description": "Project-relative path to the file",
+        "type": "string"
+      },
+      "fixIndex":
+      {
+        "description": "0-based index of the fix to apply (from ide_diagnostics intentions list). Default: 0",
+        "type": "integer"
+      },
+      "fixName":
+      {
+        "description": "Case-insensitive substring of the fix name to apply. Takes precedence over fixIndex.",
+        "type": "string"
+      },
+      "line":
+      {
+        "description": "1-based line number for the quick fix position",
+        "type": "integer"
+      },
+      "preview":
+      {
+        "description": "If true, return available fixes without applying. Default: false",
+        "type": "boolean"
+      },
+      "project_path":
+      {
+        "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
+        "type": "string"
+      }
+    },
+    "required":
+    [
+      "file"
+    ],
+    "type": "object"
+  }
 
 ## ide_batch_diagnostics
 description:
@@ -926,6 +983,11 @@ schema:
   {
     "properties":
     {
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.",
+        "type": "boolean"
+      },
       "cursor":
       {
         "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
@@ -1358,6 +1420,11 @@ schema:
         "description": "1-based column number",
         "type": "integer"
       },
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: false.",
+        "type": "boolean"
+      },
       "cursor":
       {
         "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
@@ -1425,6 +1492,11 @@ schema:
           "project_production_files",
           "project_test_files"
         ],
+        "type": "string"
+      },
+      "simpleName":
+      {
+        "description": "Simple class/interface name (e.g. \"UserService\"). Plugin auto-resolves to the first matching declaration in project scope — eliminates the ide_find_class round-trip. If multiple classes share the name, the tool returns an error listing them for disambiguation.",
         "type": "string"
       },
       "symbol":
@@ -1632,6 +1704,11 @@ schema:
   {
     "properties":
     {
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.",
+        "type": "boolean"
+      },
       "cursor":
       {
         "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",

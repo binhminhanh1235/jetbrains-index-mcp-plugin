@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Batch diagnostics (`ide_batch_diagnostics`)** — Run code inspections and retrieve diagnostics on multiple files in a single MCP call, reducing round trips when analyzing cross-file changes.
+- **Batch import optimization (`ide_batch_optimize_imports`)** — Optimize imports across multiple files in a single operation.
+- **Quick signature inspection (`ide_get_signature`)** — Retrieve method, function, or class signatures directly without reading the entire file.
+- **Project architecture overview (`ide_get_project_overview`)** — Get a structured summary of modules, detected languages, frameworks, main packages, and application entry points.
+- **Module and library dependencies (`ide_get_dependencies`)** — Inspect module dependencies and external libraries with scopes (`COMPILE`, `TEST`, `RUNTIME`).
+- **Single-call change verification (`ide_verify_change`)** — Verify file modifications by syncing VFS, checking compiler/syntax errors, and optionally executing nearby tests in a single round-trip.
+- **Apply quick fixes (`ide_apply_quick_fix`)** — Apply an available quick fix or intention action at a specific position in an open file.
+- **Compact mode for search tools (`ide_find_class`, `ide_find_symbol`, `ide_find_usages`)** — Optional `compact: true` parameter reduces output payload size and token usage by 50–70%.
+- **Simple name resolution for `ide_find_usages`** — Optional `simpleName` parameter enables direct class lookup without requiring a preceding `ide_find_class` call.
+
 ### Changed
 
 - **`ide_restart` is no longer described as a terminal step** ([#407](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/407)) — the tool description, the bundled companion skill, `USAGE.md`, and `README.md` now say the MCP server is down only while the IDE relaunches: poll `ide_index_status` until it answers, then continue. Streamable HTTP clients need no reconnect (every call is an independent POST); legacy SSE clients must reopen the stream; symbol handles and search cursors issued before the restart are invalid afterwards.

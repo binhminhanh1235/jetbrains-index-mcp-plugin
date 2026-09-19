@@ -731,3 +731,24 @@ data class VerifyChangeResult(
     val testRun: RunTestsResult? = null,
     val durationMs: Long
 )
+
+// Compact responses for token reduction
+@Serializable
+data class CompactFindUsagesResult(
+    val usages: List<String>,
+    val totalCount: Int,
+    val truncated: Boolean = false,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val resolvedSymbol: String? = null,
+    val totalIsExact: Boolean = true
+)
+
+@Serializable
+data class CompactSymbolResult(
+    val symbols: List<String>,
+    val totalCount: Int,
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false
+)
