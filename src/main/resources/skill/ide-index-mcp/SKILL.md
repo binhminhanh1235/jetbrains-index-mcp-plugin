@@ -27,10 +27,10 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Need | Use |
 |------|-----|
 | Code navigation, search, diagnostics, rename, move, run/list tests | `mcp__intellij-index__*` |
-| Build | `ide_build_project` (this plugin, disabled by default — returns structured errors/warnings); `mcp__intellij__*` only when it is not enabled |
+| Build | `ide_build_project` (this plugin — returns structured errors/warnings); `mcp__intellij__*` only when it is not enabled |
 | Terminal, run non-test processes, formatting beyond code style | `mcp__intellij__*` only |
 
-**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ. If your target project is not open but another one is, call `ide_open_project` with the working directory path — note it is disabled by default and must be enabled in Settings → Tools → Index MCP Server → Exposed Tools, and it requires at least one project to already be open (as the JSON-RPC context). IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Only ask the user to open a project manually when zero projects are open or `ide_open_project` is disabled.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
+**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ. If your target project is not open but another one is, call `ide_open_project` with the working directory path (requires at least one project to already be open as the JSON-RPC context). IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Only ask the user to open a project manually when zero projects are open.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
 
 ## Core Rule
 
@@ -99,7 +99,7 @@ Omit `paths` to sync the entire project.
 
 ## Git Worktrees
 
-When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or any checkout outside the main `.idea` directory), **call `ide_open_project` with the worktree path before using any IDE tool** (it is disabled by default — see the note above about enabling it in settings). IntelliJ does NOT require `.idea` — it opens any directory, indexes it, and provides full code intelligence. Never skip IDE tools because a directory "has no `.idea`" — that is not a prerequisite.
+When working in a git worktree (e.g., `/project/.claude/worktrees/agent-xyz` or any checkout outside the main `.idea` directory), **call `ide_open_project` with the worktree path before using any IDE tool**. IntelliJ does NOT require `.idea` — it opens any directory, indexes it, and provides full code intelligence. Never skip IDE tools because a directory "has no `.idea`" — that is not a prerequisite.
 
 ```json
 { "path": "/absolute/path/to/worktree" }
@@ -130,7 +130,7 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 
 ### "I need to understand what X is"
 1. `ide_get_signature` - quick signature (parameters, return type, modifiers) without reading the file
-2. `ide_symbol_info` - resolved signature + doc comment without reading the file (disabled by default)
+2. `ide_symbol_info` - resolved signature + doc comment without reading the file
 3. `ide_find_definition` - jump to source
 4. `ide_type_hierarchy` - inheritance chain
 5. `ide_find_super_methods` - what interface/base method it implements
@@ -151,14 +151,14 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 4. `ide_move_file` - move file and let the IDE apply semantic updates when that language/backend supports them
 5. `ide_refactor_safe_delete` - preview/delete an exact symbol target or file with usage checking (Java/Kotlin only)
 6. `ide_batch_optimize_imports` - optimize imports across multiple files in a single round-trip
-7. `ide_replace_text_in_file`, `ide_reformat_code` - apply project code style (disabled by default)
+7. `ide_replace_text_in_file`, `ide_reformat_code` (disabled by default) - apply project code style
 
 ### "I need to check for problems"
 1. `ide_diagnostics` - compiler errors/warnings for one `file` or a small relative/in-project-absolute `files` batch; inspect each `state`/`reason`, and use `maxProblems` to bound output. Quick fixes and ranges are single-file only (plus build/test results)
 2. `ide_batch_diagnostics` - compiler errors/warnings across multiple files in a single call without syncing
 3. `ide_apply_quick_fix` - apply an available quick fix or intention action at a position in an open file
 4. `ide_verify_change` - verify a modified file: syncs VFS, checks compiler errors, and optionally runs nearby tests
-5. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll (disabled by default)
+5. `ide_project_diagnostics` - batch/project scope including unopened files, with fail-closed coverage metadata (`complete` flag, per-file states); long analyses return an `analysisId` to poll
 
 ### "I need to find implementations of an interface"
 1. `ide_find_implementations` - cursor on interface/abstract class/method
@@ -195,17 +195,15 @@ When multiple projects are open simultaneously, the lifecycle manager sleeps and
 
 **States:** `active` (full IDE) → `background` (Power Save on) → `dormant` (editor tabs closed until the window regains focus, PSI cache freed) → `closed` (fully unloaded). Every MCP tool call restarts a project's idle countdown. Projects auto-reopen transparently when an MCP tool targets a closed project.
 
-`ide_project_status` is the read-only entry point — **enabled by default**. Use it to see all open and managed projects and their current modes.
+`ide_project_status` and `ide_get_project_modes` are enabled by default. Other lifecycle action tools are disabled by default:
 
-All lifecycle action tools are disabled by default:
-
-`ide_enroll_all_projects`, `ide_get_project_modes`, `ide_lifecycle_log`, `ide_release_all_projects`, `ide_release_project`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_project_mode`
+`ide_enroll_all_projects`, `ide_lifecycle_log`, `ide_release_all_projects`, `ide_release_project`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_project_mode`
 
 ## Disabled-by-Default Tools
 
 These tools exist but are disabled by default. They are omitted from `tools/list`, and direct `tools/call` requests are rejected until the user enables them in IDE settings (Settings → Tools → Index MCP Server → Exposed Tools):
 
-`ide_build_project`, `ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_create_file`, `ide_create_module`, `ide_edit_member`, `ide_enroll_all_projects`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_insert_member`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_link_build_system`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_project_diagnostics`, `ide_read_file`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_reload_project`, `ide_replace_member`, `ide_replace_text_in_file`, `ide_restart`, `ide_run_tests`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`, `ide_structural_search_replace`, `ide_symbol_info`
+`ide_change_signature`, `ide_close_project`, `ide_convert_java_to_kotlin`, `ide_enroll_all_projects`, `ide_insert_member`, `ide_install_plugin`, `ide_lifecycle_log`, `ide_link_build_system`, `ide_reformat_code`, `ide_release_all_projects`, `ide_release_project`, `ide_replace_member`, `ide_set_all_project_modes`, `ide_set_lifecycle_log_file`, `ide_set_power_save_mode`, `ide_set_project_mode`
 
 Note: `ide_restart` is not a terminal step. The MCP server is down only while the IDE relaunches (usually well under a minute): poll `ide_index_status` until it answers, then continue. If nothing answers after a few minutes the restart was probably intercepted (for example by a save dialog) — report it instead of polling forever.
 Note: after a restart, Streamable HTTP clients need no reconnect (every call is an independent POST) but legacy SSE clients must reopen the `/index-mcp/sse` stream; symbol handles and search cursors issued before the restart are invalid; and after `ide_install_plugin`, refresh the tool list so changed schemas are picked up.

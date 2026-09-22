@@ -73,7 +73,7 @@ class ProjectWindowToolsUnitTest : TestCase() {
     fun testProjectWindowToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_close_project must be opt-in", defaults.contains(ToolNames.CLOSE_PROJECT))
-        assertTrue("ide_open_project must be opt-in", defaults.contains(ToolNames.OPEN_PROJECT))
+        assertFalse("ide_open_project is enabled by default", defaults.contains(ToolNames.OPEN_PROJECT))
         assertTrue("ide_set_power_save_mode must be opt-in", defaults.contains(ToolNames.SET_POWER_SAVE_MODE))
     }
 
@@ -86,9 +86,9 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertTrue(required == null || required.isEmpty())
     }
 
-    fun testReloadProjectToolIsDisabledByDefault() {
+    fun testReloadProjectToolIsEnabledByDefault() {
         val defaults = McpSettings.State().disabledTools
-        assertTrue("ide_reload_project must be opt-in by default", defaults.contains(ToolNames.RELOAD_PROJECT))
+        assertFalse("ide_reload_project is enabled by default", defaults.contains(ToolNames.RELOAD_PROJECT))
     }
 
     fun testImportModulesToolName() {
@@ -101,9 +101,9 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertTrue("paths must be required", required!!.any { it.jsonPrimitive.content == "paths" })
     }
 
-    fun testImportModulesToolIsDisabledByDefault() {
+    fun testImportModulesToolIsEnabledByDefault() {
         val defaults = McpSettings.State().disabledTools
-        assertTrue("ide_import_modules must be opt-in by default", defaults.contains(ToolNames.IMPORT_MODULES))
+        assertFalse("ide_import_modules is enabled by default", defaults.contains(ToolNames.IMPORT_MODULES))
     }
 
     fun testOpenWorkspaceToolName() {
@@ -124,8 +124,8 @@ class ProjectWindowToolsUnitTest : TestCase() {
         assertEquals("modules items should be string type", "string", itemsSchema?.get("type")?.jsonPrimitive?.content)
     }
 
-    fun testOpenWorkspaceToolIsDisabledByDefault() {
+    fun testOpenWorkspaceToolIsEnabledByDefault() {
         val defaults = McpSettings.State().disabledTools
-        assertTrue("ide_open_workspace must be opt-in by default", defaults.contains(ToolNames.OPEN_WORKSPACE))
+        assertFalse("ide_open_workspace is enabled by default", defaults.contains(ToolNames.OPEN_WORKSPACE))
     }
 }

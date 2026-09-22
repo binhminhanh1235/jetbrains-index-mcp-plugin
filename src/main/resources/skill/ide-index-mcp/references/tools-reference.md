@@ -108,7 +108,7 @@ Go to where a symbol is defined.
 **Returns**: `{ symbolId, file, line, column, preview, symbolName, astPath }`
 Handles: packages, compiled classes, library sources (jar: URLs).
 
-### ide_symbol_info (disabled by default)
+### ide_symbol_info
 Resolved signature and documentation of the symbol at a position — the declaration facts
 `ide_find_definition` cannot give, because its preview is source text with unresolved short type
 names and no doc comment.
@@ -242,7 +242,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 **Returns**: `{ implementations: [{symbolId?, name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
 **Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
 
-### ide_find_symbol (disabled by default)
+### ide_find_symbol
 Search for any code symbol (classes, methods, fields, functions) by name.
 
 | Parameter | Type | Required | Description |
@@ -337,7 +337,7 @@ Large legacy trees retain all nodes but may omit optional handles after the resp
 the root keeps its handle. Use bounded pages to obtain handles for every returned page.
 **Pagination**: Without `maxNodes`/`cursor`, legacy nested trees and limits remain. Explicit pages expose traversal-local `nodeId`, `parentId`, and `depth` for the first-discovery tree; `returnedNodes` excludes the root. Type `traversal` preserves combined BFS order. Follow `cursor` while present. Retention limits return the computed page with `hasMore=true`, no cursor, and `truncationReason`; narrow the query to continue. Cursors are session/project-bound, expire after ten idle minutes, and retain at most 128 snapshots overall and ten per traversal. Handles refresh on every page.
 
-### ide_file_structure (disabled by default)
+### ide_file_structure
 
 Get hierarchical file structure like IDE's Structure panel. Each element includes both start and end line numbers (e.g., `(lines 42-65)` for multi-line elements, `(line 42)` for single-line elements).
 
@@ -362,7 +362,7 @@ Handles are limited to 100 per response by default; `maxSymbolIds` can lower tha
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
-### ide_read_file (disabled by default)
+### ide_read_file
 Read file content by path or qualified name, including library/jar sources.
 
 | Parameter | Type | Required | Description |
@@ -406,7 +406,7 @@ Get code diagnostics from multiple sources: one `file` or a small `files` batch,
 **Notes**: File paths preserve literal leading/trailing whitespace. Single-file mode keeps legacy top-level metadata and supports intentions/range filters. Multi-file entries use `analyzed`, `timed_out`, `failed`, `skipped` (not eligible), `not_analyzed` (not started before the shared deadline), or `not_found`; path resolution consumes the shared deadline, and aliases/duplicates are resolved once. Open files use fresh daemon highlights; closed files use public batch analysis. The complete single-file operation is timeout-bounded too, including refresh, PSI setup, and analysis-lock waits. A daemon that reports it did not run can fall back to batch analysis within the remaining budget; a daemon that consumes the timeout does not start a second batch budget.
 **Severity levels**: `ERROR`, `WARNING`, `WEAK_WARNING`
 
-### ide_project_diagnostics (disabled by default)
+### ide_project_diagnostics
 Analyze many files — up to the whole project, including files not open in any editor — with fail-closed coverage metadata. Every file in scope gets exactly one coverage state (`analyzed`, `timed_out`, `failed`, `skipped`, `not_analyzed`) and the top-level `complete` flag is true only when every considered file was analyzed, so an empty `problems` list can never be mistaken for a clean project when analysis was partial.
 
 Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If analysis is still running when the wait budget ends, the call returns `{"status": "running", "analysisId": "..."}` while analysis continues in the IDE — call the tool again with that `analysisId` to keep waiting. Only one analysis runs per project at a time.
@@ -533,7 +533,7 @@ Reformat code per project style (.editorconfig, IDE settings). Equivalent to Ctr
 
 **Returns**: `{ success, affectedFiles, changesCount, message }`
 
-### ide_optimize_imports (disabled by default)
+### ide_optimize_imports
 Optimize imports in a file: remove unused imports and organize remaining imports according to project code style. Equivalent to the IDE's "Optimize Imports" action (Ctrl+Alt+O / Cmd+Opt+O). Does NOT reformat code. Supports IDE undo (Ctrl+Z).
 
 | Parameter | Type | Required | Description |
@@ -564,7 +564,7 @@ Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Handles cl
 **Returns**: `{ files: [{requestedPath, status, kotlinFile?, linesConverted?, javaFileDeleted?, reason?}], summary: {totalRequested, converted, skipped, failed} }`
 **status values**: `CONVERTED`, `SKIPPED`, `FAILED`
 
-### ide_structural_search_replace (disabled by default)
+### ide_structural_search_replace
 Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted.
 
 | Parameter | Type | Required | Description |
@@ -614,7 +614,7 @@ changes to avoid breaking the override contract.
 **Returns**: `{ success, file, message, affectedFiles, changesCount, updatedSymbol? }`
 **Returns with `dryRun: true`**: common preview shape; `plannedChange` contains `{operation: "changeSignature", before: {...}, requested: {...}}`.
 
-### ide_create_file (disabled by default)
+### ide_create_file
 Create a new source file with content, immediately indexed by IntelliJ. The file is created through IntelliJ's VFS, so it is instantly available for `ide_find_references`, `ide_refactor_rename`, `ide_edit_member`, and all other IDE tools without needing `ide_sync_files`. Use this instead of the Write tool for creating `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. The file must not already exist.
 
 | Parameter | Type | Required | Description |
@@ -625,7 +625,7 @@ Create a new source file with content, immediately indexed by IntelliJ. The file
 
 **Returns**: `{ success, file, message }`
 
-### ide_replace_text_in_file (disabled by default)
+### ide_replace_text_in_file
 Find and replace text in a file using IntelliJ's Document API. Performs plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to the index, PSI, and all other IDE tools without needing `ide_sync_files`. Use this for mechanical text substitutions — e.g., replacing a method call wrapper, updating import paths, or renaming a local pattern. For structural refactoring (renaming symbols across the project), use `ide_refactor_rename` instead.
 
 | Parameter | Type | Required | Description |
@@ -639,7 +639,7 @@ Find and replace text in a file using IntelliJ's Document API. Performs plain te
 
 **Returns**: `{ success, file, replacements, message }`
 
-### ide_edit_member (disabled by default, Java, Kotlin)
+### ide_edit_member (Java, Kotlin)
 Replace an entire member declaration (signature + body) with new content.
 
 | Parameter | Type | Required | Description |
@@ -756,7 +756,7 @@ Get project dependencies from the IDE's module model, providing module-level and
 
 **Returns**: `{ module, moduleDependencies: [{name, scope, isExported}], libraryDependencies: [{name, groupId?, artifactId?, version?, scope, isExported}], totalCount }`
 
-### ide_build_project (disabled by default)
+### ide_build_project
 Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)).
 
 Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues in the IDE — call the tool again with that `buildId` to keep waiting.
@@ -773,7 +773,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's request 
 **Returns**: `{ success, aborted, errors?, warnings?, buildMessages: [{message, file, line, column, severity}], truncated, rawOutput?, durationMs }`, or while still executing: `{ status: "running", buildId, elapsedSeconds, timeoutSeconds?, message }`
 Note: `errors`/`warnings` are `null` when no messages were captured (not 0).
 
-### ide_list_tests (disabled by default)
+### ide_list_tests
 List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
 
 | Parameter | Type | Required | Description |
@@ -783,7 +783,7 @@ List all test methods/classes discovered by the IDE's test framework extension p
 
 **Returns**: `{ tests: [{framework, className, methodName, displayName, file, line}], count, truncated }`
 
-### ide_run_tests (disabled by default)
+### ide_run_tests
 Run tests via the IDE's run configuration infrastructure. Results are read from the IDE's test runner, so they work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Targeting by class/method FQN creates a run config for Java/Kotlin only; for other languages pass an existing run-configuration name. Returns structured pass/fail results with per-test console output.
 
 Each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues in the IDE — call the tool again with that `runId` (and no `target`) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): when it expires the process is killed and the next poll reports `timedOut: true`.
@@ -801,7 +801,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's own requ
 
 **Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, output?, tests: [{name, status, errorMessage?, stackTrace?, output?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`. Each test's `output` is the console output it printed (stdout/stderr merged in print order, ANSI stripped, system messages excluded); the top-level `output` carries output not attributed to any test (framework/suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed mid-run — e.g. at `timeoutSeconds` — which gets no per-test entry). `stackTrace` is set for failed/errored tests; very long traces and outputs are trimmed in the middle (for traces that keeps the throw site and the root cause). On mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
 
-### ide_reload_project (disabled by default)
+### ide_reload_project
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
 
 | Parameter | Type | Required | Description |
@@ -820,7 +820,7 @@ Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. U
 
 **Returns**: text confirming link status ("Maven project linked — dependency resolution scheduled.", "already linked", or error).
 
-### ide_import_modules (disabled by default, Maven plugin only)
+### ide_import_modules (Maven plugin only)
 Import one or more external Maven project directories as modules into the current IntelliJ project window. Already imported module roots are skipped.
 
 | Parameter | Type | Required | Description |
@@ -830,7 +830,7 @@ Import one or more external Maven project directories as modules into the curren
 
 **Returns**: text summary of imported, skipped, and failed module paths.
 
-### ide_open_workspace (disabled by default, Maven plugin only)
+### ide_open_workspace (Maven plugin only)
 Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence. Creates a temporary aggregator POM with relative module paths.
 
 | Parameter | Type | Required | Description |
@@ -863,7 +863,7 @@ Close an open project window and free its memory. Non-blocking; returns once the
 
 **Returns**: text confirmation, e.g. `Project 'name' is closing.`
 
-### ide_create_module (disabled by default)
+### ide_create_module
 Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
 
 | Parameter | Type | Required | Description |
@@ -875,7 +875,7 @@ Add a directory as an IntelliJ module with a content root, enabling code intelli
 
 **Returns**: text confirmation with module name, content root path, module file path, count of excluded directories, and an async-indexing note.
 
-### ide_open_project (disabled by default)
+### ide_open_project
 Open a project by absolute path and wait until indexing completes. Idempotent: returns immediately if the project is already open. May require a human to answer the IDE's "Trust project?" dialog for first-time projects.
 
 | Parameter | Type | Required | Description |
@@ -903,7 +903,7 @@ Report the status of all known projects in one table. Combines open projects (cu
 
 **Returns**: `{ projects: [{name, path, open, managed, mode?}], summary: {total, open, managed, open_not_managed, managed_closed, lifecycle_enabled, note?} }`
 
-### ide_get_project_modes (disabled by default)
+### ide_get_project_modes
 List all MCP-managed projects and their current lifecycle mode (active, background, dormant, or closed).
 
 | Parameter | Type | Required | Description |
@@ -985,7 +985,7 @@ Enable or disable writing lifecycle events to the log file on disk. The in-memor
 
 ## Editor Tools
 
-### ide_get_active_file (disabled by default)
+### ide_get_active_file
 Get currently active file(s) in editor with cursor position and selection.
 
 | Parameter | Type | Required | Description |
@@ -994,7 +994,7 @@ Get currently active file(s) in editor with cursor position and selection.
 
 **Returns**: `{ activeFiles: [{file, line, column, selectedText, language}] }`
 
-### ide_open_file (disabled by default)
+### ide_open_file
 Open a file in the editor with optional navigation.
 
 | Parameter | Type | Required | Description |
@@ -1020,7 +1020,7 @@ Install a plugin zip into the IDE, replacing any existing version. Auto-detects 
 
 **Returns**: text confirmation with the installed plugin id and zip name.
 
-### ide_restart (disabled by default)
+### ide_restart
 Restart the IDE. Not a terminal step: the MCP server is down only while the IDE relaunches (usually well under a minute) and comes back on its own once the previous projects reopen. Poll `ide_index_status` until it answers, then continue. Streamable HTTP clients need no reconnect — every call is an independent POST — but legacy SSE clients must reopen the `/index-mcp/sse` stream. Symbol handles and search cursors issued before the restart are invalid afterwards; after `ide_install_plugin`, refresh the tool list so changed schemas are picked up. If nothing answers after a few minutes, the restart was probably intercepted (for example by a save dialog) — report it instead of polling forever.
 
 | Parameter | Type | Required | Description |

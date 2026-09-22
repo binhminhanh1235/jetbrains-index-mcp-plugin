@@ -18,6 +18,7 @@
 
 ### Changed
 
+- **Default-enabled tools expanded** — 22 previously opt-in tools are now enabled by default upon installation: `ide_build_project`, `ide_create_file`, `ide_create_module`, `ide_edit_member`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_project_diagnostics`, `ide_read_file`, `ide_reload_project`, `ide_replace_text_in_file`, `ide_restart`, `ide_run_tests`, `ide_structural_search_replace`, and `ide_symbol_info`. Only 16 high-impact/dangerous tools remain disabled by default. Existing configurations are automatically migrated (settings schema version 10) to enable these tools.
 - **`ide_restart` is no longer described as a terminal step** ([#407](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/407)) — the tool description, the bundled companion skill, `USAGE.md`, and `README.md` now say the MCP server is down only while the IDE relaunches: poll `ide_index_status` until it answers, then continue. Streamable HTTP clients need no reconnect (every call is an independent POST); legacy SSE clients must reopen the stream; symbol handles and search cursors issued before the restart are invalid afterwards.
 
 ## [5.17.0] - 2026-09-17

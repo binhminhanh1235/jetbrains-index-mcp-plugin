@@ -38,17 +38,17 @@ Advanced tools work across multiple languages based on available plugins:
 - **Verify Change** - Fast verification of a file change by syncing VFS, running diagnostics, and optionally executing nearby tests
 - **Get Project Overview** - Structured overview of project architecture (modules, languages, frameworks, entry points)
 - **Get Dependencies** - Inspect module and library dependencies with scope filtering
-- **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes (disabled by default)
-- **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring (disabled by default)
-- **Open Workspace** - Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence (disabled by default)
-- **Build Project** - Trigger IDE build with structured error/warning output (disabled by default)
+- **Reload Project** - Refresh linked Maven/Gradle build models after dependency or build-file changes
+- **Import Modules** - Import external Maven project directories as modules for cross-project code intelligence and refactoring
+- **Open Workspace** - Scan a root directory for Maven projects, or provide an explicit list of Maven project paths, and open them all in one IntelliJ window with full cross-project code intelligence
+- **Build Project** - Trigger IDE build with structured error/warning output
 - **Find Class** - Fast class/interface search by name with camelCase matching
 - **Find File** - Fast file search by name using IDE's file index
-- **Symbol Search** - Find code symbols by name with IntelliJ Go to Symbol matching (disabled by default)
+- **Symbol Search** - Find code symbols by name with IntelliJ Go to Symbol matching
 - **Search Text** - Text search using IntelliJ Find in Files (substring and regex matching)
-- **Read File** - Read file content by path or qualified name, including library sources (disabled by default)
-- **Open File** - Open a file in the editor with optional navigation (disabled by default)
-- **Get Active File** - Get currently active editor file(s) with cursor position (disabled by default)
+- **Read File** - Read file content by path or qualified name, including library sources
+- **Open File** - Open a file in the editor with optional navigation
+- **Get Active File** - Get currently active editor file(s) with cursor position
 
 **Extended Tools (Language-Aware)**
 These tools activate based on installed language plugins:
@@ -56,15 +56,15 @@ These tools activate based on installed language plugins:
 - **Call Hierarchy** - Trace method/function call relationships
 - **Find Implementations** - Discover interface/abstract implementations
 - **Find Super Methods** - Navigate method override hierarchies
-- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees and Markdown heading outlines; shows start and end line for each element (disabled by default)
+- **File Structure** - View hierarchical file structure like IDE's Structure view, including PHP Structure View trees and Markdown heading outlines; shows start and end line for each element
 
 **Refactoring Tools**
 - **Rename Refactoring** - Safe renaming with automatic related element renaming (getters/setters, overriding methods) - works across ALL languages, fully headless
 - **Move File** - Move files with IDE-aware reference and package updates when supported
 - **Reformat Code** - Reformat using project code style with import optimization (disabled by default)
-- **Optimize Imports** - Remove unused imports and organize imports without reformatting (disabled by default)
+- **Optimize Imports** - Remove unused imports and organize imports without reformatting
 - **Batch Optimize Imports** - Optimize imports across multiple files in a single call
-- **Edit Member** - Replace an entire member declaration (signature + body) with new content (Java/Kotlin, disabled by default)
+- **Edit Member** - Replace an entire member declaration (signature + body) with new content (Java/Kotlin)
 - **Insert Member** - Insert a new member at a structural position (Java/Kotlin, disabled by default)
 - **Replace Member** - Replace method body or field initializer only, preserving the signature (Java/Kotlin, disabled by default)
 - **Safe Delete** - Remove code with usage checking (Java/Kotlin only)
@@ -275,46 +275,46 @@ These tools work in all supported JetBrains IDEs.
 |------|-------------|
 | `ide_find_references` | Find all references to a symbol across the entire project, optionally restricted to path globs via `paths` |
 | `ide_find_definition` | Find the definition/declaration location of a symbol; accepts top-level `symbolId`, position, or qualified-name selectors plus an equivalent nested `target`, and returns a reusable `symbolId` |
-| `ide_symbol_info` | Resolved signature and documentation for a symbol — accepts the same flat or nested targets as `ide_find_definition`; parameter and return types expanded to fully qualified names (Java), structured `parameters`, modifiers, containing declaration, and the doc comment as plain text, without reading the file *(disabled by default)* |
+| `ide_symbol_info` | Resolved signature and documentation for a symbol — accepts the same flat or nested targets as `ide_find_definition`; parameter and return types expanded to fully qualified names (Java), structured `parameters`, modifiers, containing declaration, and the doc comment as plain text, without reading the file |
 | `ide_get_signature` | Get the signature (parameters, return type, modifiers) of a method, function, or class at a position without reading the entire file |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
-| `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching *(disabled by default)* |
+| `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching |
 | `ide_search_text` | Text search using IntelliJ Find in Files with context filtering (substring and regex matching), optionally restricted to path globs via `paths` |
 | `ide_diagnostics` | Analyze one `file` or up to 100 supplied `files` under one shared timeout budget, with per-file coverage states and configurable `maxProblems`; accepts relative or in-project absolute paths, plus optional build/test results; intentions are best-effort and single-file only |
 | `ide_batch_diagnostics` | Run diagnostics on multiple files in a single call with configurable severity and error/test filtering |
 | `ide_apply_quick_fix` | Apply an available quick fix or intention action at a specific position in an open file |
-| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata: a `complete` flag plus per-file `analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed` states, so an empty result can never be mistaken for a clean project. Long analyses return an `analysisId` to poll *(disabled by default)* |
+| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata: a `complete` flag plus per-file `analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed` states, so an empty result can never be mistaken for a clean project. Long analyses return an `analysisId` to poll |
 | `ide_index_status` | Check if the IDE is in dumb mode or smart mode |
 | `ide_sync_files` | Force sync IDE's virtual file system and PSI cache for relative or in-project absolute paths, including deleted targets via their nearest existing parent |
 | `ide_verify_change` | Fast verification of a file change by syncing VFS, checking compiler/syntax diagnostics, and optionally executing nearby test files |
 | `ide_get_project_overview` | Structured overview of project architecture: modules, source roots, detected languages, frameworks, build systems, top-level packages, and entry points |
 | `ide_get_dependencies` | Get module and library dependencies from the IDE module model with scope filtering (`all`, `compile`, `test`, `runtime`) and optional transitive inclusion |
-| `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` *(disabled by default)* |
+| `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` |
 | `ide_link_build_system` | Link an unlinked Maven/Gradle project for dependency resolution *(disabled by default)* |
-| `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(disabled by default, requires Maven plugin)* |
-| `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(disabled by default, requires Maven plugin)* |
-| `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)) with structured errors. Long builds return a `buildId` to poll, so the MCP client's request timeout is never hit *(disabled by default)* |
-| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit *(disabled by default)* |
-| `ide_read_file` | Read file content by path or qualified name, including library/jar sources *(disabled by default)* |
-| `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position *(disabled by default)* |
-| `ide_open_file` | Open a file in the editor with optional line/column navigation *(disabled by default)* |
+| `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(requires Maven plugin)* |
+| `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(requires Maven plugin)* |
+| `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)) with structured errors. Long builds return a `buildId` to poll, so the MCP client's request timeout is never hit |
+| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit |
+| `ide_read_file` | Read file content by path or qualified name, including library/jar sources |
+| `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position |
+| `ide_open_file` | Open a file in the editor with optional line/column navigation |
 | `ide_set_power_save_mode` | Enable or disable IDE Power Save Mode — suspends background inspections while keeping the index and all code intelligence operational *(disabled by default)* |
 | `ide_close_project` | Close an open project window and free its memory — refuses to close the last open project *(disabled by default)* |
-| `ide_create_module` | Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.) *(disabled by default)* |
-| `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open *(disabled by default)* |
+| `ide_create_module` | Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.) |
+| `ide_open_project` | Open a project by absolute path and wait until indexing completes (configurable timeout); returns immediately if already open |
 | `ide_install_plugin` | Install a plugin zip into the IDE, replacing any existing version — auto-detects `build/distributions/*.zip` when no path is given *(disabled by default)* |
-| `ide_restart` | Restart the IDE — the MCP server is down only while the IDE relaunches; poll `ide_index_status` until it answers, then continue. Call after `ide_install_plugin` *(disabled by default)* |
+| `ide_restart` | Restart the IDE — the MCP server is down only while the IDE relaunches; poll `ide_index_status` until it answers, then continue. Call after `ide_install_plugin` |
 | `ide_refactor_rename` | Preview with `dryRun`, or rename a symbol by `symbolId`/position (or a file) and update all references across the project (all languages; use `targetType` for explicit file mode) |
 | `ide_move_file` | Move a file to a new directory, applying language-aware reference/package updates when the IDE provides a semantic move backend |
 | `ide_reformat_code` | Reformat code using project code style with import optimization *(disabled by default)* |
-| `ide_optimize_imports` | Optimize imports without reformatting code *(disabled by default)* |
+| `ide_optimize_imports` | Optimize imports without reformatting code |
 | `ide_batch_optimize_imports` | Optimize imports in multiple files in one call, removing unused imports and organizing per code style |
-| `ide_structural_search_replace` | Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine, optionally restricted to path globs via `paths` (Java, Kotlin) *(disabled by default)* |
-| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ — use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files *(disabled by default)* |
-| `ide_replace_text_in_file` | Find and replace text in a file using IntelliJ's Document API — changes immediately visible to index and PSI without `ide_sync_files` *(disabled by default)* |
+| `ide_structural_search_replace` | Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine, optionally restricted to path globs via `paths` (Java, Kotlin) |
+| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ — use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files |
+| `ide_replace_text_in_file` | Find and replace text in a file using IntelliJ's Document API — changes immediately visible to index and PSI without `ide_sync_files` |
 | `ide_change_signature` | Preview or change a Java/Kotlin JVM method signature by exact/nested target, updating callers automatically *(disabled by default)* |
-| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) *(disabled by default)* |
+| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) |
 | `ide_insert_member` | Insert a new member at a structural position in a class or file (Java, Kotlin) *(disabled by default)* |
 | `ide_replace_member` | Replace a method body or field initializer only, preserving the signature (Java, Kotlin) *(disabled by default)* |
 
@@ -328,7 +328,7 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze callers or callees in bounded, cursor-paginated breadth-first order, accepting and returning `symbolId` | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds` *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_file_structure` | Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -345,7 +345,7 @@ propagate through reflective handlers instead of completing an empty hierarchy.
 
 | Tool | Description |
 |------|-------------|
-| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(disabled by default, requires Java plugin)* |
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(requires Java plugin)* |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Preview or safely delete an exact/nested symbol target or file after checking usages (Java/Kotlin only) |
 
@@ -369,13 +369,13 @@ for structured declarations, and `includeSymbolIds=true` when exact handles are 
 
 ### Project Lifecycle Management Tools
 
-`ide_project_status` is enabled by default. All other lifecycle tools are disabled by default — enable them in Settings → Tools → Index MCP Server.
+`ide_project_status` and `ide_get_project_modes` are enabled by default. Other lifecycle tools are disabled by default — enable them in Settings → Tools → Index MCP Server.
 
 | Tool | Description | Default |
 |------|-------------|---------|
 | `ide_project_status` | Combined snapshot: every open project and every managed project with open/managed/mode per row | Enabled |
 | `ide_set_project_mode` | Set a project's lifecycle mode: `active`, `background`, `dormant`, or `closed` | Disabled |
-| `ide_get_project_modes` | List all managed projects and their current modes, including closed ones | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes, including closed ones | Enabled |
 | `ide_set_all_project_modes` | Set all managed projects to the same mode at once (active/background/dormant) | Disabled |
 | `ide_enroll_all_projects` | Enroll every currently open project in lifecycle management | Disabled |
 | `ide_release_project` | Unenroll a project from lifecycle management | Disabled |

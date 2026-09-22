@@ -14,40 +14,40 @@ These tools work in every supported JetBrains IDE:
 |------|-------------|---------|
 | `ide_find_references` | Find all references to a symbol | Enabled |
 | `ide_find_definition` | Find symbol definition location | Enabled |
-| `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Disabled |
+| `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Enabled |
 | `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position | Enabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
-| `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
+| `ide_find_symbol` | Search code symbols by name | Enabled |
 | `ide_search_text` | Text search using IntelliJ Find in Files (substring + regex) | Enabled |
 | `ide_diagnostics` | Analyze one file or a bounded multi-file batch with per-file coverage states, plus optional build/test results | Enabled |
 | `ide_batch_diagnostics` | Run diagnostics on multiple files in a single call | Enabled |
 | `ide_apply_quick_fix` | Apply an available quick fix or intention action at a position in an open file | Enabled |
-| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata; long analyses return an `analysisId` to poll | Disabled |
+| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata; long analyses return an `analysisId` to poll | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
 | `ide_sync_files` | Force sync VFS/PSI cache for relative or in-project absolute paths, including deleted paths through existing parents | Enabled |
 | `ide_verify_change` | Verify a file change (sync VFS + diagnostics + optional nearby tests) | Enabled |
 | `ide_get_project_overview` | Structured overview of project architecture (modules, languages, frameworks, entry points) | Enabled |
 | `ide_get_dependencies` | Get module and library dependencies with scopes | Enabled |
-| `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
-| `ide_import_modules` | Import external Maven projects as modules | Disabled |
-| `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Disabled |
-| `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Disabled |
-| `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Disabled |
-| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Disabled |
-| `ide_read_file` | Read file content by path or qualified name | Disabled |
-| `ide_get_active_file` | Get currently active editor file(s) | Disabled |
-| `ide_open_file` | Open file in editor with navigation | Disabled |
+| `ide_reload_project` | Reload linked Maven/Gradle build models | Enabled |
+| `ide_import_modules` | Import external Maven projects as modules | Enabled |
+| `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Enabled |
+| `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Enabled |
+| `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Enabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Enabled |
+| `ide_read_file` | Read file content by path or qualified name | Enabled |
+| `ide_get_active_file` | Get currently active editor file(s) | Enabled |
+| `ide_open_file` | Open file in editor with navigation | Enabled |
 | `ide_refactor_rename` | Rename symbol with reference updates (all languages) | Enabled |
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
-| `ide_optimize_imports` | Optimize imports without reformatting code | Disabled |
+| `ide_optimize_imports` | Optimize imports without reformatting code | Enabled |
 | `ide_batch_optimize_imports` | Optimize imports in multiple files in one call | Enabled |
-| `ide_structural_search_replace` | Pattern-based code search and transformation (Java, Kotlin) | Disabled |
+| `ide_structural_search_replace` | Pattern-based code search and transformation (Java, Kotlin) | Enabled |
 | `ide_change_signature` | Preview or change a Java/Kotlin JVM method signature by exact/nested target, updating callers automatically | Disabled |
-| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ | Disabled |
-| `ide_replace_text_in_file` | Find and replace text using IntelliJ's Document API | Disabled |
-| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) | Disabled |
+| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ | Enabled |
+| `ide_replace_text_in_file` | Find and replace text using IntelliJ's Document API | Enabled |
+| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) | Enabled |
 | `ide_insert_member` | Insert a new member at a structural position (Java, Kotlin) | Disabled |
 | `ide_replace_member` | Replace method body or field initializer, preserving signature (Java, Kotlin) | Disabled |
 
@@ -61,13 +61,13 @@ These tools activate based on available language plugins:
 | `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
 | `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
 | `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Legacy file structure text; opt-in structured nodes and exact handles via `includeNodes`/`includeSymbolIds` *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_file_structure` | Legacy file structure text; opt-in structured nodes and exact handles via `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown |
 
 ### Java-Specific Tools
 
 | Tool | Description |
 |------|-------------|
-| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks *(disabled by default)* |
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
@@ -79,7 +79,7 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 |------|-------------|---------|
 | `ide_project_status` | Combined view of all open and managed projects with mode per row | Enabled |
 | `ide_set_project_mode` | Set a project's lifecycle mode (active/background/dormant/closed) | Disabled |
-| `ide_get_project_modes` | List all managed projects and their current modes | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes | Enabled |
 | `ide_set_all_project_modes` | Set all managed open projects to the same mode | Disabled |
 | `ide_enroll_all_projects` | Enroll all currently open projects in lifecycle management | Disabled |
 | `ide_release_project` | Remove a project from lifecycle management | Disabled |
@@ -88,9 +88,9 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 | `ide_set_lifecycle_log_file` | Enable or disable persistent lifecycle log file writes | Disabled |
 | `ide_set_power_save_mode` | Toggle Power Save Mode directly | Disabled |
 | `ide_close_project` | Close a project window | Disabled |
-| `ide_open_project` | Open a project by path and wait for indexing | Disabled |
+| `ide_open_project` | Open a project by path and wait for indexing | Enabled |
 | `ide_install_plugin` | Install a plugin zip into the IDE | Disabled |
-| `ide_restart` | Restart the IDE | Disabled |
+| `ide_restart` | Restart the IDE | Enabled |
 
 ---
 
@@ -1033,7 +1033,6 @@ in an editor, and are available only in single-file mode.
 ### ide_project_diagnostics
 
 > **Availability**: Universal Tool - works in all JetBrains IDEs
-> **Default**: Disabled - enable in Settings → Tools → Index MCP Server → Exposed Tools
 
 Analyzes many files — up to the whole project, including files not open in any editor — for code problems, with fail-closed coverage metadata (issue #246).
 
@@ -1525,8 +1524,6 @@ Provides module-level and library-level dependencies with scopes (`COMPILE`, `TE
 
 ### ide_reload_project
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Force-reload the project build model (Maven, Gradle, or both). Equivalent to clicking **"Reload All Maven Projects"** or **"Reload Gradle Project"** in the IDE.
 
 Use this after modifying `pom.xml`, `build.gradle`, `build.gradle.kts`, `settings.gradle`, or any dependency configuration file so that IntelliJ resolves the updated dependencies before running diagnostics or builds. The reload is asynchronous — IntelliJ resolves dependencies in the background.
@@ -1576,7 +1573,6 @@ Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. U
 
 ### ide_import_modules
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Requires**: Maven plugin
 
 Import one or more external Maven project directories as modules into the current IntelliJ window, enabling cross-project code intelligence and refactoring. Already imported module roots are skipped.
@@ -1611,7 +1607,6 @@ Imported 2 module(s):
 
 ### ide_open_workspace
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Requires**: Maven plugin
 
 Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
@@ -1662,8 +1657,6 @@ Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is ind
 ---
 
 ### ide_build_project
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMake (CLion)).
 
@@ -1721,8 +1714,6 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMa
 ---
 
 ### ide_run_tests
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages, failure stack traces, and console output.
 
@@ -1812,8 +1803,6 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 
 ### ide_read_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Read file content by file path or fully qualified class name.
 
 **Use when:**
@@ -1866,8 +1855,6 @@ Read file content by file path or fully qualified class name.
 
 ### ide_get_active_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Get the currently active file(s) open in the IDE editor, including split panes.
 
 **Use when:**
@@ -1913,8 +1900,6 @@ Get the currently active file(s) open in the IDE editor, including split panes.
 
 ### ide_open_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Open a file in the IDE editor with optional line/column navigation.
 
 **Use when:**
@@ -1957,8 +1942,6 @@ Open a file in the IDE editor with optional line/column navigation.
 ---
 
 ### ide_find_symbol
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Searches for code symbols (classes, interfaces, methods, fields, and functions) by name using the IDE's semantic index and IntelliJ's Go to Symbol matching.
 
@@ -2077,8 +2060,6 @@ For Markdown heading outlines, use `ide_file_structure`.
 
 ## Plugin Development
 
-> **Note**: Both tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
-
 ### ide_install_plugin
 
 > **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
@@ -2120,8 +2101,6 @@ Plugin 'com.example.my-plugin' installed from my-plugin-1.0.0.zip. Restart the I
 
 ### ide_restart
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Restart the IDE. The MCP server shuts down while the IDE relaunches and starts again on its own once the previous projects reopen. This is not a terminal step: the assistant should poll `ide_index_status` until it responds (usually well under a minute), then continue with follow-up calls.
 
 **Use when:**
@@ -2150,8 +2129,6 @@ Restart the IDE. The MCP server shuts down while the IDE relaunches and starts a
 ---
 
 ## Project Window Management
-
-> **Note**: All tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
 
 ### ide_set_power_save_mode
 
@@ -2236,8 +2213,6 @@ Project 'myproject' is closing.
 
 ### ide_create_module
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
 
 **Side effects:** Creates a `<name>.iml` file in the target directory and registers the module in `.idea/modules.xml`. To undo: Project Structure (Cmd+;) → Modules → select → minus button. Indexing of the new content root is async — call `ide_index_status` if subsequent tools hit dumb mode.
@@ -2290,8 +2265,6 @@ Note: indexing is async — call ide_index_status if subsequent tools hit dumb m
 ---
 
 ### ide_open_project
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
 
@@ -2624,8 +2597,6 @@ Reformat code according to the project's code style settings. Equivalent to the 
 
 ### ide_optimize_imports
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Optimize imports in a file: remove unused imports and organize the remaining imports according to the project code style. Equivalent to the IDE's "Optimize Imports" action (<kbd>Ctrl+Alt+O</kbd> / <kbd>Cmd+Opt+O</kbd>). Does **not** reformat code. Supports undo (Ctrl/Cmd+Z).
 
 **Use when:**
@@ -2714,8 +2685,6 @@ Replaces calling `ide_optimize_imports` multiple times with a single round-trip.
 
 ### ide_structural_search_replace
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Pattern-based code search and transformation using IntelliJ's Structural Search and Replace (SSR) engine. Matches code patterns structurally rather than textually — understands types, expressions, statements, and code structure.
 
 **Languages:** Java, Kotlin.
@@ -2784,8 +2753,6 @@ When `replacePattern` is omitted, the tool performs search-only and returns matc
 ---
 
 ### ide_edit_member
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Replace an entire member declaration (signature + body) with new content. The tool locates the member by name, optional parameter count, and optional line number, then replaces the complete declaration.
 
@@ -3003,8 +2970,6 @@ phase, save documents, or register undo.
 
 ### ide_create_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Create a new source file with content, immediately indexed by IntelliJ. The file is created through IntelliJ's VFS, so it is instantly available for `ide_find_references`, `ide_refactor_rename`, `ide_edit_member`, and all other IDE tools without needing `ide_sync_files`.
 
 Use this instead of the Write tool for creating `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. The file must not already exist.
@@ -3049,8 +3014,6 @@ Use this instead of the Write tool for creating `.java`, `.kt`, `.ts`, `.tsx`, `
 ---
 
 ### ide_replace_text_in_file
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Find and replace text in a file using IntelliJ's Document API. Performs plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to the index, PSI, and all other IDE tools without needing `ide_sync_files`.
 
@@ -3804,8 +3767,6 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 ### ide_file_structure
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
-
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
 **Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
@@ -3899,7 +3860,6 @@ These tools require the Java plugin and are only available in **IntelliJ IDEA** 
 
 ### ide_list_tests
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 > **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
 
 List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).

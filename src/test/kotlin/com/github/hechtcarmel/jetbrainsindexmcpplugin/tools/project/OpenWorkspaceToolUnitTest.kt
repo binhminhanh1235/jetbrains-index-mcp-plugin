@@ -34,8 +34,8 @@ class OpenWorkspaceToolUnitTest : TestCase() {
         assertEquals("1", modulesSchema?.get("minItems")?.jsonPrimitive?.content)
     }
 
-    fun testToolIsDisabledByDefault() {
-        assertTrue(ToolNames.OPEN_WORKSPACE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    fun testToolIsEnabledByDefault() {
+        assertFalse(ToolNames.OPEN_WORKSPACE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 
     fun testToolNameInAll() {

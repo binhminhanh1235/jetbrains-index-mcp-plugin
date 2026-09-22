@@ -9,61 +9,40 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 9
+    const val CURRENT_SCHEMA_VERSION = 10
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
-        ToolNames.BUILD_PROJECT,
+        ToolNames.CHANGE_SIGNATURE,
         ToolNames.CLOSE_PROJECT,
-        ToolNames.CREATE_MODULE,
-        ToolNames.IMPORT_MODULES,
-        ToolNames.LIST_TESTS,
-        ToolNames.RELOAD_PROJECT,
-        ToolNames.FILE_STRUCTURE,
-        ToolNames.FIND_SYMBOL,
-        ToolNames.OPEN_PROJECT,
-        ToolNames.OPEN_WORKSPACE,
-        ToolNames.READ_FILE,
-        ToolNames.GET_ACTIVE_FILE,
-        ToolNames.OPEN_FILE,
-        ToolNames.REFORMAT_CODE,
-        ToolNames.OPTIMIZE_IMPORTS,
         ToolNames.CONVERT_JAVA_TO_KOTLIN,
-        ToolNames.RUN_TESTS,
-        ToolNames.SET_POWER_SAVE_MODE,
-        ToolNames.INSTALL_PLUGIN,
-        ToolNames.RESTART_IDE,
         ToolNames.ENROLL_ALL_PROJECTS,
-        ToolNames.GET_PROJECT_MODES,
+        ToolNames.INSERT_MEMBER,
+        ToolNames.INSTALL_PLUGIN,
         ToolNames.LIFECYCLE_LOG,
         ToolNames.LIFECYCLE_LOG_FILE,
+        ToolNames.LINK_BUILD_SYSTEM,
+        ToolNames.REFORMAT_CODE,
         ToolNames.RELEASE_ALL_PROJECTS,
         ToolNames.RELEASE_PROJECT,
-        ToolNames.SET_ALL_PROJECT_MODES,
-        ToolNames.SET_PROJECT_MODE,
-        ToolNames.CHANGE_SIGNATURE,
-        ToolNames.CREATE_FILE,
-        ToolNames.REPLACE_TEXT_IN_FILE,
-        ToolNames.STRUCTURAL_SEARCH_REPLACE,
-        ToolNames.EDIT_MEMBER,
-        ToolNames.INSERT_MEMBER,
         ToolNames.REPLACE_MEMBER,
-        ToolNames.PROJECT_DIAGNOSTICS,
-        ToolNames.LINK_BUILD_SYSTEM,
-        ToolNames.SYMBOL_INFO,
+        ToolNames.SET_ALL_PROJECT_MODES,
+        ToolNames.SET_POWER_SAVE_MODE,
+        ToolNames.SET_PROJECT_MODE,
     )
 
-    // Add only newly introduced default-disabled tools here; old entries are snapshots
-    // so legacy states keep explicit enables for older tools.
+    // Historical migrations for remaining default-disabled tools
     val DEFAULT_DISABLED_TOOL_MIGRATIONS: List<Pair<Int, Set<String>>> = listOf(
-        1 to setOf(ToolNames.IMPORT_MODULES),
-        2 to setOf(ToolNames.OPEN_WORKSPACE),
-        3 to setOf(ToolNames.CHANGE_SIGNATURE, ToolNames.CREATE_FILE, ToolNames.REPLACE_TEXT_IN_FILE, ToolNames.STRUCTURAL_SEARCH_REPLACE),
-        4 to setOf(ToolNames.LIST_TESTS, ToolNames.RUN_TESTS),
-        5 to setOf(ToolNames.EDIT_MEMBER, ToolNames.INSERT_MEMBER, ToolNames.REPLACE_MEMBER),
-        6 to setOf(ToolNames.CREATE_MODULE),
-        7 to setOf(ToolNames.PROJECT_DIAGNOSTICS),
-        8 to setOf(ToolNames.LINK_BUILD_SYSTEM),
-        9 to setOf(ToolNames.SYMBOL_INFO)
+        3 to setOf(ToolNames.CHANGE_SIGNATURE),
+        4 to setOf(
+            ToolNames.CLOSE_PROJECT,
+            ToolNames.RELEASE_PROJECT,
+            ToolNames.RELEASE_ALL_PROJECTS,
+            ToolNames.ENROLL_ALL_PROJECTS,
+            ToolNames.SET_PROJECT_MODE,
+            ToolNames.SET_ALL_PROJECT_MODES
+        ),
+        5 to setOf(ToolNames.INSERT_MEMBER, ToolNames.REPLACE_MEMBER),
+        8 to setOf(ToolNames.LINK_BUILD_SYSTEM)
     )
 }
 
@@ -125,6 +104,11 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             if (loaded.settingsSchemaVersion < version) {
                 disabledTools.addAll(tools)
             }
+        }
+
+        if (loaded.settingsSchemaVersion < 10) {
+            val defaultEnabled = ToolNames.ALL.toSet() - ToolSettingsDefaults.DEFAULT_DISABLED_TOOLS
+            disabledTools.removeAll(defaultEnabled)
         }
 
         return loaded.copy(

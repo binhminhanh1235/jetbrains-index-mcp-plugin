@@ -296,28 +296,28 @@ class ToolsUnitTest : TestCase() {
 
     // ── opt-in tools must ship disabled ────────────────────────────────────────
 
-    fun testReplaceTextInFileToolDisabledByDefault() {
-        assertTrue(
-            "ide_replace_text_in_file should be disabled by default",
+    fun testReplaceTextInFileToolEnabledByDefault() {
+        assertFalse(
+            "ide_replace_text_in_file should be enabled by default",
             McpSettings.DEFAULT_DISABLED_TOOLS.contains("ide_replace_text_in_file")
         )
     }
 
-    fun testStructuralSearchReplaceToolIsDisabledByDefault() {
-        assertTrue(ToolNames.STRUCTURAL_SEARCH_REPLACE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    fun testStructuralSearchReplaceToolIsEnabledByDefault() {
+        assertFalse(ToolNames.STRUCTURAL_SEARCH_REPLACE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 
     fun testChangeSignatureToolIsDisabledByDefault() {
         assertTrue(ToolNames.CHANGE_SIGNATURE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 
-    fun testCreateFileToolIsDisabledByDefault() {
-        assertTrue(ToolNames.CREATE_FILE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    fun testCreateFileToolIsEnabledByDefault() {
+        assertFalse(ToolNames.CREATE_FILE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 
-    fun testCodeEditingToolsAreDisabledByDefault() {
+    fun testCodeEditingToolsDefaultDisabledState() {
         val defaultDisabled = McpSettings.DEFAULT_DISABLED_TOOLS
-        assertTrue("ide_edit_member should be disabled by default", ToolNames.EDIT_MEMBER in defaultDisabled)
+        assertFalse("ide_edit_member should be enabled by default", ToolNames.EDIT_MEMBER in defaultDisabled)
         assertTrue("ide_insert_member should be disabled by default", ToolNames.INSERT_MEMBER in defaultDisabled)
         assertTrue("ide_replace_member should be disabled by default", ToolNames.REPLACE_MEMBER in defaultDisabled)
     }
@@ -344,11 +344,11 @@ class ToolsUnitTest : TestCase() {
         assertTrue("path should be required", required?.contains("path") == true)
     }
 
-    fun testCreateModuleToolIsDisabledByDefault() {
-        assertTrue(ToolNames.CREATE_MODULE in McpSettings.DEFAULT_DISABLED_TOOLS)
+    fun testCreateModuleToolIsEnabledByDefault() {
+        assertFalse(ToolNames.CREATE_MODULE in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 
-    fun testProjectDiagnosticsToolIsDisabledByDefault() {
-        assertTrue(ToolNames.PROJECT_DIAGNOSTICS in McpSettings.DEFAULT_DISABLED_TOOLS)
+    fun testProjectDiagnosticsToolIsEnabledByDefault() {
+        assertFalse(ToolNames.PROJECT_DIAGNOSTICS in McpSettings.DEFAULT_DISABLED_TOOLS)
     }
 }

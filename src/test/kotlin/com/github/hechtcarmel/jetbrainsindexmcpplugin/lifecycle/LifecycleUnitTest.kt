@@ -193,12 +193,13 @@ class LifecycleUnitTest : TestCase() {
     fun testLifecycleToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         listOf(
-            ToolNames.ENROLL_ALL_PROJECTS, ToolNames.GET_PROJECT_MODES, ToolNames.LIFECYCLE_LOG,
+            ToolNames.ENROLL_ALL_PROJECTS, ToolNames.LIFECYCLE_LOG,
             ToolNames.LIFECYCLE_LOG_FILE, ToolNames.RELEASE_ALL_PROJECTS,
             ToolNames.RELEASE_PROJECT, ToolNames.SET_ALL_PROJECT_MODES, ToolNames.SET_PROJECT_MODE
         ).forEach { tool ->
             assertTrue("$tool must be opt-in by default", defaults.contains(tool))
         }
+        assertFalse("ide_get_project_modes is enabled by default", defaults.contains(ToolNames.GET_PROJECT_MODES))
     }
 
     fun testProjectStatusIsEnabledByDefault() {

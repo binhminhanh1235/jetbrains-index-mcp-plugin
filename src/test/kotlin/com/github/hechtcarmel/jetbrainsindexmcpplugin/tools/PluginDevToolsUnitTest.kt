@@ -44,7 +44,7 @@ class PluginDevToolsUnitTest : TestCase() {
     fun testPluginDevToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         assertTrue("ide_install_plugin must be opt-in", defaults.contains(ToolNames.INSTALL_PLUGIN))
-        assertTrue("ide_restart must be opt-in", defaults.contains(ToolNames.RESTART_IDE))
+        assertFalse("ide_restart is enabled by default", defaults.contains(ToolNames.RESTART_IDE))
     }
 
     // ── Zip-slip protection (Bug: extractZip resolved entry names without ────
