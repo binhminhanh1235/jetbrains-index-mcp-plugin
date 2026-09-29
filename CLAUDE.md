@@ -252,7 +252,9 @@ synchronized with external file changes. The setting is disabled by default.
 
 **User Setting**: "Sync external file changes before operations" (Settings → Tools → Index MCP Server)
 - **Disabled** (default): Best performance, suitable for most use cases
-- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when rename/find-usages misses references in files just created externally. Each operation will take seconds instead of milliseconds on large repos.
+- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when read-only tools (find-usages, search, navigation) miss references in files just changed externally. Each operation will take seconds instead of milliseconds on large repos.
+
+Write tools do not depend on this setting: single-file edits reload their target file, and refactorings load external changes across the project before they run (see below).
 
 **For tool developers**:
 - Extend `AbstractMcpTool` and implement `doExecute()` (not `execute()`)
@@ -264,6 +266,18 @@ synchronized with external file changes. The setting is disabled by default.
   ```
 - For per-call opt-out (e.g. long-poll attach calls that touch no PSI), override
   `needsPsiSync(arguments)` instead.
+- A tool that edits one file's Document must call `syncFileForEdit(project, file)` before it
+  resolves PSI or computes offsets in that file, and apply the edit with
+  `suspendingWriteActionAndSave(project, name, document) { ... }`. Without the first, the edit
+  lands on a stale Document whenever another program changed the file since the IDE's last VFS
+  refresh. Without the second, `FileDocumentManager` then declines the save as a memory/disk
+  conflict without reporting it, and the tool claims success for a file that never changed
+  (issue #430).
+- A multi-file refactoring must call `syncProjectForRefactoring(project)` before it resolves its
+  target (apply paths only; a dry run must not save documents). Capture
+  `FileDocumentManager.unsavedDocuments` just before the processor runs, then save with
+  `saveChangedDocuments(project, unsavedBefore)` in place of `saveAllDocuments()`, and turn a
+  non-empty result into an error with `changesNotSavedMessage`.
 
 ### Long-Running Tools (Long-Poll Pattern)
 
@@ -761,7 +775,7 @@ VirtualFileManager   // Virtual file system
 3. **Must be called from EDT** - UI operations on background thread
    - Solution: Use `ApplicationManager.getApplication().invokeLater { ... }`
 
-4. **Search misses newly created files** - PSI not synchronized with document
+4. **Search misses newly created files** - PSI not synchronized with document (read-only tools; write tools sync themselves)
    - Cause: External tools modified files but PSI tree hasn't been updated
    - Solution: Enable "Sync external file changes" in Settings → Tools → Index MCP Server (WARNING: significant performance impact)
    - For custom code: `PsiDocumentManager.getInstance(project).commitAllDocuments()`

@@ -28,6 +28,7 @@ import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.readAction as platformReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
@@ -45,6 +46,7 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.usageView.UsageViewUtil
+import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.concurrency.annotations.RequiresReadLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -378,26 +380,160 @@ abstract class AbstractMcpTool : McpTool {
     }
 
     /**
-     * Executes a write action using suspend function (non-blocking for caller).
+     * Loads changes another program made to [file] into its Document and PSI before a tool edits it.
      *
-     * This is the preferred method for write operations as it:
-     * - Doesn't block the calling thread while waiting for EDT
-     * - Still executes the action on EDT with proper locking
-     * - Supports undo/redo grouping
+     * The IDE re-reads externally modified files only on a VFS refresh — when the IDE window is
+     * activated, or every ~15 s while the IDE is in the background. An agent that writes a file with
+     * its own tools and then edits it through MCP inside that window would edit the stale Document,
+     * and [FileDocumentManager] then silently declines the save as a memory/disk conflict: the tool
+     * reported success while the file on disk never received the edit (issue #430).
      *
-     * @param project The project context
-     * @param commandName Name for the undo command (shown in Edit menu)
-     * @param action The action to execute
+     * Call it before resolving PSI or computing offsets in [file]: the refresh can replace the
+     * Document's text, and the edit must be computed against the reloaded version.
+     *
+     * @return an error when the file cannot be edited safely — its Document holds unsaved IDE changes
+     *   that cannot be saved (typically because the file also changed on disk, in which case the IDE
+     *   asks the user which version to keep), or the refresh found the file deleted. Otherwise null.
      */
-    protected suspend fun suspendingWriteAction(
+    protected suspend fun syncFileForEdit(project: Project, file: VirtualFile): CallToolResult? {
+        val problem: String? = edtAction {
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val unsaved = fileDocumentManager.getCachedDocument(file)?.takeIf { fileDocumentManager.isDocumentUnsaved(it) }
+            if (unsaved != null) {
+                // Flush the pending IDE changes first; the tool's own save would write them anyway.
+                // Saving refreshes the file and declines to overwrite a newer disk version, so a
+                // Document that is still unsaved afterwards is the platform's conflict signal.
+                fileDocumentManager.saveDocument(unsaved)
+                if (fileDocumentManager.isDocumentUnsaved(unsaved)) {
+                    return@edtAction "${ProjectUtils.getToolFilePath(project, file)} has unsaved changes in the IDE " +
+                        "that could not be saved, usually because the file was also modified on disk. Nothing was " +
+                        "changed. The IDE will ask the user which version to keep; retry once the file is reconciled."
+                }
+            } else {
+                // A shallow synchronous refresh always re-checks the file on disk and reloads an
+                // unmodified Document whose file changed.
+                file.refresh(false, false)
+            }
+            if (!file.isValid) return@edtAction "File no longer exists on disk: ${file.path}"
+            fileDocumentManager.getCachedDocument(file)?.let { PsiDocumentManager.getInstance(project).commitDocument(it) }
+            null
+        }
+        return problem?.let { createErrorResult(it) }
+    }
+
+    /**
+     * Runs [action] as an undoable write command, then saves [document] in the same EDT turn and
+     * confirms the save reached disk.
+     *
+     * [FileDocumentManager.saveDocument] can decline without telling the caller: a memory/disk
+     * conflict (the file changed on disk after the IDE last read it), a
+     * [com.intellij.openapi.fileEditor.FileDocumentSynchronizationVetoer], or an I/O error all leave
+     * the Document unsaved. Without this check a write tool reports success for an edit that exists
+     * only in memory (issue #430). When the save is declined and [action] made the Document's only
+     * unsaved change, the Document is reloaded from disk, so the failed edit is discarded instead of
+     * lingering for a later autosave to write, or for the IDE's file-cache-conflict prompt, which
+     * would block every later tool call until a user answers it.
+     *
+     * Pair with [syncFileForEdit], which makes the declined save rare rather than routine.
+     *
+     * @return null when [action] changed nothing or its change is on disk; otherwise an error.
+     */
+    protected suspend fun suspendingWriteActionAndSave(
         project: Project,
         commandName: String,
+        document: Document,
         action: () -> Unit
-    ) {
-        edtAction {
+    ): CallToolResult? {
+        val problem: String? = edtAction {
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val stampBefore = document.modificationStamp
+            val cleanBefore = !fileDocumentManager.isDocumentUnsaved(document)
             WriteCommandAction.runWriteCommandAction(project, commandName, null, { action() })
+            if (document.modificationStamp == stampBefore) return@edtAction null
+            fileDocumentManager.saveDocument(document)
+            if (!fileDocumentManager.isDocumentUnsaved(document)) return@edtAction null
+
+            val path = fileDocumentManager.getFile(document)?.let { ProjectUtils.getToolFilePath(project, it) } ?: "the file"
+            if (cleanBefore) fileDocumentManager.reloadFromDisk(document, project)
+            if (fileDocumentManager.isDocumentUnsaved(document)) {
+                "The edit to $path was applied in the IDE but could not be saved to disk, usually because the file " +
+                    "also changed on disk. It remains as unsaved changes in the IDE, which will ask the user which " +
+                    "version to keep. Check the file on disk before retrying."
+            } else {
+                "The edit to $path was not saved: the file changed on disk after the IDE last read it, or the IDE " +
+                    "declined the save. The edit was discarded and this call did not modify the file. Re-read it and retry."
+            }
         }
+        return problem?.let { createErrorResult(it) }
     }
+
+    /**
+     * Loads every change another program made under the project's content roots before a
+     * multi-file refactoring resolves its target and searches for usages: the refresh the IDE
+     * itself runs when its window is activated.
+     *
+     * A refactoring that edits a stale Document hits the same silently declined save that
+     * [syncFileForEdit] prevents for single-file edits (issue #430), and its usage search misses
+     * references that exist only in the newer disk version. Pending IDE changes are saved first,
+     * as the tool's own save would do anyway, so the refresh reloads their Documents instead of
+     * registering memory/disk conflicts for them.
+     *
+     * The refresh follows the file watcher's change events, so it only visits what changed on
+     * disk; without a working watcher it rescans the content roots, as window activation does.
+     * Call it outside any read action, before PSI is resolved; never on a dry run, which must
+     * not save documents.
+     */
+    protected suspend fun syncProjectForRefactoring(project: Project) {
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+        val localFileSystem = LocalFileSystem.getInstance()
+        val roots = (listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project))
+            .distinct()
+            .mapNotNull { localFileSystem.findFileByPath(it) }
+        if (roots.isNotEmpty()) {
+            localFileSystem.refreshFiles(roots, false, true, null)
+        }
+        commitDocuments(project)
+    }
+
+    /**
+     * Saves every Document and returns the files an operation changed whose changes did not
+     * reach disk.
+     *
+     * For operations that edit through platform processors (refactorings, reformat, J2K) rather
+     * than one Document of their own; those use [suspendingWriteActionAndSave].
+     * [FileDocumentManager.saveAllDocuments] skips a Document it declines to save without telling
+     * the caller (issue #430). The operation's Documents are those unsaved now but not in
+     * [unsavedBefore], captured just before it ran. A declined one only held the operation's
+     * change, so it is reloaded from disk: nothing lingers in memory for a later autosave to
+     * write, or for the IDE's file-cache-conflict prompt to block every later tool call on.
+     * Report a non-empty result with [changesNotSavedMessage], never as success.
+     *
+     * @return tool paths of the files that do not contain the operation's changes
+     */
+    @RequiresEdt
+    protected fun saveChangedDocuments(project: Project, unsavedBefore: Set<Document>): List<String> {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+        val changed = fileDocumentManager.unsavedDocuments.filterNot { it in unsavedBefore }
+        // One at a time, each declined one reloaded at once: saveAllDocuments pumps EDT events
+        // under its progress, which would let the conflict prompt run before the reload settles it.
+        val declined = changed.filter { document ->
+            fileDocumentManager.saveDocument(document)
+            fileDocumentManager.isDocumentUnsaved(document).also { unsaved ->
+                if (unsaved) fileDocumentManager.reloadFromDisk(document, project)
+            }
+        }
+        fileDocumentManager.saveAllDocuments()
+        return declined
+            .mapNotNull { document -> fileDocumentManager.getFile(document)?.let { ProjectUtils.getToolFilePath(project, it) } }
+            .sorted()
+    }
+
+    /** The error for an operation whose changes did not reach [notSaved]; see [saveChangedDocuments]. */
+    protected fun changesNotSavedMessage(notSaved: List<String>): String =
+        "The changes did not reach ${notSaved.size} file(s) that changed on disk while the operation ran: " +
+            "${notSaved.joinToString(", ")}. The IDE declined to overwrite them, so they were reloaded with their " +
+            "disk content and lack those changes; any other affected files were updated. Re-read these files " +
+            "and apply what is missing before building."
 
     /**
      * Resolves a file path to a [VirtualFile].
