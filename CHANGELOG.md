@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Scala 2 support for `ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods`, and `ide_file_structure`** ([#245](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/245), contributed by [@ilx](https://github.com/ilx)) — when the Scala plugin is installed, these tools work on Scala classes, traits, objects, and case classes instead of reporting an unsupported language. Hierarchy kinds follow the existing vocabulary plus `TRAIT` and `OBJECT` (a case class is `CLASS`, an abstract class `ABSTRACT_CLASS`); in `ide_file_structure` a case class is `CLASS`, a package object `OBJECT`, and a `val`/`var` member `PROPERTY`, each with the Scala keyword in `modifiers`, so no new `StructureKind` values are added. Callees include parameterless and infix calls, not only `f(...)` applications. Java and Kotlin subtypes, implementations, callers, callees, and super methods reached from Scala code are included and reported with their own language and kind. If the installed Scala plugin is binary-incompatible with this build, the tools fail with an explicit error rather than returning empty results.
+
 ## [5.19.0] - 2026-09-26
 
 ### Added
