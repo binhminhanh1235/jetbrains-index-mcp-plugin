@@ -229,4 +229,25 @@ object ClassResolver {
 
         return null
     }
+
+    /**
+     * Finds a Java package by its fully qualified name using JavaPsiFacade via reflection.
+     *
+     * @param project The project context
+     * @param packageName Fully qualified package name (e.g. "com.example.service")
+     * @return The PsiPackage (as PsiElement), or null if not found
+     */
+    fun findPackageByName(project: Project, packageName: String): PsiElement? {
+        if (!PluginDetectors.java.isAvailable) return null
+        return try {
+            val javaPsiFacadeClass = Class.forName("com.intellij.psi.JavaPsiFacade")
+            val getInstanceMethod = javaPsiFacadeClass.getMethod("getInstance", Project::class.java)
+            val javaPsiFacade = getInstanceMethod.invoke(null, project)
+            val findPackageMethod = javaPsiFacadeClass.getMethod("findPackage", String::class.java)
+            findPackageMethod.invoke(javaPsiFacade, packageName) as? PsiElement
+        } catch (e: Exception) {
+            rethrowControlFlowExceptions(e)
+            null
+        }
+    }
 }

@@ -96,7 +96,8 @@ object TestResultsCollector {
     fun collectRunEntries(
         root: SMTestProxy.SMRootTestProxy,
         totalStackTraceBudget: Int = MAX_RUN_TOTAL_STACKTRACE_CHARS,
-        outputs: Map<SMTestProxy, String> = emptyMap()
+        outputs: Map<SMTestProxy, String> = emptyMap(),
+        includeSuccessOutput: Boolean = true
     ): List<TestRunEntry> {
         var traceBudget = totalStackTraceBudget
         return root.allTests
@@ -111,12 +112,13 @@ object TestResultsCollector {
                         test.stacktrace?.takeIf(String::isNotBlank)?.let(::truncateStackTrace)
                             ?.also { traceBudget -= it.length }
                     } else null
+                    val testOutput = if (status.isFailure || includeSuccessOutput) outputs[test] else null
                     TestRunEntry(
                         name = composeName(test.name, test.parent?.name),
                         status = status,
                         errorMessage = if (status.isFailure) test.errorMessage else null,
                         stackTrace = stackTrace,
-                        output = outputs[test]
+                        output = testOutput
                     )
                 }
             }

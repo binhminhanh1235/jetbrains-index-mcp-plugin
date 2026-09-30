@@ -160,7 +160,7 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
         run.exitCode.complete(0)
         run.testRoot.complete(root)
 
-        val result = callTool("runId" to "run-with-output", "waitSeconds" to 10)
+        val result = callTool("runId" to "run-with-output", "waitSeconds" to 10, "includeSuccessOutput" to true)
 
         assertToolSucceeded("a completed run must return final results", result)
         val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
@@ -175,6 +175,33 @@ class RunTestsLongPollBehaviorTest : McpPlatformTestCase() {
             "framework banner\n",
             payload.output
         )
+    }
+
+    fun testAttachOmitsSuccessOutputByDefault() {
+        val run = registerRun("run-with-output-default", hasResultsViewer = true)
+        val root = SMTestProxy.SMRootTestProxy()
+        root.setStarted()
+        root.addStdOutput("framework banner\n")
+        val suite = SMTestProxy("MainTest", true, null)
+        root.addChild(suite)
+        suite.setStarted()
+        val test = SMTestProxy("testLogs", false, null)
+        suite.addChild(test)
+        test.setStarted()
+        test.addStdOutput("Hello world\n")
+        test.setFinished()
+        suite.setFinished()
+        root.setFinished()
+        run.exitCode.complete(0)
+        run.testRoot.complete(root)
+
+        val result = callTool("runId" to "run-with-output-default", "waitSeconds" to 10)
+
+        assertToolSucceeded("a completed run must return final results", result)
+        val payload = json.decodeFromString(RunTestsResult.serializer(), toolText(result))
+        assertEquals(1, payload.passed)
+        assertNull("passing test must omit output by default to save tokens", payload.tests.single().output)
+        assertNull("successful run must omit run-level output by default to save tokens", payload.output)
     }
 
     fun testWatchdogKillsRunAtTimeoutAndPollReportsTimedOut() {

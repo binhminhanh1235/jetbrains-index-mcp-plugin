@@ -32,15 +32,25 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.execution.configurations.ConfigurationTypeUtil
+import com.intellij.execution.testframework.TestSearchScope
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
+import com.intellij.openapi.module.Module
+import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiMethod
 import com.intellij.util.messages.MessageBusConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
@@ -52,6 +62,10 @@ class RunTestsTool : AbstractMcpTool() {
     /** How a single ide_run_tests call should behave: start a new run, or attach to a live one. */
     internal sealed interface RequestMode {
         data class Start(val target: String) : RequestMode
+        data class StartTargets(val targets: List<String>) : RequestMode
+        data class StartPackage(val packageName: String) : RequestMode
+        data class StartDirectory(val directory: String) : RequestMode
+        data class StartModule(val module: String) : RequestMode
         data class Attach(val runId: String) : RequestMode
         data class Invalid(val message: String) : RequestMode
     }
@@ -67,18 +81,56 @@ class RunTestsTool : AbstractMcpTool() {
         internal const val DEFAULT_WAIT_SECONDS = LongPoll.DEFAULT_WAIT_SECONDS
         internal const val MAX_WAIT_SECONDS = LongPoll.MAX_WAIT_SECONDS
 
-        /** `target` starts a run, `runId` polls one already in flight — exactly one must be given. */
+        /** Exactly one scope selector or runId must be provided to start or poll a run. */
         internal fun resolveRequestMode(arguments: JsonObject): RequestMode {
             val target = LongPoll.optionalTrimmedString(arguments, ParamNames.TARGET)
             val runId = LongPoll.optionalTrimmedString(arguments, ParamNames.RUN_ID)
+            val packageName = LongPoll.optionalTrimmedString(arguments, ParamNames.PACKAGE)
+            val directory = LongPoll.optionalTrimmedString(arguments, ParamNames.DIRECTORY)
+            val moduleName = LongPoll.optionalTrimmedString(arguments, ParamNames.MODULE)
+
+            val targetsElement = arguments[ParamNames.TARGETS]
+            val targetsList: List<String>? = if (targetsElement != null) {
+                val array = targetsElement as? JsonArray
+                    ?: return RequestMode.Invalid("'targets' must be an array of strings.")
+                if (array.isEmpty()) {
+                    return RequestMode.Invalid("targets array must not be empty.")
+                }
+                val list = array.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                if (list.isEmpty()) {
+                    return RequestMode.Invalid("targets array must not be empty.")
+                }
+                if (list.size > 50) {
+                    return RequestMode.Invalid("targets array must contain at most 50 entries (received ${list.size}).")
+                }
+                list
+            } else {
+                null
+            }
+
+            val presentSelectors = mutableListOf<String>()
+            if (target != null) presentSelectors.add(ParamNames.TARGET)
+            if (targetsList != null) presentSelectors.add(ParamNames.TARGETS)
+            if (packageName != null) presentSelectors.add(ParamNames.PACKAGE)
+            if (directory != null) presentSelectors.add(ParamNames.DIRECTORY)
+            if (moduleName != null) presentSelectors.add(ParamNames.MODULE)
+            if (runId != null) presentSelectors.add(ParamNames.RUN_ID)
+
             return when {
-                target != null && runId != null -> RequestMode.Invalid(
-                    "Provide either 'target' (to start a test run) or 'runId' (to poll a running one), not both."
-                )
-                runId != null -> RequestMode.Attach(runId)
+                presentSelectors.size > 1 -> {
+                    val selectorsStr = presentSelectors.joinToString(" and ") { "'$it'" }
+                    RequestMode.Invalid(
+                        "Provide either a single test scope selector ('target', 'targets', 'package', 'directory', 'module') to start a run, or 'runId' to poll a running one, not multiple ($selectorsStr)."
+                    )
+                }
                 target != null -> RequestMode.Start(target)
+                targetsList != null -> RequestMode.StartTargets(targetsList)
+                packageName != null -> RequestMode.StartPackage(packageName)
+                directory != null -> RequestMode.StartDirectory(directory)
+                moduleName != null -> RequestMode.StartModule(moduleName)
+                runId != null -> RequestMode.Attach(runId)
                 else -> RequestMode.Invalid(
-                    "Either 'target' (to start a test run) or 'runId' (to poll a running one) is required."
+                    "Either a test scope selector ('target', 'targets', 'package', 'directory', 'module') to start a run, or 'runId' to poll a running one, is required."
                 )
             }
         }
@@ -182,6 +234,9 @@ class RunTestsTool : AbstractMcpTool() {
         internal fun shouldActivateToolWindow(arguments: JsonObject): Boolean =
             arguments[ParamNames.ACTIVATE_TOOL_WINDOW]?.jsonPrimitive?.booleanOrNull ?: false
 
+        internal fun shouldIncludeSuccessOutput(arguments: JsonObject): Boolean =
+            arguments[ParamNames.INCLUDE_SUCCESS_OUTPUT]?.jsonPrimitive?.booleanOrNull ?: false
+
         /**
          * `ExecutionManagerImpl` copies the run configuration's activate/focus flags onto the
          * descriptor and then invokes the environment callback, before `RunContentManagerImpl`
@@ -201,13 +256,15 @@ class RunTestsTool : AbstractMcpTool() {
     override val description = """
         Run tests using the IDE's run configuration infrastructure and return structured results.
 
-        The target can be:
-        - An existing run configuration name (e.g. "All Tests") — works for ANY language/framework
-        - A fully qualified class name (e.g. "com.example.MyTest") — Java/Kotlin only
-        - A class and method separated by '#' (e.g. "com.example.MyTest#testFoo") — Java/Kotlin only
-
-        Creating a run config from a class/method FQN is supported only for Java/Kotlin. For other
-        languages (Python, JS/TS, Go, PHP, Rust), pass an existing run configuration name instead.
+        The test scope can be specified using one of:
+        - target: an existing run configuration name (e.g. "All Tests") — works for ANY language/framework;
+          or a fully qualified class name (e.g. "com.example.MyTest") — Java/Kotlin only;
+          or a class and method separated by '#' (e.g. "com.example.MyTest#testFoo") — Java/Kotlin only.
+        - targets: batch array of fully qualified class names or class#method (max 50 entries) — runs all
+          specified classes in a single test run — Java/Kotlin only.
+        - package: fully qualified package name (e.g. "com.example.service") — runs all tests in the package — Java/Kotlin.
+        - directory: relative path to test source directory (e.g. "src/test/kotlin") — works for Java/Kotlin, Python, JS, Go.
+        - module: IntelliJ module name — runs all tests in that module.
 
         Long-running runs: each call blocks at most waitSeconds (default $DEFAULT_WAIT_SECONDS) so your MCP client's
         request timeout is never hit. If the run is still going when the wait budget ends — whether
@@ -233,8 +290,13 @@ class RunTestsTool : AbstractMcpTool() {
         Parameters:
         - project_path (optional): required when multiple projects are open.
         - target: existing run config name, fully qualified class (com.example.MyTest), or class#method
-          (com.example.MyTest#testFoo). Exactly one of target / runId is required.
+          (com.example.MyTest#testFoo).
+        - targets: array of fully qualified class names or class#method (max 50 entries) to run in a single run.
+        - package: fully qualified package name to run all tests in that package.
+        - directory: relative path to test source directory to run all tests in that directory.
+        - module: IntelliJ module name to run all tests in that module.
         - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
+        Exactly one of target, targets, package, directory, module, or runId is required.
         - timeoutSeconds (optional, default $DEFAULT_TIMEOUT_SECONDS): maximum seconds the test RUN may take before its
           process is killed, counted from when the test process starts. Applies to the whole run,
           across polls; ignored when runId is given.
@@ -243,6 +305,9 @@ class RunTestsTool : AbstractMcpTool() {
         - activateToolWindow (optional, default false): open the Run tool window for this run. By default
           the run stays in the background without stealing focus; its content is still added to the Run
           tool window for manual inspection.
+        - includeSuccessOutput (optional, default false): include console output for passed tests (and
+          successful run-level output). By default, console output is omitted for passed tests to save
+          tokens, but retained for failed/errored tests. Set to true to retrieve console output for all tests.
 
         Example: {"target": "com.example.MyTest", "timeoutSeconds": 7200}, then if a "running" status
         comes back: {"runId": "<runId from that response>"}
@@ -253,12 +318,33 @@ class RunTestsTool : AbstractMcpTool() {
         .stringProperty(
             ParamNames.TARGET,
             "Test target: existing run config name, fully qualified class (com.example.MyTest), or " +
-                    "class#method (com.example.MyTest#testFoo). Exactly one of target/runId is required."
+                    "class#method (com.example.MyTest#testFoo). Exactly one test selector ('target', " +
+                    "'targets', 'package', 'directory', 'module') or 'runId' is required."
+        )
+        .stringArrayProperty(
+            ParamNames.TARGETS,
+            "Batch test targets: array of fully qualified class names or class#method (max 50 entries). " +
+                    "Runs all specified test classes in a single test run. Exactly one test selector is required."
+        )
+        .stringProperty(
+            ParamNames.PACKAGE,
+            "Package scope: fully qualified package name (e.g. 'com.example.service'). " +
+                    "Runs all tests in the package. Exactly one test selector is required."
+        )
+        .stringProperty(
+            ParamNames.DIRECTORY,
+            "Directory scope: relative path to test source directory (e.g. 'src/test/kotlin'). " +
+                    "Runs all tests in that directory. Exactly one test selector is required."
+        )
+        .stringProperty(
+            ParamNames.MODULE,
+            "Module scope: IntelliJ module name. Runs all tests in that module. " +
+                    "Exactly one test selector is required."
         )
         .stringProperty(
             ParamNames.RUN_ID,
             "runId from a previous {\"status\": \"running\"} response: attaches to that run and keeps " +
-                    "waiting instead of starting a new one. Exactly one of target/runId is required."
+                    "waiting instead of starting a new one. Exactly one test selector or 'runId' is required."
         )
         .intProperty(
             ParamNames.TIMEOUT_SECONDS,
@@ -275,6 +361,12 @@ class RunTestsTool : AbstractMcpTool() {
             "Open (activate) the Run tool window for this run. Default: false — the run executes in " +
                     "the background without stealing focus; its content is still added to the Run tool window."
         )
+        .booleanProperty(
+            ParamNames.INCLUDE_SUCCESS_OUTPUT,
+            "Include console output for passed/successful tests (and successful run-level output). " +
+                    "Default: false — console output is omitted for passed tests to save tokens, but " +
+                    "retained for failed/errored tests. Set to true to retrieve console output for all tests."
+        )
         .build()
 
     /** Attach polls (`runId`) read no PSI until final collection — skip the per-call sync tax. */
@@ -284,6 +376,7 @@ class RunTestsTool : AbstractMcpTool() {
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val callStartMs = System.currentTimeMillis()
         val waitSeconds = resolveWaitSeconds(arguments)
+        val includeSuccessOutput = shouldIncludeSuccessOutput(arguments)
 
         return when (val mode = resolveRequestMode(arguments)) {
             is RequestMode.Invalid -> createErrorResult(mode.message)
@@ -295,7 +388,7 @@ class RunTestsTool : AbstractMcpTool() {
                                 "collected, the run may have been evicted after completing, or the IDE was " +
                                 "restarted. Start a new run by passing 'target' instead."
                     )
-                awaitRunResult(project, run, waitSeconds, callStartMs)
+                awaitRunResult(project, run, waitSeconds, callStartMs, includeSuccessOutput)
             }
 
             is RequestMode.Start -> {
@@ -317,7 +410,114 @@ class RunTestsTool : AbstractMcpTool() {
                     timeoutSeconds,
                     shouldActivateToolWindow(arguments),
                     waitSeconds,
-                    callStartMs
+                    callStartMs,
+                    includeSuccessOutput
+                )
+            }
+
+            is RequestMode.StartTargets -> {
+                val timeoutSeconds =
+                    arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                if (timeoutSeconds <= 0) {
+                    return createErrorResult("timeoutSeconds must be a positive integer.")
+                }
+
+                val runConfiguration = resolveTargetsRunConfiguration(project, mode.targets)
+                    ?: return createErrorResult(
+                        "Could not create a run configuration for the specified targets (${mode.targets.size} classes). " +
+                                "Provide fully qualified Java/Kotlin class names."
+                    )
+
+                startRun(
+                    project,
+                    runConfiguration,
+                    timeoutSeconds,
+                    shouldActivateToolWindow(arguments),
+                    waitSeconds,
+                    callStartMs,
+                    includeSuccessOutput
+                )
+            }
+
+            is RequestMode.StartPackage -> {
+                val timeoutSeconds =
+                    arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                if (timeoutSeconds <= 0) {
+                    return createErrorResult("timeoutSeconds must be a positive integer.")
+                }
+
+                val runConfiguration = resolvePackageRunConfiguration(project, mode.packageName)
+                    ?: return createErrorResult(
+                        "Could not create a run configuration for package '${mode.packageName}'. " +
+                                "Ensure the package exists and contains tests."
+                    )
+
+                startRun(
+                    project,
+                    runConfiguration,
+                    timeoutSeconds,
+                    shouldActivateToolWindow(arguments),
+                    waitSeconds,
+                    callStartMs,
+                    includeSuccessOutput
+                )
+            }
+
+            is RequestMode.StartDirectory -> {
+                val timeoutSeconds =
+                    arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                if (timeoutSeconds <= 0) {
+                    return createErrorResult("timeoutSeconds must be a positive integer.")
+                }
+
+                val vFile = suspendingReadAction { resolveFile(project, mode.directory) }
+                if (vFile == null || !vFile.isDirectory) {
+                    return createErrorResult("Directory not found: '${mode.directory}'.")
+                }
+
+                val runConfiguration = resolveDirectoryRunConfiguration(project, mode.directory)
+                    ?: return createErrorResult(
+                        "Could not create a run configuration for directory '${mode.directory}'. " +
+                                "Ensure the directory contains test sources."
+                    )
+
+                startRun(
+                    project,
+                    runConfiguration,
+                    timeoutSeconds,
+                    shouldActivateToolWindow(arguments),
+                    waitSeconds,
+                    callStartMs,
+                    includeSuccessOutput
+                )
+            }
+
+            is RequestMode.StartModule -> {
+                val timeoutSeconds =
+                    arguments[ParamNames.TIMEOUT_SECONDS]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS
+                if (timeoutSeconds <= 0) {
+                    return createErrorResult("timeoutSeconds must be a positive integer.")
+                }
+
+                val module = ModuleManager.getInstance(project).findModuleByName(mode.module)
+                if (module == null) {
+                    return createErrorResult("Module not found: '${mode.module}'.")
+                }
+
+                val runConfiguration = resolveModuleRunConfiguration(project, mode.module)
+                    ?: return createErrorResult(
+                        "Could not create a run configuration for module '${mode.module}'. " +
+                                "Ensure the module contains test sources."
+                    )
+
+                startRun(
+                    project,
+                    runConfiguration,
+                    timeoutSeconds,
+                    shouldActivateToolWindow(arguments),
+                    waitSeconds,
+                    callStartMs,
+                    includeSuccessOutput
                 )
             }
         }
@@ -340,7 +540,8 @@ class RunTestsTool : AbstractMcpTool() {
         timeoutSeconds: Int,
         activateToolWindow: Boolean,
         waitSeconds: Int,
-        callStartMs: Long
+        callStartMs: Long,
+        includeSuccessOutput: Boolean = false
     ): CallToolResult {
         val configName = runConfiguration.name
         val executor = DefaultRunExecutor.getRunExecutorInstance()
@@ -371,7 +572,7 @@ class RunTestsTool : AbstractMcpTool() {
             return createErrorResult(t.message ?: "Test process failed to start for '$configName'.", ToolNames.DIAGNOSTICS)
         }
 
-        return awaitRunResult(project, run, waitSeconds, callStartMs)
+        return awaitRunResult(project, run, waitSeconds, callStartMs, includeSuccessOutput)
     }
 
     /**
@@ -384,7 +585,8 @@ class RunTestsTool : AbstractMcpTool() {
         project: Project,
         run: ActiveTestRunRegistry.ActiveTestRun,
         waitSeconds: Int,
-        callStartMs: Long
+        callStartMs: Long,
+        includeSuccessOutput: Boolean = false
     ): CallToolResult {
         val exitCode: Int? = try {
             run.awaitWithinBudget(run.exitCode, waitSeconds, callStartMs)
@@ -430,7 +632,13 @@ class RunTestsTool : AbstractMcpTool() {
 
         val outputs = smRoot?.let { collectRunOutputs(it, waitSeconds, callStartMs) }
         val tests = smRoot?.let {
-            edtAction { TestResultsCollector.collectRunEntries(it, outputs = outputs?.perTest ?: emptyMap()) }
+            edtAction {
+                TestResultsCollector.collectRunEntries(
+                    it,
+                    outputs = outputs?.perTest ?: emptyMap(),
+                    includeSuccessOutput = includeSuccessOutput
+                )
+            }
         } ?: emptyList()
         val passed = tests.count { it.status == TestStatus.PASSED }
         val failed = tests.count { it.status == TestStatus.FAILED }
@@ -447,9 +655,11 @@ class RunTestsTool : AbstractMcpTool() {
 
         val timedOut = run.timedOutByWatchdog
         val reportedExitCode = if (timedOut || exitCode == null) -1 else exitCode
+        val runSucceeded = reportedExitCode == 0 && failed == 0 && errors == 0
+        val runOutput = if (runSucceeded && !includeSuccessOutput) null else outputs?.unattributed
         return createJsonResult(
             RunTestsResult(
-                success = reportedExitCode == 0 && failed == 0 && errors == 0,
+                success = runSucceeded,
                 timedOut = timedOut,
                 noTestsFound = tests.isEmpty() && reportedExitCode == 0,
                 exitCode = reportedExitCode,
@@ -457,7 +667,7 @@ class RunTestsTool : AbstractMcpTool() {
                 failed = failed,
                 errors = errors,
                 total = tests.size,
-                output = outputs?.unattributed,
+                output = runOutput,
                 tests = tests
             )
         )
@@ -533,6 +743,251 @@ class RunTestsTool : AbstractMcpTool() {
             .createConfigurationsFromContext()
             ?.firstOrNull()
             ?.configurationSettings
+    }
+
+    private fun createMultipleConfigurationsFromContext(
+        project: Project,
+        psiElements: List<PsiElement>
+    ): RunnerAndConfigurationSettings? {
+        val locations = psiElements.map { PsiLocation.fromPsiElement(it) }.toTypedArray()
+        val dataContext = SimpleDataContext.builder()
+            .add(CommonDataKeys.PROJECT, project)
+            .add(Location.DATA_KEY, locations.firstOrNull())
+            .add(Location.DATA_KEYS, locations)
+            .add(PlatformCoreDataKeys.PSI_ELEMENT_ARRAY, psiElements.toTypedArray())
+            .build()
+        return ConfigurationContext.getFromContext(dataContext, ActionPlaces.UNKNOWN)
+            .createConfigurationsFromContext()
+            ?.firstOrNull()
+            ?.configurationSettings
+    }
+
+    internal suspend fun resolveTargetsRunConfiguration(
+        project: Project,
+        targets: List<String>
+    ): RunnerAndConfigurationSettings? {
+        val runManager = RunManager.getInstance(project)
+        val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
+        val factory = junitType?.configurationFactories?.firstOrNull()
+
+        requireSmartMode(project)
+
+        val psiElements = suspendingReadAction {
+            targets.mapNotNull { target ->
+                val (className, methodName) = parseTarget(target)
+                findClassByName(project, className)?.let {
+                    if (methodName == null) it else findMethodElement(it, methodName)
+                }
+            }
+        }
+
+        // Try ConfigurationContext with multiple locations first
+        if (psiElements.isNotEmpty()) {
+            val contextConfig = edtAction {
+                createMultipleConfigurationsFromContext(project, psiElements)
+            }
+            if (contextConfig != null) {
+                edtAction { runManager.setTemporaryConfiguration(contextConfig) }
+                return contextConfig
+            }
+        }
+
+        // Direct JUnit pattern configuration
+        if (factory != null) {
+            val name = if (targets.size == 1) targets[0] else "Tests in ${targets.take(2).joinToString(", ")}${if (targets.size > 2) " (+${targets.size - 2} more)" else ""}"
+            return edtAction {
+                try {
+                    val settings = runManager.createConfiguration(name, factory)
+                    val config = settings.configuration
+                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    data.javaClass.getField("TEST_OBJECT").set(data, "pattern")
+
+                    val patternSet = java.util.LinkedHashSet<String>()
+                    for (t in targets) {
+                        val (cls, method) = parseTarget(t)
+                        if (method != null) {
+                            patternSet.add("$cls,$method")
+                        } else {
+                            patternSet.add(cls)
+                        }
+                    }
+                    val setPatternsMethod = data.javaClass.getMethod("setPatterns", java.util.LinkedHashSet::class.java)
+                    setPatternsMethod.invoke(data, patternSet)
+
+                    if (psiElements.isNotEmpty()) {
+                        val firstFile = psiElements.first().containingFile?.virtualFile
+                        if (firstFile != null) {
+                            val module = ProjectFileIndex.getInstance(project).getModuleForFile(firstFile)
+                            if (module != null) {
+                                try {
+                                    config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+
+                    runManager.setTemporaryConfiguration(settings)
+                    settings
+                } catch (e: Exception) {
+                    LOG.warn("Failed to create pattern run configuration reflectively", e)
+                    null
+                }
+            }
+        }
+
+        return null
+    }
+
+    internal suspend fun resolvePackageRunConfiguration(
+        project: Project,
+        packageName: String
+    ): RunnerAndConfigurationSettings? {
+        val runManager = RunManager.getInstance(project)
+
+        requireSmartMode(project)
+
+        val psiPackage = suspendingReadAction {
+            findPackageByName(project, packageName)
+        }
+
+        if (psiPackage != null) {
+            val contextConfig = edtAction {
+                createConfigurationFromContext(project, psiPackage)
+            }
+            if (contextConfig != null) {
+                edtAction { runManager.setTemporaryConfiguration(contextConfig) }
+                return contextConfig
+            }
+        }
+
+        // Direct JUnit package configuration
+        val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
+        val factory = junitType?.configurationFactories?.firstOrNull()
+        if (factory != null) {
+            return edtAction {
+                try {
+                    val settings = runManager.createConfiguration("All in $packageName", factory)
+                    val config = settings.configuration
+                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    data.javaClass.getField("TEST_OBJECT").set(data, "package")
+                    data.javaClass.getField("PACKAGE_NAME").set(data, packageName)
+                    val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                    setScopeMethod.invoke(data, TestSearchScope.WHOLE_PROJECT)
+                    runManager.setTemporaryConfiguration(settings)
+                    settings
+                } catch (e: Exception) {
+                    LOG.warn("Failed to create package run configuration reflectively", e)
+                    null
+                }
+            }
+        }
+
+        return null
+    }
+
+    internal suspend fun resolveDirectoryRunConfiguration(
+        project: Project,
+        directory: String
+    ): RunnerAndConfigurationSettings? {
+        val runManager = RunManager.getInstance(project)
+
+        val vFile = suspendingReadAction { resolveFile(project, directory) }
+            ?: return null
+        if (!vFile.isDirectory) return null
+
+        val psiDir = suspendingReadAction {
+            PsiManager.getInstance(project).findDirectory(vFile)
+        } ?: return null
+
+        // Try ConfigurationContext first — works for Java, Python, JS, Go, etc.
+        val contextConfig = edtAction {
+            createConfigurationFromContext(project, psiDir)
+        }
+        if (contextConfig != null) {
+            edtAction { runManager.setTemporaryConfiguration(contextConfig) }
+            return contextConfig
+        }
+
+        // Direct JUnit directory configuration
+        val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
+        val factory = junitType?.configurationFactories?.firstOrNull()
+        if (factory != null) {
+            return edtAction {
+                try {
+                    val settings = runManager.createConfiguration("All in ${vFile.name}", factory)
+                    val config = settings.configuration
+                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    data.javaClass.getField("TEST_OBJECT").set(data, "directory")
+                    data.javaClass.getMethod("setDirName", String::class.java).invoke(data, vFile.path)
+                    val module = ProjectFileIndex.getInstance(project).getModuleForFile(vFile)
+                    if (module != null) {
+                        try {
+                            config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
+                            val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                            setScopeMethod.invoke(data, TestSearchScope.SINGLE_MODULE)
+                        } catch (_: Exception) {}
+                    }
+                    runManager.setTemporaryConfiguration(settings)
+                    settings
+                } catch (e: Exception) {
+                    LOG.warn("Failed to create directory run configuration reflectively", e)
+                    null
+                }
+            }
+        }
+
+        return null
+    }
+
+    internal suspend fun resolveModuleRunConfiguration(
+        project: Project,
+        moduleName: String
+    ): RunnerAndConfigurationSettings? {
+        val runManager = RunManager.getInstance(project)
+        val module = ModuleManager.getInstance(project).findModuleByName(moduleName)
+            ?: return null
+
+        // Direct JUnit module configuration (TEST_PACKAGE with empty package name in module scope)
+        val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
+        val factory = junitType?.configurationFactories?.firstOrNull()
+        if (factory != null) {
+            val settings = edtAction {
+                try {
+                    val s = runManager.createConfiguration("All in $moduleName", factory)
+                    val config = s.configuration
+                    config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
+                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    data.javaClass.getField("TEST_OBJECT").set(data, "package")
+                    data.javaClass.getField("PACKAGE_NAME").set(data, "")
+                    val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                    setScopeMethod.invoke(data, TestSearchScope.SINGLE_MODULE)
+                    runManager.setTemporaryConfiguration(s)
+                    s
+                } catch (e: Exception) {
+                    LOG.warn("Failed to create module run configuration reflectively", e)
+                    null
+                }
+            }
+            if (settings != null) return settings
+        }
+
+        // Fallback for other languages: try ConfigurationContext on test/source roots of the module
+        val testRoots = suspendingReadAction {
+            val moduleRootManager = ModuleRootManager.getInstance(module)
+            val fileIndex = ProjectFileIndex.getInstance(project)
+            val sourceRoots = moduleRootManager.getSourceRoots(true).filter { fileIndex.isInTestSourceContent(it) }
+            sourceRoots.ifEmpty { moduleRootManager.contentRoots.toList() }
+        }
+        for (root in testRoots) {
+            val psiDir = suspendingReadAction { PsiManager.getInstance(project).findDirectory(root) } ?: continue
+            val config = edtAction { createConfigurationFromContext(project, psiDir) }
+            if (config != null) {
+                edtAction { runManager.setTemporaryConfiguration(config) }
+                return config
+            }
+        }
+
+        return null
     }
 
     /**

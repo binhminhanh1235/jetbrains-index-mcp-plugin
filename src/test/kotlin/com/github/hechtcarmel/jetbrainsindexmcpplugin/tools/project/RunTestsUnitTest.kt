@@ -5,6 +5,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.TestResultsCollector
 import junit.framework.TestCase
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 class RunTestsUnitTest : TestCase() {
 
@@ -67,6 +68,20 @@ class RunTestsUnitTest : TestCase() {
         assertFalse(RunTestsTool.shouldActivateToolWindow(buildJsonObject { put("activateToolWindow", false) }))
     }
 
+    // ── shouldIncludeSuccessOutput ─────────────────────────────────────────────
+
+    fun testIncludeSuccessOutputDefaultsToFalse() {
+        assertFalse(RunTestsTool.shouldIncludeSuccessOutput(buildJsonObject { }))
+    }
+
+    fun testIncludeSuccessOutputExplicitTrue() {
+        assertTrue(RunTestsTool.shouldIncludeSuccessOutput(buildJsonObject { put("includeSuccessOutput", true) }))
+    }
+
+    fun testIncludeSuccessOutputExplicitFalse() {
+        assertFalse(RunTestsTool.shouldIncludeSuccessOutput(buildJsonObject { put("includeSuccessOutput", false) }))
+    }
+
     // ── resolveRequestMode ─────────────────────────────────────────────────────
 
     /**
@@ -103,6 +118,77 @@ class RunTestsUnitTest : TestCase() {
             put("runId", "")
         })
         assertTrue("blank strings are not real values", mode is RunTestsTool.RequestMode.Invalid)
+    }
+
+    fun testRequestModeStartTargetsWhenTargetsProvided() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            putJsonArray("targets") {
+                add(kotlinx.serialization.json.JsonPrimitive("com.example.TestA"))
+                add(kotlinx.serialization.json.JsonPrimitive("com.example.TestB"))
+            }
+        })
+        assertEquals(RunTestsTool.RequestMode.StartTargets(listOf("com.example.TestA", "com.example.TestB")), mode)
+    }
+
+    fun testRequestModeStartTargetsEmptyRejected() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            putJsonArray("targets") { }
+        })
+        assertTrue("empty targets array must be rejected", mode is RunTestsTool.RequestMode.Invalid)
+        assertEquals("targets array must not be empty.", (mode as RunTestsTool.RequestMode.Invalid).message)
+    }
+
+    fun testRequestModeStartTargetsExceedingFiftyRejected() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            putJsonArray("targets") {
+                for (i in 1..51) {
+                    add(kotlinx.serialization.json.JsonPrimitive("com.example.Test$i"))
+                }
+            }
+        })
+        assertTrue("more than 50 targets must be rejected", mode is RunTestsTool.RequestMode.Invalid)
+        assertTrue((mode as RunTestsTool.RequestMode.Invalid).message.contains("at most 50 entries"))
+    }
+
+    fun testRequestModeStartPackageWhenPackageProvided() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            put("package", "com.example.service")
+        })
+        assertEquals(RunTestsTool.RequestMode.StartPackage("com.example.service"), mode)
+    }
+
+    fun testRequestModeStartDirectoryWhenDirectoryProvided() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            put("directory", "src/test/kotlin/com/example")
+        })
+        assertEquals(RunTestsTool.RequestMode.StartDirectory("src/test/kotlin/com/example"), mode)
+    }
+
+    fun testRequestModeStartModuleWhenModuleProvided() {
+        val mode = RunTestsTool.resolveRequestMode(buildJsonObject {
+            put("module", "my-core-module")
+        })
+        assertEquals(RunTestsTool.RequestMode.StartModule("my-core-module"), mode)
+    }
+
+    fun testRequestModeMultipleSelectorsRejected() {
+        val mode1 = RunTestsTool.resolveRequestMode(buildJsonObject {
+            put("target", "com.example.TestA")
+            put("package", "com.example")
+        })
+        assertTrue("multiple selectors must be rejected", mode1 is RunTestsTool.RequestMode.Invalid)
+
+        val mode2 = RunTestsTool.resolveRequestMode(buildJsonObject {
+            putJsonArray("targets") { add(kotlinx.serialization.json.JsonPrimitive("com.example.TestA")) }
+            put("runId", "some-run-id")
+        })
+        assertTrue("targets + runId must be rejected", mode2 is RunTestsTool.RequestMode.Invalid)
+
+        val mode3 = RunTestsTool.resolveRequestMode(buildJsonObject {
+            put("directory", "src/test")
+            put("module", "app")
+        })
+        assertTrue("directory + module must be rejected", mode3 is RunTestsTool.RequestMode.Invalid)
     }
 
     // ── resolveWaitSeconds ─────────────────────────────────────────────────────

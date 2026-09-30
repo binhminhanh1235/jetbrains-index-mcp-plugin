@@ -6,6 +6,9 @@
 
 ### Added
 
+- **Batch and scoped test execution (`ide_run_tests`)** — Run multiple test classes or methods via `targets` (up to 50 entries), or scope test runs by `package`, `directory`, or `module` in a single execution.
+- **Omit console output on passing tests (`ide_run_tests`)** — Console output is omitted for passed tests by default (`includeSuccessOutput: false`) to save tokens on successful runs, while retaining output and stack traces for failed/errored tests. Pass `includeSuccessOutput: true` to include output for passed tests.
+- **Filtering and pagination for `ide_list_tests`** — Filter discovered tests by `package`, `directory`, `module`, `classPattern` (glob matching), and `framework`, with configurable pagination via `maxResults` and `offset`.
 - **Batch diagnostics (`ide_batch_diagnostics`)** — Run code inspections and retrieve diagnostics on multiple files in a single MCP call, reducing round trips when analyzing cross-file changes.
 - **Batch import optimization (`ide_batch_optimize_imports`)** — Optimize imports across multiple files in a single operation.
 - **Quick signature inspection (`ide_get_signature`)** — Retrieve method, function, or class signatures directly without reading the entire file.

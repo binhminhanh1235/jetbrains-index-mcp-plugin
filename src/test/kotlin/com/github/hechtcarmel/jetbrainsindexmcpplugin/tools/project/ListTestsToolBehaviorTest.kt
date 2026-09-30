@@ -301,6 +301,128 @@ class ListTestsToolBehaviorTest : McpPlatformTestCase() {
         assertEquals("count must agree with the number of entries returned", cap, payload.tests.size)
     }
 
+    fun testFilterByPackage() = runBlocking {
+        writeTwoTestClasses()
+        writeProjectFile(
+            "$TEST_SOURCES/other/OtherTest.java", """
+            package other;
+
+            public class OtherTest {
+                @org.junit.Test
+                public void testOther() {
+                }
+            }
+            """.trimIndent()
+        )
+
+        val resultSample = ListTestsTool().execute(project, buildJsonObject {
+            put("package", "sample")
+        })
+        assertToolSucceeded("list_tests with package should succeed", resultSample)
+        val payloadSample = decode(resultSample)
+        assertEquals(2, payloadSample.count)
+        assertTrue(payloadSample.tests.all { it.className.startsWith("sample.") })
+
+        val resultOther = ListTestsTool().execute(project, buildJsonObject {
+            put("package", "other")
+        })
+        val payloadOther = decode(resultOther)
+        assertEquals(1, payloadOther.count)
+        assertEquals("other.OtherTest", payloadOther.tests.first().className)
+    }
+
+    fun testFilterByDirectory() = runBlocking {
+        writeTwoTestClasses()
+
+        val result = ListTestsTool().execute(project, buildJsonObject {
+            put("directory", "$TEST_SOURCES/sample")
+        })
+        assertToolSucceeded("list_tests with directory should succeed", result)
+        val payload = decode(result)
+        assertEquals(2, payload.count)
+        assertTrue(payload.tests.all { it.file.startsWith("$TEST_SOURCES/sample") })
+
+        val badDirResult = ListTestsTool().execute(project, buildJsonObject {
+            put("directory", "$TEST_SOURCES/nonexistent")
+        })
+        assertTrue("non-existent directory should fail", badDirResult.isError == true)
+    }
+
+    fun testFilterByClassPattern() = runBlocking {
+        writeTwoTestClasses()
+
+        val resultAlpha = ListTestsTool().execute(project, buildJsonObject {
+            put("classPattern", "*Alpha*")
+        })
+        assertToolSucceeded("list_tests with classPattern should succeed", resultAlpha)
+        val payloadAlpha = decode(resultAlpha)
+        assertEquals(1, payloadAlpha.count)
+        assertEquals("sample.AlphaTest", payloadAlpha.tests.first().className)
+
+        val resultBeta = ListTestsTool().execute(project, buildJsonObject {
+            put("classPattern", "*BetaTest")
+        })
+        val payloadBeta = decode(resultBeta)
+        assertEquals(1, payloadBeta.count)
+        assertEquals("sample.BetaTest", payloadBeta.tests.first().className)
+    }
+
+    fun testFilterByFramework() = runBlocking {
+        writeTwoTestClasses()
+
+        val resultJUnit4 = ListTestsTool().execute(project, buildJsonObject {
+            put("framework", "JUnit4")
+        })
+        assertToolSucceeded("list_tests with framework should succeed", resultJUnit4)
+        val payloadJUnit4 = decode(resultJUnit4)
+        assertEquals(2, payloadJUnit4.count)
+
+        val resultUnknown = ListTestsTool().execute(project, buildJsonObject {
+            put("framework", "NonExistentFramework")
+        })
+        assertToolSucceeded("list_tests with unknown framework should return empty list", resultUnknown)
+        val payloadUnknown = decode(resultUnknown)
+        assertEquals(0, payloadUnknown.count)
+    }
+
+    fun testPaginationWithMaxResultsAndOffset() = runBlocking {
+        writeTwoTestClasses()
+
+        val page1Result = ListTestsTool().execute(project, buildJsonObject {
+            put("directory", "$TEST_SOURCES/sample")
+            put("maxResults", 1)
+            put("offset", 0)
+        })
+        assertToolSucceeded("page 1 should succeed", page1Result)
+        val page1 = decode(page1Result)
+        assertEquals(1, page1.count)
+        assertTrue("page 1 of 2 must report truncated", page1.truncated)
+
+        val page2Result = ListTestsTool().execute(project, buildJsonObject {
+            put("directory", "$TEST_SOURCES/sample")
+            put("maxResults", 1)
+            put("offset", 1)
+        })
+        assertToolSucceeded("page 2 should succeed", page2Result)
+        val page2 = decode(page2Result)
+        assertEquals(1, page2.count)
+        assertFalse("page 2 of 2 must not report truncated", page2.truncated)
+
+        assertFalse("pages must return different tests", page1.tests.first().displayName == page2.tests.first().displayName)
+    }
+
+    fun testValidationForPaginationParams() = runBlocking {
+        val negOffsetResult = ListTestsTool().execute(project, buildJsonObject {
+            put("offset", -1)
+        })
+        assertTrue("negative offset must return error", negOffsetResult.isError == true)
+
+        val zeroMaxResult = ListTestsTool().execute(project, buildJsonObject {
+            put("maxResults", 0)
+        })
+        assertTrue("zero maxResults must return error", zeroMaxResult.isError == true)
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────
 
     private fun decode(result: CallToolResult): ListTestsResult = json.decodeFromString(toolText(result))

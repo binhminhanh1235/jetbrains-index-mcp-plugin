@@ -863,6 +863,10 @@ abstract class AbstractMcpTool : McpTool {
         return ClassResolver.findClassByName(project, qualifiedName)
     }
 
+    protected fun findPackageByName(project: Project, packageName: String): PsiElement? {
+        return ClassResolver.findPackageByName(project, packageName)
+    }
+
     /**
      * Gets a page from the pagination cache.
      * Delegates to PaginationService with exact project identity and materializes cached symbol

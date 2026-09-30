@@ -74,6 +74,32 @@ class TestResultsCollectorOutputTest : McpPlatformTestCase() {
         assertNull("a test that printed nothing must carry no output field", silent.single().output)
     }
 
+    fun testCollectRunEntriesOmitsOutputWhenSuccessAndIncludeSuccessOutputFalse() {
+        buildTree()
+        addTest("testPass") {
+            it.addStdOutput("passing logs\n")
+            it.setFinished()
+        }
+        addTest("testFail") {
+            it.addStdOutput("failing logs\n")
+            it.setTestFailed("assertion error", "stack trace", false)
+            it.setFinished()
+        }
+        finish()
+
+        val outputs = TestResultsCollector.collectRunOutputs(root)
+        val entries = TestResultsCollector.collectRunEntries(
+            root,
+            outputs = outputs.perTest,
+            includeSuccessOutput = false
+        )
+
+        val passEntry = entries.single { it.name == "FooTest.testPass" }
+        val failEntry = entries.single { it.name == "FooTest.testFail" }
+        assertNull("passed test must omit output when includeSuccessOutput=false", passEntry.output)
+        assertEquals("failed test must retain output even when includeSuccessOutput=false", "failing logs\n", failEntry.output)
+    }
+
     fun testSystemOutputIsExcluded() {
         buildTree()
         val test = addTest("testX") {

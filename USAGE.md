@@ -1723,12 +1723,19 @@ Each test entry carries an `output` field with the console output that test prin
 
 Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long traces and outputs are trimmed in the middle (keeping the start and the end — for traces that is the throw site and the root cause of chained exceptions), and on mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
 
-**Language support:** Passing an **existing run configuration name** works for any language/framework. Passing a **class or method FQN** (so the plugin creates the run config for you) is supported **only for Java/Kotlin** — for Python, JS/TS, Go, PHP, or Rust, create/select a run configuration in the IDE and pass its name.
+**Language and scope support:**
+- Passing an **existing run configuration name** via `target` works for any language/framework.
+- Passing a **class or method FQN** via `target` (`com.example.MyTest` or `com.example.MyTest#testFoo`) is supported for Java/Kotlin.
+- Passing a **batch array** via `targets` (`["com.example.TestA", "com.example.TestB#testMethod"]`, max 50 entries) runs all specified tests in a single test run (Java/Kotlin).
+- Passing a **package name** via `package` (`com.example.service`) runs all tests in that package (Java/Kotlin).
+- Passing a **directory path** via `directory` (`src/test/kotlin/com/example`) runs all tests in that directory (works across Java/Kotlin, Python, JS/TS, Go, etc.).
+- Passing a **module name** via `module` (`core-service`) runs all tests in that IntelliJ module.
 
-**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no `target`) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
+**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
 
 **Use when:**
 - Running a specific test class or method after a code change
+- Running a scoped batch of tests across classes, packages, directories, or modules
 - Verifying that a fix resolves a test failure
 - Getting structured test results without dropping to a terminal
 
@@ -1737,15 +1744,20 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
-| `target` | string | No* | One of: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
-| `runId` | string | No* | `runId` from a previous `{"status": "running"}` response — attaches to that run and keeps waiting instead of starting a new one |
+| `target` | string | Conditional* | Single test selector: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
+| `targets` | array of strings | Conditional* | Batch test selector: array of fully qualified class names or `class#method` (max 50 entries) to run together in a single test run (**Java/Kotlin-only**) |
+| `package` | string | Conditional* | Package scope selector: fully qualified package name to run all tests in that package (e.g. `com.example.service`) (**Java/Kotlin-only**) |
+| `directory` | string | Conditional* | Directory scope selector: relative path to test source directory (e.g. `src/test/kotlin`) to run all tests in that directory (all supported test frameworks) |
+| `module` | string | Conditional* | Module scope selector: IntelliJ module name to run all tests in that module |
+| `runId` | string | Conditional* | `runId` from a previous `{"status": "running"}` response — attaches to that run and keeps waiting instead of starting a new one |
 | `timeoutSeconds` | integer | No | Max seconds the whole test run may take before its process is killed, counted from test process start and enforced across polls (default: 120). Ignored with `runId` |
 | `waitSeconds` | integer | No | Max seconds this call may block before returning results or a `running` status (default: 45, max: 55). Keep below the MCP client's request timeout |
 | `activateToolWindow` | boolean | No | Open (activate) the Run tool window for this run. Default: `false` — the run executes in the background without stealing focus; its content is still added to the Run tool window |
+| `includeSuccessOutput` | boolean | No | Include console output for passed/successful tests (and successful run-level output). Default: `false` — console output is omitted for passed tests to save tokens, but retained for failed/errored tests. Set to `true` to retrieve console output for all tests |
 
-*Exactly one of `target` / `runId` is required.
+*Exactly one of `target`, `targets`, `package`, `directory`, `module`, or `runId` is required.
 
-**Example Request:**
+**Example Request (single method):**
 
 ```json
 {
@@ -1754,6 +1766,34 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
     "name": "ide_run_tests",
     "arguments": {
       "target": "com.example.MyTest#testFoo"
+    }
+  }
+}
+```
+
+**Example Request (batch targets):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_run_tests",
+    "arguments": {
+      "targets": ["com.example.UserTest", "com.example.OrderTest#testCheckout"]
+    }
+  }
+}
+```
+
+**Example Request (package scope):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_run_tests",
+    "arguments": {
+      "package": "com.example.service"
     }
   }
 }
@@ -3862,19 +3902,27 @@ These tools require the Java plugin and are only available in **IntelliJ IDEA** 
 
 > **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
 
-List all test methods discovered by the IDE's test framework extension points (JUnit, TestNG, etc.).
+List test methods and classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.), with support for file, package, directory, module, class-pattern, and framework filtering, as well as pagination.
 
 **Use when:**
 - Discovering what tests exist before running them
 - Finding the exact FQN of a test class or method to pass to `ide_run_tests`
-- Checking whether a new test file was picked up by the IDE
+- Filtering tests by package, directory, module, name pattern, or framework
+- Paginating through large test suites
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
-| `file` | string | No | Path to a specific test file relative to project root. If omitted, all test sources are scanned |
+| `file` | string | No | Path to a specific test file relative to project root |
+| `package` | string | No | Fully qualified package name to filter tests (e.g. `com.example.service`) |
+| `directory` | string | No | Relative path to test directory to filter tests (e.g. `src/test/kotlin`) |
+| `module` | string | No | IntelliJ module name to filter tests |
+| `classPattern` | string | No | Glob pattern to match test class names (e.g. `*UnitTest` or `**/*Test`) |
+| `framework` | string | No | Test framework name filter (e.g. `JUnit4`, `JUnit5`, `TestNG`) |
+| `maxResults` | integer | No | Maximum number of tests to return per page (default: 500, max: 10000) |
+| `offset` | integer | No | Zero-based index of the first test to return (default: 0) |
 
 **Example Request:**
 
@@ -3883,7 +3931,12 @@ List all test methods discovered by the IDE's test framework extension points (J
   "method": "tools/call",
   "params": {
     "name": "ide_list_tests",
-    "arguments": {}
+    "arguments": {
+      "package": "com.example.service",
+      "classPattern": "*UnitTest",
+      "maxResults": 100,
+      "offset": 0
+    }
   }
 }
 ```
@@ -3895,14 +3948,16 @@ List all test methods discovered by the IDE's test framework extension points (J
   "tests": [
     {
       "framework": "JUnit4",
-      "className": "McpPluginUnitTest",
-      "methodName": "testToolNamesHaveIdePrefix",
-      "displayName": "McpPluginUnitTest.testToolNamesHaveIdePrefix",
-      "file": "src/test/kotlin/com/example/McpPluginUnitTest.kt",
+      "className": "UserServiceUnitTest",
+      "methodName": "testFindUser",
+      "displayName": "UserServiceUnitTest.testFindUser",
+      "file": "src/test/kotlin/com/example/service/UserServiceUnitTest.kt",
       "line": 42
     }
   ],
   "count": 1,
+  "total": 1,
+  "offset": 0,
   "truncated": false
 }
 ```

@@ -102,9 +102,17 @@ object ParamNames {
 
     // Test parameters
     const val TARGET = "target"
+    const val TARGETS = "targets"
+    const val PACKAGE = "package"
+    const val DIRECTORY = "directory"
+    const val MODULE = "module"
+    const val CLASS_PATTERN = "classPattern"
+    const val FRAMEWORK = "framework"
+    const val OFFSET = "offset"
     const val ACTIVATE_TOOL_WINDOW = "activateToolWindow"
     const val RUN_ID = "runId"
     const val WAIT_SECONDS = "waitSeconds"
+    const val INCLUDE_SUCCESS_OUTPUT = "includeSuccessOutput"
 
     // Diagnostics parameters
     const val INCLUDE_BUILD_ERRORS = "includeBuildErrors"

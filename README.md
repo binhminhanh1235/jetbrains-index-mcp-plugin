@@ -295,7 +295,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(requires Maven plugin)* |
 | `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)) with structured errors. Long builds return a `buildId` to poll, so the MCP client's request timeout is never hit |
-| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Class/method **FQN targeting is Java/Kotlin-only**; other languages pass an existing run-config name. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit |
+| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Scope by single `target`, batch `targets` list, `package`, `directory`, or `module`. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation |
@@ -345,7 +345,7 @@ propagate through reflective handlers instead of completing an empty hierarchy.
 
 | Tool | Description |
 |------|-------------|
-| `ide_list_tests` | List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.) *(requires Java plugin)* |
+| `ide_list_tests` | List test methods/classes discovered by IDE test framework extension points (JUnit, TestNG, etc.) with optional `file`, `package`, `directory`, `module`, `classPattern`, or `framework` filtering and pagination (`maxResults`, `offset`) *(requires Java plugin)* |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using IntelliJ's built-in converter *(disabled by default, requires Java + Kotlin plugins)* |
 | `ide_refactor_safe_delete` | Preview or safely delete an exact/nested symbol target or file after checking usages (Java/Kotlin only) |
 
