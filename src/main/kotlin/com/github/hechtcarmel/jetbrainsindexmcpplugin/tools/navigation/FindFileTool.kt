@@ -127,7 +127,7 @@ class FindFileTool : AbstractMcpTool() {
         }
         val excludeGenerated = resolveExcludeGenerated(arguments, default = false)
         val pageSize = resolvePageSize(arguments, DEFAULT_PAGE_SIZE, aliases = arrayOf("limit"))
-        val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
+        val collectLimit = maxOf(PaginationService.computeOvercollect(pageSize), pageSize)
 
         if (query.isBlank()) {
             return createErrorResult("Query cannot be empty")

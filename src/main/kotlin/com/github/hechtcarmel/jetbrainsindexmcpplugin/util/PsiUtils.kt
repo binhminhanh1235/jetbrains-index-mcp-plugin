@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.OrderEnumerator
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
@@ -134,7 +136,7 @@ object PsiUtils {
         // Handle already-formatted jar:// URLs
         if (normalizedPath.startsWith("jar://")) {
             val jarPath = normalizedPath.removePrefix("jar://").substringBefore("!/")
-            val projectLibraryJars = project.getProjectLibraryJars()
+            val projectLibraryJars = project.getCachedLibraryJars()
             if (projectLibraryJars.none { isPathPrefixOf(it, jarPath) }) return null
             return virtualFileManager.findFileByUrl(normalizedPath)
         }
@@ -150,7 +152,7 @@ object PsiUtils {
                 val absoluteJarPath = resolveAbsolutePathString(homeExpandedJarPath, listOfNotNull(project.basePath).asSequence())
                     ?: homeExpandedJarPath
 
-                val projectLibraryJars = project.getProjectLibraryJars()
+                val projectLibraryJars = project.getCachedLibraryJars()
 
                 if (projectLibraryJars.none { isPathPrefixOf(it, absoluteJarPath) }) {
                     return null
@@ -557,6 +559,39 @@ private fun isPathPrefixOf(prefix: String, child: String): Boolean {
     } catch (_: InvalidPathException) {
         child.startsWith(prefix)
     }
+}
+
+private val libraryRootsCache = java.util.concurrent.ConcurrentHashMap<Project, Pair<Long, List<String>>>()
+private val registeredLibraryProjects = java.util.concurrent.ConcurrentHashMap.newKeySet<Project>()
+
+internal fun Project.getCachedLibraryJars(): List<String> {
+    if (this.isDisposed) return emptyList()
+    val modCount = try {
+        ProjectRootManager.getInstance(this).modificationCount
+    } catch (_: Throwable) {
+        -1L
+    }
+    if (modCount != -1L) {
+        val cached = libraryRootsCache[this]
+        if (cached != null && cached.first == modCount) {
+            return cached.second
+        }
+    }
+    val roots = getProjectLibraryJars()
+    if (modCount != -1L) {
+        libraryRootsCache[this] = modCount to roots
+        if (registeredLibraryProjects.add(this)) {
+            try {
+                Disposer.register(this) {
+                    libraryRootsCache.remove(this)
+                    registeredLibraryProjects.remove(this)
+                }
+            } catch (_: Throwable) {
+                registeredLibraryProjects.remove(this)
+            }
+        }
+    }
+    return roots
 }
 
 private fun Project.getProjectLibraryJars(): List<String> = OrderEnumerator.orderEntries(this)

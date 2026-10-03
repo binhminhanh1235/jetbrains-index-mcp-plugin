@@ -8,6 +8,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.LowMemoryWatcher
 import com.intellij.psi.PsiElement
 import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.psi.util.PsiModificationTracker
@@ -36,13 +37,15 @@ class PaginationService @JvmOverloads constructor(
     companion object {
         const val TTL_MINUTES = 10L
         const val MAX_CURSORS = 20
-        const val MAX_CACHED_RESULTS_PER_CURSOR = 5000
+        const val MAX_CACHED_RESULTS_PER_CURSOR = 1000
         const val SWEEP_INTERVAL_MINUTES = 5L
-        const val DEFAULT_OVERCOLLECT = 500
+        const val DEFAULT_OVERCOLLECT = 150
         const val MAX_PAGE_SIZE = 500
         internal const val UNMATERIALIZED_SYMBOL_ID = "sym_unmaterialized"
         private const val SESSION_CHANGED_MESSAGE =
             "Search context invalidated because the MCP server session changed. Please re-search."
+
+        fun computeOvercollect(pageSize: Int): Int = minOf(maxOf(pageSize * 3, 25), 150)
 
         fun getInstance(): PaginationService =
             ApplicationManager.getApplication().getService(PaginationService::class.java)
@@ -126,6 +129,22 @@ class PaginationService @JvmOverloads constructor(
                 delay(SWEEP_INTERVAL_MINUTES * 60 * 1000)
                 sweepExpired()
             }
+        }
+        try {
+            LowMemoryWatcher.register({
+                synchronized(this) {
+                    val it = cursors.entries.iterator()
+                    while (it.hasNext()) {
+                        val entry = it.next().value
+                        if (!entry.mutex.isLocked) {
+                            it.remove()
+                            counters.removed(CacheEvictionReason.LRU)
+                        }
+                    }
+                }
+            }, this)
+        } catch (_: Throwable) {
+            // Headless unit tests or environments without application
         }
     }
 
@@ -446,7 +465,7 @@ class PaginationService @JvmOverloads constructor(
                 }
                 try {
                     val remainingCapacity = MAX_CACHED_RESULTS_PER_CURSOR - entry.results.size
-                    val extensionLimit = minOf(DEFAULT_OVERCOLLECT, remainingCapacity + 1)
+                    val extensionLimit = minOf(computeOvercollect(pageSize), remainingCapacity + 1)
                     val newResults = entry.searchExtender!!(entry.seenKeys.toSet(), extensionLimit)
 
                     val modCountAfterExtension = currentModCountAfterSuspension()

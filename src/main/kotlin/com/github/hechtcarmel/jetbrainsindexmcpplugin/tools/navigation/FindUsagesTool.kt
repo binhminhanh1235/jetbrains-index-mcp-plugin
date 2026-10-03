@@ -156,7 +156,7 @@ class FindUsagesTool : AbstractMcpTool() {
         }
 
         val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS, aliases = arrayOf("maxResults"))
-        val collectLimit = maxOf(PaginationService.DEFAULT_OVERCOLLECT, pageSize)
+        val collectLimit = maxOf(PaginationService.computeOvercollect(pageSize), pageSize)
         // Generated DI factories / *_MembersInjector classes are included by default so valid
         // runtime references (Dagger, MapStruct, gRPC, serializers) are not missed. Callers can
         // pass includeGenerated=false to drop generated output when it dominates results.

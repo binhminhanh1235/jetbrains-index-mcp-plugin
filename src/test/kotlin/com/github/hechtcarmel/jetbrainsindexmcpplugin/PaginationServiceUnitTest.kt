@@ -39,6 +39,13 @@ class PaginationServiceUnitTest : TestCase() {
 
     // --- Encoding tests ---
 
+    fun testComputeOvercollect() {
+        assertEquals(75, PaginationService.computeOvercollect(25))
+        assertEquals(150, PaginationService.computeOvercollect(100))
+        assertEquals(25, PaginationService.computeOvercollect(5))
+        assertEquals(150, PaginationService.computeOvercollect(500))
+    }
+
     fun testEncodeCursorRoundTrip() {
         val service = createTestService()
         val token = service.encodeCursor("entry123", 200)

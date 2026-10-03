@@ -32,7 +32,7 @@ class FindUsagesToolUnitTest : TestCase() {
             FindUsagesTool.computeTotalIsExact(
                 metadata = mapOf("searchExhausted" to "false"),
                 hasMore = false,
-                totalCollected = 1200
+                totalCollected = 600
             )
         )
     }

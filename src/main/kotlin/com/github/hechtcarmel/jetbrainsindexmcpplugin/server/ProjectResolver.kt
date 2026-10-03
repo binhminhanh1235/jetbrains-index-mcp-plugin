@@ -20,6 +20,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.Disposer
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -224,6 +226,72 @@ object ProjectResolver {
         )
     }
 
+    internal data class ModuleContentRoot(
+        val moduleName: String,
+        val rawPath: String,
+        val normalizedPath: String,
+        val isExactBasePath: Boolean
+    )
+
+    private val contentRootsCache = java.util.concurrent.ConcurrentHashMap<Project, Pair<Long, List<ModuleContentRoot>>>()
+    private val registeredProjects = java.util.concurrent.ConcurrentHashMap.newKeySet<Project>()
+
+    internal fun getProjectContentRoots(project: Project): List<ModuleContentRoot> {
+        if (project.isDisposed) return emptyList()
+        val modCount = try {
+            ProjectRootManager.getInstance(project).modificationCount
+        } catch (_: Throwable) {
+            -1L
+        }
+        if (modCount != -1L) {
+            val cached = contentRootsCache[project]
+            if (cached != null && cached.first == modCount) {
+                return cached.second
+            }
+        }
+        val roots = mutableListOf<ModuleContentRoot>()
+        try {
+            val projectBasePath = project.basePath
+            val normalizedBasePath = projectBasePath?.let { normalizePath(it) }
+            val modules = ModuleManager.getInstance(project).modules
+            for (module in modules) {
+                val contentRoots = ModuleRootManager.getInstance(module).contentRoots
+                for (root in contentRoots) {
+                    val rawPath = root.path
+                    val normPath = normalizePath(rawPath)
+                    roots += ModuleContentRoot(
+                        moduleName = module.name,
+                        rawPath = rawPath,
+                        normalizedPath = normPath,
+                        isExactBasePath = normPath == normalizedBasePath
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            LOG.debug("Failed to check module content roots for project ${project.name}", e)
+        }
+        if (modCount != -1L) {
+            contentRootsCache[project] = modCount to roots
+            if (registeredProjects.add(project)) {
+                try {
+                    Disposer.register(project) {
+                        contentRootsCache.remove(project)
+                        registeredProjects.remove(project)
+                    }
+                } catch (_: Throwable) {
+                    registeredProjects.remove(project)
+                }
+            }
+        }
+        return roots
+    }
+
+    @org.jetbrains.annotations.TestOnly
+    internal fun clearContentRootsCache() {
+        contentRootsCache.clear()
+        registeredProjects.clear()
+    }
+
     /**
      * Finds a project by checking if any of its module content roots match the given path.
      * This supports workspace projects where sub-projects are represented as modules
@@ -231,18 +299,11 @@ object ProjectResolver {
      */
     private fun findProjectByModuleContentRoot(projects: List<Project>, normalizedPath: String): Project? {
         for (project in projects) {
-            try {
-                val modules = ModuleManager.getInstance(project).modules
-                for (module in modules) {
-                    val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                    for (root in contentRoots) {
-                        if (normalizePath(root.path) == normalizedPath) {
-                            return project
-                        }
-                    }
+            val roots = getProjectContentRoots(project)
+            for (root in roots) {
+                if (root.normalizedPath == normalizedPath) {
+                    return project
                 }
-            } catch (e: Exception) {
-                LOG.debug("Failed to check module content roots for project ${project.name}", e)
             }
         }
         return null
@@ -257,20 +318,15 @@ object ProjectResolver {
         var bestProject: Project? = null
         var bestRootLength = -1
         for (project in projects) {
-            try {
-                for (module in ModuleManager.getInstance(project).modules) {
-                    for (root in ModuleRootManager.getInstance(module).contentRoots) {
-                        val rootPath = normalizePath(root.path)
-                        val matches = normalizedPath == rootPath ||
-                            normalizedPath.startsWith("$rootPath/")
-                        if (matches && rootPath.length > bestRootLength) {
-                            bestProject = project
-                            bestRootLength = rootPath.length
-                        }
-                    }
+            val roots = getProjectContentRoots(project)
+            for (root in roots) {
+                val rootPath = root.normalizedPath
+                val matches = normalizedPath == rootPath ||
+                    normalizedPath.startsWith("$rootPath/")
+                if (matches && rootPath.length > bestRootLength) {
+                    bestProject = project
+                    bestRootLength = rootPath.length
                 }
-            } catch (e: Exception) {
-                LOG.debug("Failed to check module content roots for project ${project.name}", e)
             }
         }
         return bestProject
@@ -327,23 +383,15 @@ object ProjectResolver {
 
             if (!includeWorkspaceSubProjects) continue
 
-            try {
-                val modules = ModuleManager.getInstance(proj).modules
-                for (module in modules) {
-                    val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                    for (root in contentRoots) {
-                        val rootPath = root.path
-                        if (rootPath != proj.basePath) {
-                            entries += AvailableProjectEntry(
-                                name = module.name,
-                                path = rootPath,
-                                workspace = proj.name
-                            )
-                        }
-                    }
+            val roots = getProjectContentRoots(proj)
+            for (root in roots) {
+                if (!root.isExactBasePath) {
+                    entries += AvailableProjectEntry(
+                        name = root.moduleName,
+                        path = root.rawPath,
+                        workspace = proj.name
+                    )
                 }
-            } catch (e: Exception) {
-                LOG.debug("Failed to list module content roots for project ${proj.name}", e)
             }
         }
         return entries
