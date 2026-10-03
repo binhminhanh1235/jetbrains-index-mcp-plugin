@@ -9,6 +9,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createFilteredSco
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactSearchTextResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SearchTextResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TextMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -29,6 +30,7 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.usageView.UsageInfo
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
@@ -81,16 +83,18 @@ class SearchTextTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.WHOLE_WORD, "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
         .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: false.", required = false)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult(cursor, pageSize, project)
+            return buildPaginatedResult(cursor, pageSize, project, compact)
         }
 
         val query = arguments[ParamNames.QUERY]?.jsonPrimitive?.content
@@ -151,7 +155,7 @@ class SearchTextTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult(cursorToken, pageSize, project)
+        return buildPaginatedResult(cursorToken, pageSize, project, compact)
     }
 
     private fun createCursor(
@@ -185,20 +189,39 @@ class SearchTextTool : AbstractMcpTool() {
         )
     }
 
-    private suspend fun buildPaginatedResult(cursorToken: String, pageSize: Int?, project: Project): CallToolResult =
-        buildPaginatedResult<TextMatch, SearchTextResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
-            SearchTextResult(
-                matches = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+    private suspend fun buildPaginatedResult(
+        cursorToken: String,
+        pageSize: Int?,
+        project: Project,
+        compact: Boolean = false
+    ): CallToolResult {
+        val pageResult = getPageFromCache(cursorToken, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<TextMatch, CompactSearchTextResult>(pageResult) { items, page ->
+                CompactSearchTextResult(
+                    matches = items.map { "${it.file}:${it.line}: ${it.context}" },
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<TextMatch, SearchTextResult>(pageResult) { items, page ->
+                SearchTextResult(
+                    matches = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
+    }
 
     private fun parseUsageSearchContext(contextStr: String): Short {
         return when (contextStr.lowercase()) {

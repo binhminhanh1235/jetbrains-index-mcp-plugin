@@ -437,8 +437,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
         return createJsonResult(
             TypeHierarchyResult(
                 element = root,
-                supertypes = returnedSupertypes,
-                subtypes = returnedSubtypes,
+                supertypes = if (traversal.isNotEmpty()) null else returnedSupertypes,
+                subtypes = if (traversal.isNotEmpty()) null else returnedSubtypes,
                 traversal = traversal,
                 returnedNodes = returnedNodes,
                 truncated = hasMore,

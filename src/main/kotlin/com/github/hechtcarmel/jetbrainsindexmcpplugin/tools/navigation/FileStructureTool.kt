@@ -106,7 +106,7 @@ class FileStructureTool : AbstractMcpTool() {
             createJsonResult(FileStructureResult(
                 file = file,
                 language = psiFile.language.id,
-                structure = treeString,
+                structure = if (includeNodes) null else treeString,
                 nodes = structuredNodes,
                 symbolIdsTruncated = includeSymbolIds && bindingBudget.omitted > 0,
                 symbolIdsOmitted = if (includeSymbolIds) bindingBudget.omitted else 0

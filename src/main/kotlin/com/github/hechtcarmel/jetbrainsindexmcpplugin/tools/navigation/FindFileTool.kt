@@ -1,12 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactFindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -27,6 +29,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.indexing.FindSymbolParameters
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -71,28 +74,44 @@ class FindFileTool : AbstractMcpTool() {
         .projectPath()
         .stringProperty(ParamNames.QUERY, "File name pattern. Supports substring and fuzzy matching. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
+        .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false.")
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (file paths) instead of full structured JSON objects, reducing output tokens. Default: false.", required = false)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<FileMatch, FindFileResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                FindFileResult(
-                    files = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<FileMatch, CompactFindFileResult>(pageResult) { items, page ->
+                    CompactFindFileResult(
+                        files = items.map { it.path },
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore
+                    )
+                }
+            } else {
+                buildPaginatedResult<FileMatch, FindFileResult>(pageResult) { items, page ->
+                    FindFileResult(
+                        files = items,
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale
+                    )
+                }
             }
         }
 
@@ -150,18 +169,31 @@ class FindFileTool : AbstractMcpTool() {
             )
         }
 
-        return buildPaginatedResult<FileMatch, FindFileResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
-            FindFileResult(
-                files = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(cursorToken, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<FileMatch, CompactFindFileResult>(pageResult) { items, page ->
+                CompactFindFileResult(
+                    files = items.map { it.path },
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<FileMatch, FindFileResult>(pageResult) { items, page ->
+                FindFileResult(
+                    files = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
     }
 

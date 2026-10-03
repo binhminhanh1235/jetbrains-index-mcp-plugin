@@ -639,7 +639,9 @@ class ResultShapeContractUnitTest : TestCase() {
                     lineCount = 88,
                     startLine = 10,
                     endLine = 60,
-                    isLibraryFile = true
+                    isLibraryFile = true,
+                    truncated = true,
+                    totalLines = 100
                 )
             ),
             struct(

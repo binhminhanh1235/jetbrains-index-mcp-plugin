@@ -59,13 +59,14 @@ internal fun buildAvailableProjectsJson(
     }
 }
 
+private val projectResolverJson = Json { encodeDefaults = true; prettyPrint = false }
+
 internal fun buildStructuredErrorResult(
     payload: JsonObject,
     format: McpSettings.ResponseFormat = McpSettings.ResponseFormat.JSON
 ): CallToolResult {
-    val json = Json { encodeDefaults = true; prettyPrint = false }
     return try {
-        val jsonText = json.encodeToString(payload)
+        val jsonText = projectResolverJson.encodeToString(payload)
         CallToolResult(
             content = listOf(
                 TextContent(
@@ -86,7 +87,7 @@ internal fun buildStructuredErrorResult(
 object ProjectResolver {
 
     private val LOG = logger<ProjectResolver>()
-    private val json = Json { encodeDefaults = true; prettyPrint = false }
+    private val json = projectResolverJson
 
     private val fallbackProjects = java.util.concurrent.ConcurrentHashMap<String, Project>()
 
@@ -197,7 +198,7 @@ object ProjectResolver {
                         put("error", ErrorMessages.ERROR_PROJECT_NOT_FOUND)
                         put("message", ErrorMessages.msgProjectNotFound(projectPath))
                         put("hint", diagnoseProjectPath(normalizedPath))
-                        put("available_projects", buildAvailableProjectsArray(openProjects))
+                        putAvailableProjects(openProjects)
                     },
                     format = responseFormat()
                 )
@@ -216,7 +217,7 @@ object ProjectResolver {
                 payload = buildJsonObject {
                     put("error", ErrorMessages.ERROR_MULTIPLE_PROJECTS)
                     put("message", ErrorMessages.MSG_MULTIPLE_PROJECTS)
-                    put("available_projects", buildAvailableProjectsArray(openProjects))
+                    putAvailableProjects(openProjects)
                 },
                 format = responseFormat()
             )
@@ -282,11 +283,36 @@ object ProjectResolver {
      * Collection of entries (touches the IntelliJ Platform) is separated from
      * JSON serialization (pure, unit-testable via [buildAvailableProjectsJson]).
      */
-    private fun buildAvailableProjectsArray(openProjects: List<Project>): JsonArray {
-        val includeWorkspaceSubProjects = isExpandedMode()
+    const val MAX_AVAILABLE_PROJECTS = 15
+
+    internal data class AvailableProjectsData(
+        val array: JsonArray,
+        val truncatedCount: Int
+    )
+
+    internal fun buildAvailableProjectsData(
+        openProjects: List<Project>,
+        includeWorkspaceSubProjects: Boolean = isExpandedMode()
+    ): AvailableProjectsData {
         val entries = collectAvailableProjectEntries(openProjects, includeWorkspaceSubProjects)
-        return buildAvailableProjectsJson(entries, includeWorkspaceSubProjects)
+        val cappedEntries = entries.take(MAX_AVAILABLE_PROJECTS)
+        val truncatedCount = (entries.size - cappedEntries.size).coerceAtLeast(0)
+        return AvailableProjectsData(
+            array = buildAvailableProjectsJson(cappedEntries, includeWorkspaceSubProjects),
+            truncatedCount = truncatedCount
+        )
     }
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putAvailableProjects(openProjects: List<Project>) {
+        val data = buildAvailableProjectsData(openProjects)
+        put("available_projects", data.array)
+        if (data.truncatedCount > 0) {
+            put("available_projects_truncated_count", data.truncatedCount)
+        }
+    }
+
+    internal fun buildAvailableProjectsArray(openProjects: List<Project>): JsonArray =
+        buildAvailableProjectsData(openProjects).array
 
     private fun collectAvailableProjectEntries(
         openProjects: List<Project>,
@@ -498,7 +524,7 @@ object ProjectResolver {
                     put("message", message)
                     put("hint", diagnoseProjectPath(normalizePath(projectPath)))
                     put("requested_path", projectPath)
-                    put("available_projects", buildAvailableProjectsArray(openProjects))
+                    putAvailableProjects(openProjects)
                 },
                 format = responseFormat()
             )

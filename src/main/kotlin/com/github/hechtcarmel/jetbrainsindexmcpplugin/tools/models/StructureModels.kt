@@ -64,7 +64,7 @@ enum class StructureKind {
 data class FileStructureResult(
     val file: String,
     val language: String,
-    val structure: String,
+    val structure: String? = null,
     val nodes: List<StructureNode> = emptyList(),
     val symbolIdsTruncated: Boolean = false,
     val symbolIdsOmitted: Int = 0

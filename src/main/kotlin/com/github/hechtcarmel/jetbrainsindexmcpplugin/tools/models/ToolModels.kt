@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
@@ -20,7 +22,7 @@ data class UsageLocation(
     val column: Int,
     val context: String,
     val type: String,
-    val astPath: List<String>,
+    val astPath: List<String>? = null,
 )
 
 /**
@@ -42,16 +44,20 @@ data class ResolvedSymbolInfo(
     val language: String? = null
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
     val totalCount: Int,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val truncated: Boolean = false,
     val nextCursor: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val hasMore: Boolean = false,
     val totalCollected: Int = 0,
     val offset: Int = 0,
     val pageSize: Int = 0,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val stale: Boolean = false,
     val resolvedSymbol: ResolvedSymbolInfo? = null,
     // When false, totalCount is a lower bound ("at least N") — the search hit the internal
@@ -131,7 +137,9 @@ data class ReadFileResult(
     val lineCount: Int,
     val startLine: Int?,
     val endLine: Int?,
-    val isLibraryFile: Boolean
+    val isLibraryFile: Boolean,
+    val truncated: Boolean? = null,
+    val totalLines: Int? = null
 )
 
 
@@ -139,8 +147,8 @@ data class ReadFileResult(
 @Serializable
 data class TypeHierarchyResult(
     val element: TypeElement,
-    val supertypes: List<TypeElement>,
-    val subtypes: List<TypeElement>,
+    val supertypes: List<TypeElement>? = null,
+    val subtypes: List<TypeElement>? = null,
     /** Exact breadth-first wire order; legacy direction-specific arrays remain for compatibility. */
     val traversal: List<TypeHierarchyTraversalNode> = emptyList(),
     val returnedNodes: Int = 0,
@@ -762,6 +770,24 @@ data class CompactFindUsagesResult(
 @Serializable
 data class CompactSymbolResult(
     val symbols: List<String>,
+    val totalCount: Int,
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false
+)
+
+@Serializable
+data class CompactFindFileResult(
+    val files: List<String>,
+    val totalCount: Int,
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false
+)
+
+@Serializable
+data class CompactSearchTextResult(
+    val matches: List<String>,
     val totalCount: Int,
     val query: String,
     val nextCursor: String? = null,

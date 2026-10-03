@@ -108,6 +108,7 @@ class FindUsagesTool : AbstractMcpTool() {
         .languageAndSymbol(required = false)
         .stringProperty("simpleName", "Simple class/interface name (e.g. \"UserService\"). Plugin auto-resolves to the first matching declaration in project scope — eliminates the ide_find_class round-trip. If multiple classes share the name, the tool returns an error listing them for disambiguation.", required = false)
         .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: false.", required = false)
+        .booleanProperty("includeAstPath", "Include AST ancestor path for each usage. Default: false.", required = false)
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.")
         .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
@@ -118,6 +119,7 @@ class FindUsagesTool : AbstractMcpTool() {
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
+        val includeAstPath = arguments["includeAstPath"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("maxResults"))
@@ -260,7 +262,7 @@ class FindUsagesTool : AbstractMcpTool() {
                                     column = columnNumber,
                                     context = lineText,
                                     type = classifyUsage(refElement),
-                                    astPath = PsiUtils.getAstPath(refElement)
+                                    astPath = if (includeAstPath) PsiUtils.getAstPath(refElement) else null
                                 ))
                             }
                         }

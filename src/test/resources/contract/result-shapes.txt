@@ -139,7 +139,7 @@
   file: string
   language: string
   nodes: array (optional)
-  structure: string
+  structure: string? (optional)
   symbolIdsOmitted: number (optional)
   symbolIdsTruncated: boolean (optional)
 
@@ -336,6 +336,8 @@
   language: string?
   lineCount: number
   startLine: number?
+  totalLines: number? (optional)
+  truncated: boolean? (optional)
 
 ## RefactoringPreviewResult
   affectedFiles: array
@@ -609,8 +611,8 @@
   element: object
   hasMore: boolean (optional)
   returnedNodes: number (optional)
-  subtypes: array
-  supertypes: array
+  subtypes: array? (optional)
+  supertypes: array? (optional)
   traversal: array (optional)
   truncated: boolean (optional)
   truncationReason: string? (optional)
@@ -626,7 +628,7 @@
   line: number
 
 ## UsageLocation
-  astPath: array
+  astPath: array? (optional)
   column: number
   context: string
   file: string

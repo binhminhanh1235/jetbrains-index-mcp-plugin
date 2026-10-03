@@ -19,6 +19,10 @@ import kotlinx.serialization.json.jsonPrimitive
 @Suppress("unused")
 class ReadFileTool : AbstractMcpTool() {
 
+    companion object {
+        const val DEFAULT_MAX_LINES = 1000
+    }
+
     override val name = ToolNames.READ_FILE
 
     override val description = """
@@ -93,11 +97,15 @@ class ReadFileTool : AbstractMcpTool() {
                     "startLine $startLine is beyond end of file ($lineCount lines)"
                 )
             }
-            // Echo the range actually delivered: an endLine past EOF is clamped to the last line.
-            val effectiveEndLine = endLine?.coerceAtMost(lineCount)
+            val isUnboundedRead = startLine == null && endLine == null
+            val isTruncated = isUnboundedRead && lineCount > DEFAULT_MAX_LINES
 
-            val content = if (startLine != null && effectiveEndLine != null) {
-                PsiUtils.getFileContentByLines(project, virtualFile, startLine, effectiveEndLine)
+            // Echo the range actually delivered: an endLine past EOF is clamped to the last line.
+            val readStartLine = startLine ?: if (isTruncated) 1 else null
+            val effectiveEndLine = endLine?.coerceAtMost(lineCount) ?: if (isTruncated) DEFAULT_MAX_LINES else null
+
+            val content = if (readStartLine != null && effectiveEndLine != null) {
+                PsiUtils.getFileContentByLines(project, virtualFile, readStartLine, effectiveEndLine)
             } else {
                 PsiUtils.getFileContent(project, virtualFile)
             } ?: return@suspendingReadAction createErrorResult("Unable to read file contents")
@@ -114,9 +122,11 @@ class ReadFileTool : AbstractMcpTool() {
                 content = content,
                 language = language,
                 lineCount = lineCount,
-                startLine = startLine,
+                startLine = if (isTruncated) 1 else startLine,
                 endLine = effectiveEndLine,
-                isLibraryFile = isLibraryFile
+                isLibraryFile = isLibraryFile,
+                truncated = if (isTruncated) true else null,
+                totalLines = if (isTruncated) lineCount else null
             ))
         }
     }

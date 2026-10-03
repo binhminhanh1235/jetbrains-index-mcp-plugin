@@ -1190,6 +1190,11 @@ schema:
   {
     "properties":
     {
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight formatted strings (file paths) instead of full structured JSON objects, reducing output tokens. Default: false.",
+        "type": "boolean"
+      },
       "cursor":
       {
         "description": "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.",
@@ -1209,6 +1214,16 @@ schema:
       {
         "description": "Results per page. Default: 25, max: 500.",
         "type": "integer"
+      },
+      "paths":
+      {
+        "description": "Project-relative globs, e.g. [\"src/main/**\", \"!**/*Test.kt\"]. '*' stays within a segment, '**' crosses directories, plain directories include descendants, '!' excludes. Union includes, then subtract excludes; exclusion-only starts with all results. Combines with scope/filePattern. Includes omit library/jar hits without a project-relative path; exclusion-only keeps them. Include globs must have an existing literal directory prefix with the exact relative spelling.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "project_path":
       {
@@ -1434,6 +1449,11 @@ schema:
       {
         "description": "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.",
         "type": "string"
+      },
+      "includeAstPath":
+      {
+        "description": "Include AST ancestor path for each usage. Default: false.",
+        "type": "boolean"
       },
       "includeGenerated":
       {
@@ -3407,6 +3427,11 @@ schema:
       "caseSensitive":
       {
         "description": "Case sensitive search. Default: true.",
+        "type": "boolean"
+      },
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: false.",
         "type": "boolean"
       },
       "context":
