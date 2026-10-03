@@ -16,8 +16,30 @@
 - **Module and library dependencies (`ide_get_dependencies`)** — Inspect module dependencies and external libraries with scopes (`COMPILE`, `TEST`, `RUNTIME`).
 - **Single-call change verification (`ide_verify_change`)** — Verify file modifications by syncing VFS, checking compiler/syntax errors, and optionally executing nearby tests in a single round-trip.
 - **Apply quick fixes (`ide_apply_quick_fix`)** — Apply an available quick fix or intention action at a specific position in an open file.
-- **Compact mode for search tools (`ide_find_class`, `ide_find_symbol`, `ide_find_usages`)** — Optional `compact: true` parameter reduces output payload size and token usage by 50–70%.
+- **Compact mode for search tools (`ide_find_class`, `ide_find_symbol`, `ide_find_usages`, `ide_find_file`, `ide_search_text`)** — Optional `compact: true` parameter reduces output payload size and token usage by 50–70%.
 - **Simple name resolution for `ide_find_usages`** — Optional `simpleName` parameter enables direct class lookup without requiring a preceding `ide_find_class` call.
+
+### Changed
+
+- **`ide_get_signature` deprecated** — Deprecated in favor of `ide_symbol_info`. Disabled by default in MCP settings with automatic migration in schema version 11.
+- **Bounded legacy type hierarchy (`ide_type_hierarchy`)** — Default `maxNodes` bounded to 100 in BFS traversal; added `legacyTree: Boolean` parameter to explicitly request unbounded depth-first tree traversal.
+- **Global problem limit for batch diagnostics (`ide_batch_diagnostics`)** — Added `maxProblems` parameter (default 200, cap 500) and `problemsTruncated` result field; delegated batch diagnostics execution to `ide_diagnostics`.
+- **Default line limit for reading files (`ide_read_file`)** — Default `maxLines` bounded to 1,000 lines to prevent memory exhaustion on oversized files.
+- **Cap active editor selection (`ide_get_active_file`)** — Selected text is bounded to 2,000 characters by default with `selectedTextTruncated` and `selectionLength` metadata.
+
+### Fixed
+
+- **Kotlin caller traversal in call hierarchy** — Fixed ordering bug where Kotlin callers collected via `ReferencesSearch` were omitted from recursive hierarchy traversal in `ide_call_hierarchy`.
+
+### Performance
+
+- **Token-optimized response payloads** — Added `@EncodeDefault(NEVER)` for default boolean flags (`truncated`, `stale`) and omitted `astPath` by default in hierarchy and structure responses, saving ~500 tokens per paginated response.
+- **Reflection method handle caching** — Cached reflection method handles across all language handlers using `ClassValue` to eliminate repeated reflective lookups during AST navigation.
+- **Server thread offloading and response compression** — Tool execution offloaded from Ktor CIO worker threads to the IntelliJ application executor pool; registered Ktor `Compression` plugin for gzip and deflate support; cached MCP registered tools across requests.
+- **Content root and library JAR caching** — Cached module content roots in `ProjectResolver` and library JARs in `PsiUtils` indexed by project root modification count with automatic Disposer lifecycle cleanup.
+- **Adaptive pagination bounds and cursor eviction** — Capped pagination pre-fetch overcollection and registered `LowMemoryWatcher` to prune inactive pagination cursors under memory pressure.
+- **Modernized non-blocking threading** — Replaced blocking read and EDT thread operations with non-blocking platform coroutines (`readAction`, `writeActionSuspend`, `runOnEdt`), and scoped the diagnostics analysis mutex to the project level.
+- **Fast symbol coordinate keys and single-pass doc sanitization** — Eliminated string key concatenation allocations in symbol deduplication with `SymbolCoordKey`, pre-normalized symbol search language filters to sets for $O(1)$ lookups, and implemented single-pass HTML documentation sanitization.
 
 ## [5.20.0] - 2026-09-29
 
