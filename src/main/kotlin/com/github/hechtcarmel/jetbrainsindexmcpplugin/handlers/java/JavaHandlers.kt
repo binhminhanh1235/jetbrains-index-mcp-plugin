@@ -1456,13 +1456,19 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
         private val ktScriptClass: Class<*>? by lazy {
             try {
                 Class.forName("org.jetbrains.kotlin.psi.KtScript")
-            } catch (_: ClassNotFoundException) { null }
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtScript class not found: ${e.message}")
+                null
+            }
         }
 
         private val ktCallExprClass: Class<*>? by lazy {
             try {
                 Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
-            } catch (_: ClassNotFoundException) { null }
+            } catch (e: ClassNotFoundException) {
+                LOG.debug("Kotlin KtCallExpression class not found: ${e.message}")
+                null
+            }
         }
     }
 
