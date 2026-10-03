@@ -21,7 +21,7 @@ class GetSignatureTool : AbstractMcpTool() {
     override val name = ToolNames.GET_SIGNATURE
 
     override val description = """
-        Get the signature (parameters, return type) of a method, function, or class at a position.
+        Deprecated: prefer ide_symbol_info. Get the signature (parameters, return type) of a method, function, or class at a position.
         Useful when you need to know how to call a function without reading the entire file.
     """.trimIndent()
 

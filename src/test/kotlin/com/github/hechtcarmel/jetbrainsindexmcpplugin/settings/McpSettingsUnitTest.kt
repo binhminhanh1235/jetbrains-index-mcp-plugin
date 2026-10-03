@@ -154,7 +154,7 @@ class McpSettingsUnitTest : TestCase() {
         val settings = McpSettings()
         val disabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.CHANGE_SIGNATURE).toMutableSet()
 
-        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 10))
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 11))
 
         assertTrue(settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
     }
@@ -177,7 +177,7 @@ class McpSettingsUnitTest : TestCase() {
         settings.setToolEnabled(ToolNames.CHANGE_SIGNATURE, true)
 
         assertTrue(settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
-        assertEquals(10, settings.state.settingsSchemaVersion)
+        assertEquals(11, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
@@ -195,7 +195,7 @@ class McpSettingsUnitTest : TestCase() {
         assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(10, settings.state.settingsSchemaVersion)
+        assertEquals(11, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
@@ -266,7 +266,20 @@ class McpSettingsUnitTest : TestCase() {
             "${ToolNames.CHANGE_SIGNATURE} should remain disabled after v10 migration",
             settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE)
         )
-        assertEquals(10, settings.state.settingsSchemaVersion)
+        assertEquals(11, settings.state.settingsSchemaVersion)
+    }
+
+    fun testSchemaVersion11MigrationDisablesGetSignature() {
+        val settings = McpSettings()
+        val disabled = mutableSetOf(ToolNames.CHANGE_SIGNATURE)
+
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 10))
+
+        assertFalse(
+            "${ToolNames.GET_SIGNATURE} should be disabled after v11 migration",
+            settings.isToolEnabled(ToolNames.GET_SIGNATURE)
+        )
+        assertEquals(11, settings.state.settingsSchemaVersion)
     }
 
     // Edge case tests

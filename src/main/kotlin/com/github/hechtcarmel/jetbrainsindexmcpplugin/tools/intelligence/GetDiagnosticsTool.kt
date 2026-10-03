@@ -530,76 +530,24 @@ class GetDiagnosticsTool : AbstractMcpTool() {
         column: Int,
         highlights: List<HighlightInfo>
     ): List<IntentionInfo> {
-        val intentions = mutableListOf<IntentionInfo>()
-
-        try {
-            val offset = getOffset(document, line, column) ?: 0
-
-            // Collect quick fixes from highlights at this position
-            collectQuickFixes(project, editor, psiFile, offset, highlights, intentions)
-
-            // Collect general intention actions
-            if (psiFile.findElementAt(offset) != null) {
-                collectGeneralIntentions(project, editor, psiFile, intentions)
+        val offset = getOffset(document, line, column) ?: 0
+        return try {
+            IntentionCollector.collectAvailableActions(
+                project = project,
+                editor = editor,
+                psiFile = psiFile,
+                offset = offset,
+                highlights = highlights,
+                maxGeneralIntentions = MAX_INTENTIONS
+            ).map { action ->
+                IntentionInfo(
+                    name = action.text,
+                    description = action.familyName.takeIf { it != action.text }
+                )
             }
         } catch (_: Exception) {
-            // Intention discovery might fail
+            emptyList()
         }
-
-        return intentions.distinctBy { it.name }
-    }
-
-    private fun collectQuickFixes(
-        project: Project,
-        editor: Editor,
-        psiFile: PsiFile,
-        offset: Int,
-        highlights: List<HighlightInfo>,
-        intentions: MutableList<IntentionInfo>
-    ) {
-        highlights
-            .asSequence()
-            .filter { it.startOffset <= offset && it.endOffset >= offset }
-            .forEach { highlightInfo ->
-            highlightInfo.findRegisteredQuickFix<Any> { descriptor, _ ->
-                val action = descriptor.action
-                try {
-                    if (action.isAvailable(project, editor, psiFile)) {
-                        intentions.add(IntentionInfo(
-                            name = action.text,
-                            description = action.familyName.takeIf { it != action.text }
-                        ))
-                    }
-                } catch (_: Exception) {
-                    // Availability check might fail
-                }
-                null
-            }
-            }
-    }
-
-    private fun collectGeneralIntentions(
-        project: Project,
-        editor: Editor,
-        psiFile: PsiFile,
-        intentions: MutableList<IntentionInfo>
-    ) {
-        IntentionManager.getInstance()
-            .getAvailableIntentions()
-            .take(MAX_INTENTIONS)
-            .forEach { action ->
-                try {
-                    val isAvailable = action.isAvailable(project, editor, psiFile)
-                    if (isAvailable) {
-                        intentions.add(IntentionInfo(
-                            name = action.text,
-                            description = action.familyName.takeIf { it != action.text }
-                        ))
-                    }
-                } catch (_: Exception) {
-                    // Individual intention check might fail
-                }
-            }
     }
 
     private fun appendAnalysisMessage(existing: String?, additional: String): String {

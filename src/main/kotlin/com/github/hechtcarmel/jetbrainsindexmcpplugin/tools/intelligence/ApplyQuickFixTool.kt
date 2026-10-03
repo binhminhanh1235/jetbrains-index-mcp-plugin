@@ -198,42 +198,16 @@ class ApplyQuickFixTool : AbstractMcpTool() {
         column: Int,
         highlights: List<HighlightInfo>
     ): List<AvailableAction> {
-        val actions = mutableListOf<AvailableAction>()
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
             ?: return emptyList()
         val offset = getOffset(document, line, column) ?: return emptyList()
-
-        // Quick fixes from highlight descriptors at the position
-        highlights
-            .asSequence()
-            .filter { it.startOffset <= offset && it.endOffset >= offset }
-            .forEach { highlight ->
-                highlight.findRegisteredQuickFix<Any> { descriptor, _ ->
-                    val action = descriptor.action
-                    try {
-                        if (action.isAvailable(project, editor, psiFile)) {
-                            actions.add(AvailableAction(action.text, action, psiFile))
-                        }
-                    } catch (_: Exception) { }
-                    null
-                }
-            }
-
-        // General intention actions at position
-        if (psiFile.findElementAt(offset) != null) {
-            com.intellij.codeInsight.intention.IntentionManager.getInstance()
-                .getAvailableIntentions()
-                .take(50)
-                .forEach { action ->
-                    try {
-                        if (action.isAvailable(project, editor, psiFile)) {
-                            actions.add(AvailableAction(action.text, action, psiFile))
-                        }
-                    } catch (_: Exception) { }
-                }
-        }
-
-        return actions.distinctBy { it.text }
+        return IntentionCollector.collectAvailableActions(
+            project = project,
+            editor = editor,
+            psiFile = psiFile,
+            offset = offset,
+            highlights = highlights
+        ).map { AvailableAction(it.text, it, psiFile) }
     }
 }
 

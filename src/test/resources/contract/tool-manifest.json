@@ -77,7 +77,7 @@ schema:
       },
       "includeBuildErrors":
       {
-        "description": "Include compiler build errors (default: true)",
+        "description": "Include compiler build errors (default: false)",
         "type": "boolean"
       },
       "includeTestResults":
@@ -1892,7 +1892,7 @@ schema:
 
 ## ide_get_signature
 description:
-  Get the signature (parameters, return type) of a method, function, or class at a position.
+  Deprecated: prefer ide_symbol_info. Get the signature (parameters, return type) of a method, function, or class at a position.
   Useful when you need to know how to call a function without reading the entire file.
 schema:
   {

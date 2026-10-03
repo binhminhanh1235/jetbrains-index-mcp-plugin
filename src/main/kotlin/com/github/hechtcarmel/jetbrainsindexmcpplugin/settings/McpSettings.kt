@@ -11,13 +11,14 @@ import com.intellij.openapi.components.service
 import com.intellij.util.messages.Topic
 
 private object ToolSettingsDefaults {
-    const val CURRENT_SCHEMA_VERSION = 10
+    const val CURRENT_SCHEMA_VERSION = 11
 
     val DEFAULT_DISABLED_TOOLS: Set<String> = setOf(
         ToolNames.CHANGE_SIGNATURE,
         ToolNames.CLOSE_PROJECT,
         ToolNames.CONVERT_JAVA_TO_KOTLIN,
         ToolNames.ENROLL_ALL_PROJECTS,
+        ToolNames.GET_SIGNATURE,
         ToolNames.INSERT_MEMBER,
         ToolNames.INSTALL_PLUGIN,
         ToolNames.LIFECYCLE_LOG,
@@ -44,7 +45,8 @@ private object ToolSettingsDefaults {
             ToolNames.SET_ALL_PROJECT_MODES
         ),
         5 to setOf(ToolNames.INSERT_MEMBER, ToolNames.REPLACE_MEMBER),
-        8 to setOf(ToolNames.LINK_BUILD_SYSTEM)
+        8 to setOf(ToolNames.LINK_BUILD_SYSTEM),
+        11 to setOf(ToolNames.GET_SIGNATURE)
     )
 }
 
