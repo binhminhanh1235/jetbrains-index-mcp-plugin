@@ -325,7 +325,7 @@ class ResultShapeContractUnitTest : TestCase() {
                 "Golden result shapes not found on the test classpath ($GOLDEN_RESOURCE). " +
                     "Generate it with -D$UPDATE_PROPERTY=true."
             ).let { error("unreachable") }
-        return stream.bufferedReader().use { it.readText() }
+        return stream.bufferedReader().use { it.readText() }.replace("\r\n", "\n")
     }
 
     /**

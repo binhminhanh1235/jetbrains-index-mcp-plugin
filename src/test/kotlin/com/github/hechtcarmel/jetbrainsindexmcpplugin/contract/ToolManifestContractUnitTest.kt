@@ -186,7 +186,7 @@ class ToolManifestContractUnitTest : TestCase() {
                 "Golden manifest not found on the test classpath ($GOLDEN_RESOURCE). " +
                     "Generate it with -D$UPDATE_PROPERTY=true."
             ).let { error("unreachable") }
-        return stream.bufferedReader().use { it.readText() }
+        return stream.bufferedReader().use { it.readText() }.replace("\r\n", "\n")
     }
 
     private fun describeDifference(expected: String, actual: String): String {
