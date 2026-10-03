@@ -200,7 +200,7 @@ schema:
 description:
   Build a call hierarchy tree for a method/function. Use to trace execution flow—find what calls this method (callers) or what this method calls (callees).
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Rust note: "callers" direction works well; "callees" direction may have limited results due to Rust plugin PSI resolution constraints.
   
@@ -921,7 +921,7 @@ description:
   
   Shows classes, methods, fields, functions, PHP namespaces, constants, enum cases, Markdown headings, and their nesting relationships in a tree format.
   
-  Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown
+  Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Scala
   
   Returns: The legacy formatted tree string. Set includeNodes=true for structured nodes;
   set includeSymbolIds=true to bind exact handles for those nodes. Nodes and handles are
@@ -1240,7 +1240,7 @@ schema:
 description:
   Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
   
@@ -1568,7 +1568,7 @@ schema:
 description:
   Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Scala.
   
   NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
   
@@ -2325,10 +2325,12 @@ description:
   Parameters:
   - path: absolute filesystem path of the project directory to open (required)
   - autoLink (optional): when true, automatically link an unlinked Maven/Gradle build system after opening. Default: false.
+  - excludeDirectories (optional): array of directory names to exclude from indexing and refactoring scope. Useful for non-code directories (workspace docs, symlinks to markdown) that interfere with rename/move refactoring. Applied after autoLink completes. Each name must not be blank or contain '..'.
   - timeoutSeconds (optional): maximum seconds to wait for opening + indexing. Default: 600.
   - project_path (optional): selects the JSON-RPC context project when multiple are open
   
   Example: { "path": "/Users/dev/myproject", "autoLink": true }
+  Example: { "path": "/Users/dev/myproject", "excludeDirectories": ["wksp", ".claude", "node_modules"] }
 schema:
   {
     "properties":
@@ -2337,6 +2339,16 @@ schema:
       {
         "description": "Automatically link an unlinked Maven/Gradle build system after opening. Default: false.",
         "type": "boolean"
+      },
+      "excludeDirectories":
+      {
+        "description": "Directory names to exclude from indexing and refactoring scope (e.g. [\"wksp\", \".claude\", \"node_modules\"]). Excluded directories are ignored by code intelligence and refactoring tools. Applied after autoLink completes.",
+        "items":
+        {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
       },
       "path":
       {
@@ -3261,10 +3273,12 @@ description:
   request timeout is never hit. If the run is still going when the wait budget ends — whether
   the IDE is still compiling before the test process starts, or the tests themselves are still
   executing — the call returns {"status": "running", "runId": "..."} while the run continues
-  inside the IDE; call this tool again with that runId (and no target) to keep waiting. The
-  run itself is bounded by timeoutSeconds, counted from when the test process starts (build
-  time before that is not billed to the run): once it expires the process is killed and the
-  next poll reports timedOut: true.
+  inside the IDE; call this tool again with that runId (and no target) to keep waiting. A
+  running response also reports the tests finished so far: passed/failed/errors counts and
+  "failures", the first 50 failed or errored tests with errorMessage and stackTrace, so you
+  can act on failures before the run ends. The run itself is bounded by timeoutSeconds,
+  counted from when the test process starts (build time before that is not billed to the
+  run): once it expires the process is killed and the next poll reports timedOut: true.
   
   Returns: success status, exit code, pass/fail/error counts, and per-test results. Each test
   carries its console output (stdout/stderr merged in print order, as the IDE's test console
@@ -3862,7 +3876,7 @@ schema:
 description:
   Get the complete inheritance hierarchy for a class or interface. Use when you need to understand class relationships, find parent classes, or discover all subclasses.
   
-  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+  Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
   
   Rust note: className parameter not supported for Rust; use file + line + column instead.
   

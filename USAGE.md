@@ -34,7 +34,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Enabled |
 | `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Enabled |
 | `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Enabled |
-| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out | Enabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out; each poll reports the failures so far | Enabled |
 | `ide_read_file` | Read file content by path or qualified name | Enabled |
 | `ide_get_active_file` | Get currently active editor file(s) | Enabled |
 | `ide_open_file` | Open file in editor with navigation | Enabled |
@@ -57,11 +57,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Legacy file structure text; opt-in structured nodes and exact handles via `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, Scala |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, Scala |
+| `ide_file_structure` | Legacy file structure text; opt-in structured nodes and exact handles via `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala |
 
 ### Java-Specific Tools
 
@@ -1731,7 +1731,7 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 - Passing a **directory path** via `directory` (`src/test/kotlin/com/example`) runs all tests in that directory (works across Java/Kotlin, Python, JS/TS, Go, etc.).
 - Passing a **module name** via `module` (`core-service`) runs all tests in that IntelliJ module.
 
-**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
+**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. A running response also reports the tests finished so far: `passed`, `failed` and `errors` counts, plus `failures`, the first 50 failed or errored tests with `errorMessage` and `stackTrace`, so you can act on failures before the run ends. Console output arrives only with the final result, and the counts are a snapshot, not a verdict: there is no `success` field until the run ends. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
 
 **Use when:**
 - Running a specific test class or method after a code change
@@ -1832,10 +1832,22 @@ Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long
 {
   "status": "running",
   "runId": "6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f",
-  "configName": "MyTest.testFoo",
+  "configName": "MyTest",
   "elapsedSeconds": 45,
   "timeoutSeconds": 7200,
-  "message": "Test run 'MyTest.testFoo' is still executing (45s elapsed, 7200s limit). The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results."
+  "passed": 12,
+  "failed": 1,
+  "errors": 0,
+  "message": "Test run 'MyTest' is still executing (45s elapsed, 7200s limit). So far 12 passed, 1 failed, 0 errors. The failed and errored tests are listed in 'failures'. The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results (include the same project_path if you provided one).",
+  "failures": [
+    {
+      "name": "com.example.MyTest.testBaz",
+      "status": "failed",
+      "errorMessage": "expected:<1> but was:<2>",
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)",
+      "output": null
+    }
+  ]
 }
 ```
 
@@ -2319,6 +2331,8 @@ Requires at least one project to already be open (needed as the JSON-RPC context
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | Yes | Absolute filesystem path of the project directory to open |
+| `autoLink` | boolean | No | Automatically link an unlinked Maven/Gradle build system after opening. Default: false. |
+| `excludeDirectories` | string[] | No | Directory names to exclude from indexing and refactoring scope (e.g. `["wksp", ".claude", "node_modules"]`). Applied after autoLink. Each entry must not be blank or contain `..`. |
 | `timeoutSeconds` | integer | No | Maximum seconds to wait for opening + indexing. Default: 600 |
 | `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
 
@@ -2352,7 +2366,7 @@ Project 'myproject' is open and ready.
 
 Renames a symbol or file and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 
-**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
+**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Scala, Ruby, and any language with IntelliJ plugin support.
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
@@ -3255,6 +3269,7 @@ These tools activate based on available language plugins:
 - **Go** - GoLand, IntelliJ Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
+- **Scala** - IntelliJ IDEA with the Scala plugin (Scala 2 sources)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 Navigation tools appear according to installed language plugins. PHP file structure requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
@@ -3600,7 +3615,7 @@ and no cursor. Narrow the query to continue. Cursor lifetime and response metada
 
 Finds all concrete implementations of an interface, abstract class, or abstract method.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust (not Go — Go uses implicit interfaces).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go — Go uses implicit interfaces).
 
 **Use when:**
 - Locating classes that implement an interface
@@ -3695,7 +3710,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP (not Go or Rust — they use composition/traits instead of classical inheritance).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Scala (not Go or Rust — they use composition/traits instead of classical inheritance).
 
 **Use when:**
 - Finding which interface method an implementation overrides
@@ -3809,7 +3824,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 

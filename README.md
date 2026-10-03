@@ -8,6 +8,7 @@ A JetBrains IDE plugin that exposes an **MCP (Model Context Protocol) server**, 
 
 **Fully tested**: IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover, Android Studio, PhpStorm
 **May work** (untested): RubyMine, CLion, DataGrip
+**Not supported**: Rider (its ReSharper backend does not expose the IntelliJ PSI APIs this plugin relies on; see [#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167))
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/hechtcarmel)
 
@@ -24,6 +25,7 @@ Advanced tools work across multiple languages based on available plugins:
 - **Go** - GoLand, IntelliJ IDEA Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ IDEA Ultimate with Rust plugin, CLion
+- **Scala** - IntelliJ IDEA with the Scala plugin (Scala 2 sources)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 **Universal Tools (All Supported JetBrains IDEs)**
@@ -259,7 +261,6 @@ Each JetBrains IDE has a unique default port and server name to allow running mu
 | DataGrip | `datagrip-index` | 29179 |
 | Aqua | `aqua-index` | 29180 |
 | DataSpell | `dataspell-index` | 29181 |
-| Rider | `rider-index` | 29182 |
 
 > **Tip**: Use the "Install on Coding Agents" button in the tool window - it automatically uses the correct server name and port for your IDE.
 
@@ -295,7 +296,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(requires Maven plugin)* |
 | `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)) with structured errors. Long builds return a `buildId` to poll, so the MCP client's request timeout is never hit |
-| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Scope by single `target`, batch `targets` list, `package`, `directory`, or `module`. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit |
+| `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Scope by single `target`, batch `targets` list, `package`, `directory`, or `module`. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit; each poll reports the failures so far |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources |
 | `ide_get_active_file` | Get the currently active file(s) in the editor with cursor position |
 | `ide_open_file` | Open a file in the editor with optional line/column navigation |
@@ -324,11 +325,11 @@ These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get a bounded, cursor-paginated type hierarchy in deterministic breadth-first order, accepting and returning `symbolId` | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze callers or callees in bounded, cursor-paginated breadth-first order, accepting and returning `symbolId` | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_type_hierarchy` | Get a bounded, cursor-paginated type hierarchy in deterministic breadth-first order, accepting and returning `symbolId` | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_call_hierarchy` | Analyze callers or callees in bounded, cursor-paginated breadth-first order, accepting and returning `symbolId` | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_find_implementations` | Find all implementations of an interface or abstract method | Java, Kotlin, Python, JS/TS, PHP, Rust, Scala |
+| `ide_find_super_methods` | Find the full inheritance hierarchy of methods that a method overrides/implements | Java, Kotlin, Python, JS/TS, PHP, Scala |
+| `ide_file_structure` | Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala |
 
 PHP file structure support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -420,7 +421,7 @@ Timing thresholds are configurable in Settings. Lifecycle management is opt-in (
 | CLion | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 | DataGrip | ✓ all universal tools | ✓ 2 Markdown tools | ✓ rename + move + reformat + optimize imports |
 
-> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
+> **Note**: Navigation tools activate when language plugins are present. Markdown adds heading search and file-structure support when the bundled Markdown plugin is enabled. With the Scala plugin enabled, Scala 2 sources get type hierarchy, call hierarchy, implementations, super methods, and file structure; Java and Kotlin declarations those results reach are reported with their own language. Go and Rust do not expose `ide_find_super_methods` due to language semantics, and Go does not expose `ide_find_implementations`. Rename, move, reformat, and optimize-imports tools work across all languages. `ide_convert_java_to_kotlin` is available only in IntelliJ IDEA and Android Studio, requires both Java and Kotlin plugins, and is disabled by default.
 
 For detailed tool documentation with parameters and examples, see [USAGE.md](USAGE.md).
 
@@ -559,7 +560,10 @@ Configure the plugin at <kbd>Settings</kbd> > <kbd>Tools</kbd> > <kbd>Index MCP 
 - CLion
 - DataGrip
 
-> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE, but has only been tested on the IDEs listed above.
+**Not Supported:**
+- Rider — the plugin is declared incompatible with Rider (`com.intellij.modules.rider`) because its ReSharper backend does not provide the IntelliJ PSI APIs the tools depend on. Rider support is tracked in [#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167).
+
+> The plugin uses standard IntelliJ Platform APIs and should work on any IntelliJ-based IDE other than Rider, but has only been tested on the IDEs listed above.
 
 ## Architecture
 

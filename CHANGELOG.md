@@ -19,6 +19,43 @@
 - **Compact mode for search tools (`ide_find_class`, `ide_find_symbol`, `ide_find_usages`)** — Optional `compact: true` parameter reduces output payload size and token usage by 50–70%.
 - **Simple name resolution for `ide_find_usages`** — Optional `simpleName` parameter enables direct class lookup without requiring a preceding `ide_find_class` call.
 
+## [5.20.0] - 2026-09-29
+
+### Added
+
+- **Scala 2 support for navigation tools** ([#245](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/pull/245), contributed by [@ilx](https://github.com/ilx)) — with the Scala plugin installed, `ide_type_hierarchy`, `ide_find_implementations`, `ide_call_hierarchy`, `ide_find_super_methods` and `ide_file_structure` now work on Scala classes, traits, objects and case classes. Java and Kotlin code reached from Scala is included, and an incompatible Scala plugin fails with an explicit error instead of empty results.
+
+### Fixed
+
+- **Write tools no longer report success for edits that never reached disk** ([#430](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/430)) — editing and refactoring tools now load changes another program made to a file before editing it, and return an error instead of success if the IDE declines to save the result. The "Sync external file changes" setting is now only needed for read-only tools such as find-usages.
+- **`ide_structural_search_replace` replacements work again** — every call with a `replacePattern` failed with a read-access error; search-only calls were unaffected.
+
+## [5.19.0] - 2026-09-26
+
+### Added
+
+- **`ide_run_tests` reports the tests finished so far while a run is still executing** ([#426](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/426)) — a `{"status": "running"}` poll now carries `passed`, `failed` and `errors` counts over the tests finished so far, plus `failures`: the first 50 failed or errored tests with `errorMessage` and `stackTrace`. Failures surface while a long run is still going instead of only in the final result. Console output still arrives only with the final result, and a running response has no `success` field, since `failed: 0` mid-run proves nothing.
+
+## [5.18.1] - 2026-09-25
+
+### Fixed
+
+- **Ambiguous file paths across content roots now fail with an actionable error** ([#417](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/417)) — when a relative file path resolves to multiple files across different content roots (e.g. `com/example/Helper.java` exists in both `module-a/src` and `module-b/src`), tools now report all matching paths and ask the caller to disambiguate. A path that exists under the project root always wins, preserving round-trip compatibility with tool output. Matches under content roots outside the project root are listed by absolute path, and a multi-file `ide_diagnostics` call reports an ambiguous entry as that file's `failed` state (with the matches in `reason`) instead of failing the whole batch.
+
+## [5.18.0] - 2026-09-23
+
+### Added
+
+- **`ide_open_project` gains `excludeDirectories` parameter** ([#378](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/378)) — marks directories as excluded from indexing and refactoring scope when opening a project. Useful for non-code directories (workspace doc symlinks, `.claude` directories) that contain text matching class names and interfere with rename/move refactoring. Applied after `autoLink` completes. The result reports which directories were excluded, which were already excluded, and which were not found. Works on both fresh-open and already-open projects.
+
+## [5.17.2] - 2026-09-22
+
+### Fixed
+
+- **README no longer lists Rider as a supported IDE** ([#167](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/167)) — the "IDE-Specific Defaults" table still carried a `rider-index` / 29182 row although the plugin has been declared incompatible with Rider since 1.9.1. The README now states explicitly that Rider is not supported and why.
+
+## [5.17.1] - 2026-09-18
+
 ### Changed
 
 - **Default-enabled tools expanded** — 22 previously opt-in tools are now enabled by default upon installation: `ide_build_project`, `ide_create_file`, `ide_create_module`, `ide_edit_member`, `ide_file_structure`, `ide_find_symbol`, `ide_get_active_file`, `ide_get_project_modes`, `ide_import_modules`, `ide_list_tests`, `ide_open_file`, `ide_open_project`, `ide_open_workspace`, `ide_optimize_imports`, `ide_project_diagnostics`, `ide_read_file`, `ide_reload_project`, `ide_replace_text_in_file`, `ide_restart`, `ide_run_tests`, `ide_structural_search_replace`, and `ide_symbol_info`. Only 16 high-impact/dangerous tools remain disabled by default. Existing configurations are automatically migrated (settings schema version 10) to enable these tools.
@@ -1351,7 +1388,13 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...HEAD
+[5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
+[5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
+[5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
+[5.18.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.2...v5.18.0
+[5.17.2]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.1...v5.17.2
+[5.17.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.17.0...v5.17.1
 [5.17.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.16.0...v5.17.0
 [5.16.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.1...v5.16.0
 [5.15.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.15.0...v5.15.1

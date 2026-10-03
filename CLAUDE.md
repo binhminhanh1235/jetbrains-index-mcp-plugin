@@ -140,7 +140,7 @@ The plugin supports workspace projects where a single IDE window contains multip
 represented as modules with separate content roots:
 
 - **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → exact module content root → basePath subdirectory → module content-root subdirectory (longest root wins)
-- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
+- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath first (wins unconditionally), then module content roots (fails with `AmbiguousFileException` if multiple roots match)
 - **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
 - **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath
 - **Error responses**: `available_projects` detail is configurable. Expanded mode includes workspace sub-projects with their `workspace` parent name; compact mode returns only top-level project roots.
@@ -225,7 +225,6 @@ Note: Server name and port are IDE-specific. Use the "Install on Coding Agents" 
 | DataGrip | `datagrip-index` | 29179 |
 | Aqua | `aqua-index` | 29180 |
 | DataSpell | `dataspell-index` | 29181 |
-| Rider | `rider-index` | 29182 |
 
 ## Development Guidelines
 
@@ -253,7 +252,9 @@ synchronized with external file changes. The setting is disabled by default.
 
 **User Setting**: "Sync external file changes before operations" (Settings → Tools → Index MCP Server)
 - **Disabled** (default): Best performance, suitable for most use cases
-- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when rename/find-usages misses references in files just created externally. Each operation will take seconds instead of milliseconds on large repos.
+- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when read-only tools (find-usages, search, navigation) miss references in files just changed externally. Each operation will take seconds instead of milliseconds on large repos.
+
+Write tools do not depend on this setting: single-file edits reload their target file, and refactorings load external changes across the project before they run (see below).
 
 **For tool developers**:
 - Extend `AbstractMcpTool` and implement `doExecute()` (not `execute()`)
@@ -265,6 +266,18 @@ synchronized with external file changes. The setting is disabled by default.
   ```
 - For per-call opt-out (e.g. long-poll attach calls that touch no PSI), override
   `needsPsiSync(arguments)` instead.
+- A tool that edits one file's Document must call `syncFileForEdit(project, file)` before it
+  resolves PSI or computes offsets in that file, and apply the edit with
+  `suspendingWriteActionAndSave(project, name, document) { ... }`. Without the first, the edit
+  lands on a stale Document whenever another program changed the file since the IDE's last VFS
+  refresh. Without the second, `FileDocumentManager` then declines the save as a memory/disk
+  conflict without reporting it, and the tool claims success for a file that never changed
+  (issue #430).
+- A multi-file refactoring must call `syncProjectForRefactoring(project)` before it resolves its
+  target (apply paths only; a dry run must not save documents). Capture
+  `FileDocumentManager.unsavedDocuments` just before the processor runs, then save with
+  `saveChangedDocuments(project, unsavedBefore)` in place of `saveAllDocuments()`, and turn a
+  non-empty result into an error with `changesNotSavedMessage`.
 
 ### Long-Running Tools (Long-Poll Pattern)
 
@@ -534,7 +547,7 @@ Tools are organized by IDE availability.
 - `ide_change_signature` - Change method signature (name, return type, visibility, parameters) with automatic caller updates using IntelliJ's Change Signature refactoring. Java methods and Kotlin JVM functions; Kotlin position/handle targets resolve to the base declaration for override changes. (disabled by default)
 - `ide_create_file` - Create a new source file with content, immediately indexed by IntelliJ. Created through IntelliJ's VFS, instantly available for all IDE tools without needing `ide_sync_files`. Use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. File must not already exist.
 - `ide_replace_text_in_file` - Find and replace text in a file using IntelliJ's Document API. Plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to index, PSI, and all other IDE tools without needing `ide_sync_files`.
-- `ide_run_tests` - Run tests via the IDE's run configuration infrastructure. Test scope is specified with exactly one selector: `target` (existing run config name for any language, or Java/Kotlin class/method FQN `com.example.MyTest` / `com.example.MyTest#testFoo`), batch `targets` array (up to 50 class/method FQNs, Java/Kotlin-only), `package` FQN (Java/Kotlin), `directory` path (cross-language), `module` name, or `runId` to attach to a running execution. Results are read directly from the IDE's test runner (any Service-Message-based framework: JUnit, TestNG, pytest, Jest, Go test, PHPUnit), returning structured pass/fail/error counts, exit code, per-test results, and console output. By default console output is omitted for passed tests to save tokens (`includeSuccessOutput: false`) and only attached to failed/errored tests; pass `includeSuccessOutput: true` to include output for passed tests too. Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit: a still-running call — including one whose pre-test build is still compiling, in which case the test process has not started yet — returns `{"status": "running", "runId": ...}` and the agent polls with `runId` while the run (bounded by `timeoutSeconds` counted from process start, enforced by a registry watchdog) continues in the IDE. By default the run does not activate (pop open) the Run tool window; pass `activateToolWindow: true` to open it.
+- `ide_run_tests` - Run tests via the IDE's run configuration infrastructure. Test scope is specified with exactly one selector: `target` (existing run config name for any language, or Java/Kotlin class/method FQN `com.example.MyTest` / `com.example.MyTest#testFoo`), batch `targets` array (up to 50 class/method FQNs, Java/Kotlin-only), `package` FQN (Java/Kotlin), `directory` path (cross-language), `module` name, or `runId` to attach to a running execution. Results are read directly from the IDE's test runner (any Service-Message-based framework: JUnit, TestNG, pytest, Jest, Go test, PHPUnit), returning structured pass/fail/error counts, exit code, per-test results, and console output. By default console output is omitted for passed tests to save tokens (`includeSuccessOutput: false`) and only attached to failed/errored tests; pass `includeSuccessOutput: true` to include output for passed tests too. Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit: a still-running call — including one whose pre-test build is still compiling, in which case the test process has not started yet — returns `{"status": "running", "runId": ...}` and the agent polls with `runId` while the run (bounded by `timeoutSeconds` counted from process start, enforced by a registry watchdog) continues in the IDE. A running response also reports the tests finished so far, read off the live test tree: `passed`/`failed`/`errors` counts and the first 50 `failures` with message and stack trace (issue #426). By default the run does not activate (pop open) the Run tool window; pass `activateToolWindow: true` to open it.
 - `ide_refactor_rename` - Preview a symbol or file rename with `dryRun`, or apply it across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages, and accepts legacy selectors, `symbolId`, or a nested `target`. Two modes: **symbol rename** (file + line + column + newName) and **file rename** (file + newName, omit line/column). File rename mode works for all file types including binary files (images, etc.) and is especially useful for Android resource files where it updates all XML references. Supports `relatedRenamingStrategy` parameter to control automatic related renames: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"`.
 - `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference update toggle. Move conflicts come back as `warnings`. On a same-package move between modules/source roots (issue #360), imports naming the unchanged package that the IDE's usage rewrite removed from consuming Java files are restored (`JavaOnDemandImportGuard`, plugged into the headless processor via `MoveUsageGuard`) and reported in `warnings`; a destination outside every source root is also warned about.
 - `ide_reformat_code` - Reformat code using project code style (.editorconfig, IDE settings). Supports optional import optimization and code rearrangement. (disabled by default)
@@ -546,7 +559,7 @@ Tools are organized by IDE availability.
 - `ide_set_power_save_mode` - Enable/disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis while keeping the index and code intelligence operational (disabled by default)
 - `ide_close_project` - Close an open project window and free its memory. Non-blocking; refuses to close the last open project so the MCP server keeps a JSON-RPC context (disabled by default)
 - `ide_create_module` - Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
-- `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects. Pass `autoLink: true` to automatically link an unlinked Maven/Gradle build system after opening.
+- `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects. Pass `autoLink: true` to automatically link an unlinked Maven/Gradle build system after opening. Pass `excludeDirectories: ["dir1", "dir2"]` to exclude directories from indexing and refactoring scope (applied after autoLink).
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
 - `ide_restart` - Restart the IDE. The MCP server shuts down during restart; poll `ide_index_status` after ~30s to confirm it is back, then continue. Typical use: `ide_install_plugin` → `ide_restart` → poll → verify.
 
@@ -565,11 +578,11 @@ Manage which open projects the MCP server keeps active, in the background, dorma
 
 **Extended Navigation Tools (Language-Aware):**
 
-These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)
-- `ide_call_hierarchy` - Get call hierarchy for a method with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust). Supports `language`+`symbol` as an alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Scala, Markdown):
+- `ide_type_hierarchy` - Get type hierarchy for a class with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala)
+- `ide_call_hierarchy` - Get call hierarchy for a method with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala). Supports `language`+`symbol` as an alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, Scala — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, Scala — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
 - `ide_file_structure` - Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds`
 
 **Java/Kotlin-Only Tools:**
@@ -598,6 +611,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
+- `handlers/scala/ScalaHandlers.kt` - Direct Scala PSI access (compiled against the Scala plugin's API; not reflection-based)
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -613,7 +627,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
 4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins. Scala handlers instead compile directly against the Scala plugin's PSI API; [`PluginDetectors.scala`](src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetectors.kt) still gates registration so the classes are never loaded when the Scala plugin is absent. `BaseScalaHandler.safeScalaCall` rethrows control-flow exceptions (cancellation, `IndexNotReadyException`) like every other handler, and each handler entry point runs inside `scalaApiBoundary`, which turns a `LinkageError` from Scala-plugin API drift into an explicit tool error (`ScalaPluginApiMismatchException`) instead of an empty result. The pinned `org.intellij.scala` version in `gradle.properties` must move with `platformVersion`.
 
 ### Optimized Symbol Search
 
@@ -768,7 +782,7 @@ VirtualFileManager   // Virtual file system
 3. **Must be called from EDT** - UI operations on background thread
    - Solution: Use `ApplicationManager.getApplication().invokeLater { ... }`
 
-4. **Search misses newly created files** - PSI not synchronized with document
+4. **Search misses newly created files** - PSI not synchronized with document (read-only tools; write tools sync themselves)
    - Cause: External tools modified files but PSI tree hasn't been updated
    - Solution: Enable "Sync external file changes" in Settings → Tools → Index MCP Server (WARNING: significant performance impact)
    - For custom code: `PsiDocumentManager.getInstance(project).commitAllDocuments()`

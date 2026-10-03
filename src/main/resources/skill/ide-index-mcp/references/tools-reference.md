@@ -240,7 +240,7 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{symbolId?, name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust (not Go).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go).
 
 ### ide_find_symbol
 Search for any code symbol (classes, methods, fields, functions) by name.
@@ -277,7 +277,7 @@ Find parent methods that a given method overrides or implements.
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ method: {symbolId?, name, class, file, line}, hierarchy: [{symbolId?, name, class, file, line, isInterface}], totalCount }`
-**Languages**: Java, Kotlin, Python, JS/TS, PHP (NOT Go, Rust).
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Scala (NOT Go, Rust).
 
 ### ide_type_hierarchy
 
@@ -306,7 +306,7 @@ their nearest included ancestor.
 **Provide exactly one target:** one nested `target` variant, or legacy `symbolId`, `className`, `language`+`symbol`, or `file`+`line`+`column`.
 **Returns**: `{ element: {symbolId?, name, file, kind, language}, supertypes: [{symbolId?, name, file, kind, language}], subtypes: [{symbolId?, name, file, kind, language}], traversal: [{direction: "supertype"|"subtype", element: {...}}], returnedNodes, truncated, elapsedMs, hasMore, cursor? }`
 **Pagination**: Without `maxNodes`/`cursor`, legacy nested trees and limits remain. Explicit pages expose traversal-local `nodeId`, `parentId`, and `depth` for the first-discovery tree; `returnedNodes` excludes the root. Type `traversal` preserves combined BFS order. Follow `cursor` while present. Retention limits return the computed page with `hasMore=true`, no cursor, and `truncationReason`; narrow the query to continue. Cursors are session/project-bound, expire after ten idle minutes, and retain at most 128 snapshots overall and ten per traversal. Handles refresh on every page.
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Rust, Scala.
 
 ### ide_call_hierarchy
 
@@ -358,7 +358,7 @@ Without structured output, `nodes` is empty and the handle fields are `false` an
 enabled, they report the per-response budget outcome.
 Handles are limited to 100 per response by default; `maxSymbolIds` can lower that limit to 1–100.
 `symbolIdsTruncated` flags this per-response budget and `symbolIdsOmitted` counts budget omissions.
-**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown.
+**Languages**: Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -793,7 +793,7 @@ List all test methods/classes discovered by the IDE's test framework extension p
 ### ide_run_tests
 Run tests via the IDE's run configuration infrastructure. Results are read from the IDE's test runner, so they work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Scope by single `target`, batch `targets` list, `package`, `directory`, or `module`. Returns structured pass/fail results with per-test console output.
 
-Each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues in the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): when it expires the process is killed and the next poll reports `timedOut: true`.
+Each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues in the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. A running response also reports the tests finished so far (`passed`/`failed`/`errors` counts and the first 50 `failures`), so you can act on failures before the run ends. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): when it expires the process is killed and the next poll reports `timedOut: true`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -811,7 +811,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's own requ
 
 *Exactly one of `target`, `targets`, `package`, `directory`, `module`, or `runId` is required.
 
-**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, output?, tests: [{name, status, errorMessage?, stackTrace?, output?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, message }`. Each test's `output` is the console output it printed (stdout/stderr merged in print order, ANSI stripped, system messages excluded); the top-level `output` carries output not attributed to any test (framework/suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed mid-run — e.g. at `timeoutSeconds` — which gets no per-test entry). `stackTrace` is set for failed/errored tests; very long traces and outputs are trimmed in the middle (for traces that keeps the throw site and the root cause). On mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
+**Returns**: `{ success, timedOut, noTestsFound, exitCode, passed, failed, errors, total, output?, tests: [{name, status, errorMessage?, stackTrace?, output?}] }`, or while still executing: `{ status: "running", runId, configName, elapsedSeconds, timeoutSeconds, passed, failed, errors, message, failures: [{name, status, errorMessage?, stackTrace?}] }`. The running counts cover the tests finished so far; `failures` lists the first 50 failed or errored ones, without console output, and the counts stay exact past that cap. Each test's `output` is the console output it printed (stdout/stderr merged in print order, ANSI stripped, system messages excluded); the top-level `output` carries output not attributed to any test (framework/suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed mid-run — e.g. at `timeoutSeconds` — which gets no per-test entry). `stackTrace` is set for failed/errored tests; very long traces and outputs are trimmed in the middle (for traces that keeps the throw site and the root cause). On mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
 
 ### ide_reload_project
 Force-reload the project build model (Maven, Gradle, or both). Use after changing build files so IntelliJ resolves updated dependencies before diagnostics or builds. The reload is asynchronous.
@@ -893,10 +893,12 @@ Open a project by absolute path and wait until indexing completes. Idempotent: r
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | yes | Absolute path of the project directory |
+| `autoLink` | boolean | no | Automatically link an unlinked Maven/Gradle build system after opening. Default: false. |
+| `excludeDirectories` | string[] | no | Directory names to exclude from indexing and refactoring scope (e.g. `["wksp", ".claude"]`). Applied after autoLink. Must not be blank or contain `..`. |
 | `timeoutSeconds` | integer | no | Max seconds to wait for open + indexing (default 600) |
 | `project_path` | string | no | JSON-RPC context project when multiple are open |
 
-**Returns**: text confirmation; on indexing timeout returns success with a note to check `ide_index_status`.
+**Returns**: text confirmation with setup details (excluded directories, linked build systems); on indexing timeout returns success with a note to check `ide_index_status`.
 
 ---
 
