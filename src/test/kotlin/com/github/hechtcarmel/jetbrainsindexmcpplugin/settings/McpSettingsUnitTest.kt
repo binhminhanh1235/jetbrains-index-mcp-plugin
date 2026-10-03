@@ -119,16 +119,20 @@ class McpSettingsUnitTest : TestCase() {
 
     fun testDefaultDisabledToolsComeFromSingleConstant() {
         assertEquals(McpSettings.DEFAULT_DISABLED_TOOLS, McpSettings.State().disabledTools)
-        assertTrue(McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.IMPORT_MODULES))
+        assertTrue(McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.CHANGE_SIGNATURE))
+        assertFalse(
+            "Symbol info is default enabled",
+            McpSettings.DEFAULT_DISABLED_TOOLS.contains(ToolNames.SYMBOL_INFO)
+        )
     }
 
     fun testLoadStateMigratesLegacyDisabledTools() {
         val settings = McpSettings()
-        val legacyDisabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.IMPORT_MODULES).toMutableSet()
+        val legacyDisabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.CHANGE_SIGNATURE).toMutableSet()
 
         settings.loadState(McpSettings.State(disabledTools = legacyDisabled, settingsSchemaVersion = 0))
 
-        assertFalse(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+        assertFalse(settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
     }
 
     fun testLoadStatePreservesLegacyExplicitEnablesForOlderDefaultDisabledTools() {
@@ -137,38 +141,50 @@ class McpSettingsUnitTest : TestCase() {
         settings.loadState(McpSettings.State(disabledTools = mutableSetOf(), settingsSchemaVersion = 0))
 
         assertFalse(
-            "${ToolNames.IMPORT_MODULES} must be disabled after legacy migration",
-            settings.isToolEnabled(ToolNames.IMPORT_MODULES)
+            "${ToolNames.CHANGE_SIGNATURE} must be disabled after legacy migration",
+            settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE)
         )
         assertTrue(
-            "${ToolNames.BUILD_PROJECT} was already default-disabled before schema migration and may have been explicitly enabled",
+            "${ToolNames.BUILD_PROJECT} was already default-enabled",
             settings.isToolEnabled(ToolNames.BUILD_PROJECT)
         )
     }
 
     fun testLoadStatePreservesCurrentSchemaExplicitEnable() {
         val settings = McpSettings()
-        val disabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.IMPORT_MODULES).toMutableSet()
+        val disabled = (McpSettings.DEFAULT_DISABLED_TOOLS - ToolNames.CHANGE_SIGNATURE).toMutableSet()
 
-        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 1))
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 10))
 
-        assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+        assertTrue(settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
+    }
+
+    fun testLoadStateFromSchema1MigratesCodeEditingToolsToDisabled() {
+        val settings = McpSettings()
+        settings.loadState(McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.CHANGE_SIGNATURE),
+            settingsSchemaVersion = 1
+        ))
+
+        assertTrue("EDIT_MEMBER should be enabled in v10", settings.isToolEnabled(ToolNames.EDIT_MEMBER))
+        assertFalse("INSERT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.INSERT_MEMBER))
+        assertFalse("REPLACE_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_MEMBER))
     }
 
     fun testSetToolEnabledMarksSchemaCurrent() {
         val settings = McpSettings()
 
-        settings.setToolEnabled(ToolNames.IMPORT_MODULES, true)
+        settings.setToolEnabled(ToolNames.CHANGE_SIGNATURE, true)
 
-        assertTrue(settings.isToolEnabled(ToolNames.IMPORT_MODULES))
-        assertEquals(3, settings.state.settingsSchemaVersion)
+        assertTrue(settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
+        assertEquals(10, settings.state.settingsSchemaVersion)
     }
 
     fun testUpdateToolEnabledStatesPreservesHiddenDisabledTools() {
         val settings = McpSettings()
         settings.loadState(McpSettings.State(
-            disabledTools = mutableSetOf(ToolNames.IMPORT_MODULES, ToolNames.RELOAD_PROJECT),
-            settingsSchemaVersion = 1
+            disabledTools = mutableSetOf(ToolNames.CHANGE_SIGNATURE, ToolNames.RELOAD_PROJECT),
+            settingsSchemaVersion = 10
         ))
 
         settings.updateToolEnabledStates(mapOf(
@@ -176,10 +192,10 @@ class McpSettingsUnitTest : TestCase() {
             ToolNames.RELOAD_PROJECT to true
         ))
 
-        assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.IMPORT_MODULES))
+        assertFalse("Hidden disabled tool must stay disabled", settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
         assertFalse("Visible disabled checkbox must disable the tool", settings.isToolEnabled(ToolNames.INDEX_STATUS))
         assertTrue("Visible enabled checkbox must enable the tool", settings.isToolEnabled(ToolNames.RELOAD_PROJECT))
-        assertEquals(3, settings.state.settingsSchemaVersion)
+        assertEquals(10, settings.state.settingsSchemaVersion)
     }
 
     fun testMcpSettingsGetStateReturnsCurrentState() {
@@ -223,6 +239,36 @@ class McpSettingsUnitTest : TestCase() {
         assertEquals(McpSettings.ResponseFormat.TOON, settings.state.responseFormat)
     }
 
+    fun testSchemaVersion10MigrationEnablesConfiguredTools() {
+        val settings = McpSettings()
+        val disabled = mutableSetOf(
+            ToolNames.PROJECT_DIAGNOSTICS,
+            ToolNames.SYMBOL_INFO,
+            ToolNames.CREATE_MODULE,
+            ToolNames.CHANGE_SIGNATURE
+        )
+
+        settings.loadState(McpSettings.State(disabledTools = disabled, settingsSchemaVersion = 9))
+
+        assertTrue(
+            "${ToolNames.PROJECT_DIAGNOSTICS} should be enabled after v10 migration",
+            settings.isToolEnabled(ToolNames.PROJECT_DIAGNOSTICS)
+        )
+        assertTrue(
+            "${ToolNames.SYMBOL_INFO} should be enabled after v10 migration",
+            settings.isToolEnabled(ToolNames.SYMBOL_INFO)
+        )
+        assertTrue(
+            "${ToolNames.CREATE_MODULE} should be enabled after v10 migration",
+            settings.isToolEnabled(ToolNames.CREATE_MODULE)
+        )
+        assertFalse(
+            "${ToolNames.CHANGE_SIGNATURE} should remain disabled after v10 migration",
+            settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE)
+        )
+        assertEquals(10, settings.state.settingsSchemaVersion)
+    }
+
     // Edge case tests
 
     fun testMaxHistorySizeZero() {
@@ -259,4 +305,30 @@ class McpSettingsUnitTest : TestCase() {
         // Use a host that definitely shouldn't resolve and has invalid chars for IP
         assertFalse("Invalid hostname should be invalid", McpSettingsConfigurable.isValidHost("invalid_host_name_!@#"))
     }
+
+    fun testLoadStateFromSchema2MigratesSsrToolsToDisabled() {
+        val settings = McpSettings()
+        val oldState = McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.CHANGE_SIGNATURE),
+            settingsSchemaVersion = 2
+        )
+        settings.loadState(oldState)
+        assertFalse("CHANGE_SIGNATURE should be disabled after migration", settings.isToolEnabled(ToolNames.CHANGE_SIGNATURE))
+        assertTrue("CREATE_FILE should be enabled after v10 migration", settings.isToolEnabled(ToolNames.CREATE_FILE))
+        assertTrue("REPLACE_TEXT_IN_FILE should be enabled after v10 migration", settings.isToolEnabled(ToolNames.REPLACE_TEXT_IN_FILE))
+        assertTrue("STRUCTURAL_SEARCH_REPLACE should be enabled after v10 migration", settings.isToolEnabled(ToolNames.STRUCTURAL_SEARCH_REPLACE))
+    }
+
+    fun testLoadStateFromSchema3MigratesAstEditingToolsToDisabled() {
+        val settings = McpSettings()
+        val oldState = McpSettings.State(
+            disabledTools = mutableSetOf(ToolNames.CHANGE_SIGNATURE),
+            settingsSchemaVersion = 3
+        )
+        settings.loadState(oldState)
+        assertTrue("EDIT_MEMBER should be enabled after v10 migration", settings.isToolEnabled(ToolNames.EDIT_MEMBER))
+        assertFalse("INSERT_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.INSERT_MEMBER))
+        assertFalse("REPLACE_MEMBER should be disabled after migration", settings.isToolEnabled(ToolNames.REPLACE_MEMBER))
+    }
+
 }

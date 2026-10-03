@@ -2,9 +2,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -22,8 +23,9 @@ class SetProjectModeTool : AbstractMcpTool() {
         - active: Full IntelliJ capabilities. Power Save OFF. Use before code review or active editing.
         - background: Power Save ON, index and MCP fully functional. Inspections and highlighting off.
           Default mode when MCP is working. Transitions here automatically after focus is lost.
-        - dormant: Power Save ON, editors closed, PSI caches dropped. Index stays loaded.
-          MCP calls auto-wake to background. Transitions here after 2 min of MCP inactivity.
+        - dormant: Power Save ON, editor tabs closed, PSI caches dropped. Index stays loaded.
+          MCP calls auto-wake to background without reopening tabs; the closed tabs reopen when
+          the project window regains focus. Transitions here after 2 min without MCP calls.
         - closed: Project fully closed. All memory freed. Auto-reopens on next MCP call (5-15s delay).
           Transitions here after 10 min of MCP inactivity.
 
@@ -34,7 +36,7 @@ class SetProjectModeTool : AbstractMcpTool() {
         - project_path: Required when multiple projects are open.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .enumProperty(
             "mode",
             "Target mode: active, background, dormant, or closed.",
@@ -44,7 +46,7 @@ class SetProjectModeTool : AbstractMcpTool() {
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val modeStr = arguments["mode"]?.jsonPrimitive?.content
             ?: return createErrorResult("Missing required parameter: mode")
 

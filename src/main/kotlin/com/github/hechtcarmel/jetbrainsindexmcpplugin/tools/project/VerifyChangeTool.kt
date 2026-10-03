@@ -1,7 +1,8 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.DiagnosticsAnalysisService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RunTestsResult
@@ -26,14 +27,14 @@ class VerifyChangeTool : AbstractMcpTool() {
         Replaces calling ide_sync_files, ide_diagnostics, and ide_run_tests individually.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema = SchemaBuilder.tool()
         .projectPath()
         .file(required = true, description = "The file that was changed")
         .booleanProperty("runTests", "Also run nearby test files. Default: false")
         .intProperty("timeoutSeconds", "Total timeout in seconds. Default: 120")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         requireSmartMode(project)
         val startTime = System.currentTimeMillis()
 
@@ -80,11 +81,10 @@ class VerifyChangeTool : AbstractMcpTool() {
                 
                 try {
                     val runTestsToolResult = RunTestsTool().execute(project, testArgs)
-                    if (runTestsToolResult.isError) {
+                    if (runTestsToolResult.isError == true) {
                         // Just log or ignore, we will construct our own result
                     } else {
-                        // Assuming tool returns JSON string in its content
-                        val jsonStr = runTestsToolResult.content.toString() // We might need a better way to extract this
+                        val jsonStr = (runTestsToolResult.content.firstOrNull() as? TextContent)?.text ?: ""
                         if (jsonStr.startsWith("{")) {
                             testResult = Json { ignoreUnknownKeys = true }.decodeFromString<RunTestsResult>(jsonStr)
                         }
@@ -106,8 +106,7 @@ class VerifyChangeTool : AbstractMcpTool() {
                 errorCount = errorCount,
                 errors = errors,
                 testsRun = testsRun,
-                testSummary = testResult?.testSummary,
-                testResults = testResult?.testResults,
+                testRun = testResult,
                 durationMs = durationMs
             )
         )

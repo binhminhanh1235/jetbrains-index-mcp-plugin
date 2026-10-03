@@ -1,7 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.EntryPoint
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ModuleOverview
@@ -28,11 +28,11 @@ class GetProjectOverviewTool : AbstractMcpTool() {
         Useful when first exploring a new codebase.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema = SchemaBuilder.tool()
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val moduleManager = ModuleManager.getInstance(project)
         val modules = moduleManager.modules
 

@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
@@ -34,18 +34,9 @@ class BatchOptimizeImportsTool : AbstractMcpTool() {
 
     override val description = """
         Optimize imports in multiple files with a single call. Removes unused imports and organizes remaining imports per project style.
-
-        Equivalent to calling ide_optimize_imports for each file, but in one round-trip.
-
-        Parameters:
-        - files (required): Array of file paths to optimize imports for
-
-        Returns: per-file success/failure summary.
-
-        Example: {"files": ["src/MyController.java", "src/MyService.java"]}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema = SchemaBuilder.tool()
         .projectPath()
         .property(
             ParamNames.FILES,
@@ -58,7 +49,7 @@ class BatchOptimizeImportsTool : AbstractMcpTool() {
         )
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val files = arguments[ParamNames.FILES]?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
             ?: return createErrorResult("Missing required parameter: ${ParamNames.FILES}")

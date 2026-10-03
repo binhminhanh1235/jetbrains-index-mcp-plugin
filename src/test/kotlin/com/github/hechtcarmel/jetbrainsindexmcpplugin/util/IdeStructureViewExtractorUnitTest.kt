@@ -92,6 +92,19 @@ class IdeStructureViewExtractorUnitTest : TestCase() {
         assertTrue(nodes.isEmpty())
     }
 
+    fun testConvertTreeElementsCarriesTheExactPsiTargetIntoTheNode() {
+        val physicalMethod = mockk<PsiElement>(relaxed = true)
+        val method = FakeTreeElement("save()", physicalMethod)
+
+        val nodes = IdeStructureViewExtractor.convertTreeElements(
+            elements = arrayOf(method),
+            classifier = SyntheticPsiClassifier,
+            lineResolver = { 17 }
+        )
+
+        assertSame(physicalMethod, nodes.single().pointerTarget)
+    }
+
     private object TestClassifier : IdeStructureViewExtractor.Classifier {
         override fun describe(
             value: Any?,

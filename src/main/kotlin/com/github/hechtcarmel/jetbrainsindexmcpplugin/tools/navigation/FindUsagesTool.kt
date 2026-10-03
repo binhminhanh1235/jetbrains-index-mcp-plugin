@@ -2,17 +2,22 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.UsageTypes
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindUsagesResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactFindUsagesResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbolInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.UsageLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
@@ -23,17 +28,21 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.PsiShortNamesCache
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.Processor
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -43,11 +52,24 @@ class FindUsagesTool : AbstractMcpTool() {
         private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
+        private const val METADATA_RESOLVED_SYMBOL = "resolvedSymbol"
+        private const val METADATA_SEARCH_EXHAUSTED = "searchExhausted"
 
         internal fun searchInfrastructureErrorMessage(error: Throwable): String {
             val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
             return "Reference search failed due to IDE/plugin API incompatibility (${error::class.simpleName}$detail). " +
                 "Try ide_search_text as a fallback and check plugin compatibility against the current IDE build."
+        }
+
+        /**
+         * totalCount is exact when the initial search enumerated every reference (recorded in
+         * cursor metadata), or when the extender was probed and found nothing new (`!hasMore`)
+         * while still below the hard cache cap. At [PaginationService.MAX_CACHED_RESULTS_PER_CURSOR]
+         * continuation is unavailable but `hasMore` remains true, so exactness cannot be claimed.
+         */
+        internal fun computeTotalIsExact(metadata: Map<String, String>, hasMore: Boolean, totalCollected: Int): Boolean {
+            return metadata[METADATA_SEARCH_EXHAUSTED] == "true" ||
+                (!hasMore && totalCollected < PaginationService.MAX_CACHED_RESULTS_PER_CURSOR)
         }
     }
 
@@ -56,51 +78,78 @@ class FindUsagesTool : AbstractMcpTool() {
     override val description = """
         Find all references to a symbol across the project. Use when you need to understand how a class, method, field, or variable is used before modifying or removing it.
 
-        Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.).
+        Returns: file paths, line numbers, context snippets, and reference types (method_call, field_access, import, etc.). resolvedSymbol echoes the declaration that was actually searched — positions on comments or whitespace snap to the nearest enclosing named element, so check it matches the symbol you intended. totalCount is the number of references collected so far; when totalIsExact is false it is a lower bound ("at least N").
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
 
         Target (mutually exclusive):
-        - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
-        - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
+        - target: nested selector containing exactly one of symbolId, position {file, line, column}, or qualifiedName + language (necessary for fresh search, ignored when cursor is provided)
+        - top-level symbolId: opaque handle returned by a previous semantic call (necessary for fresh search, ignored when cursor is provided)
+        - top-level file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+        - top-level language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
-        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
+        Example: {"target": {"position": {"file": "src/UserService.java", "line": 25, "column": 18}}}
+        Example: {"file": "src/UserService.java", "line": 25, "column": 18, "paths": ["src/main/**", "!**/generated/**"]}
         Example: {"language": "Java", "symbol": "com.example.UserService#findUser(String)", "scope": "project_and_libraries"}
         Example: {"language": "TypeScript", "symbol": "src/api#default"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
         """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
+        .target()
+        .symbolId()
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
+        .stringProperty("simpleName", "Simple class/interface name (e.g. \"UserService\"). Plugin auto-resolves to the first matching declaration in project scope — eliminates the ide_find_class round-trip. If multiple classes share the name, the tool returns an error listing them for disambiguation.", required = false)
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: false.", required = false)
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.")
+        .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
         .intProperty("maxResults", "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_MAX_RESULTS, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("maxResults"))
-            return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                FindUsagesResult(
-                    usages = items,
-                    totalCount = page.totalCollected,
-                    truncated = page.hasMore,
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<UsageLocation, CompactFindUsagesResult>(pageResult) { items, page ->
+                    CompactFindUsagesResult(
+                        usages = items.map { "${it.file}:${it.line}:${it.column} [${it.type}] ${it.context}" },
+                        totalCount = page.totalCollected,
+                        truncated = page.hasMore,
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        resolvedSymbol = decodeResolvedSymbol(page.metadata)?.let { "${it.name} (${it.kind}) in ${it.file}:${it.line}" },
+                        totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
+                    )
+                }
+            } else {
+                buildPaginatedResult<UsageLocation, FindUsagesResult>(pageResult) { items, page ->
+                    FindUsagesResult(
+                        usages = items,
+                        totalCount = page.totalCollected,
+                        truncated = page.hasMore,
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale,
+                        resolvedSymbol = decodeResolvedSymbol(page.metadata),
+                        totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
+                    )
+                }
             }
         }
 
@@ -118,23 +167,68 @@ class FindUsagesTool : AbstractMcpTool() {
         } catch (_: IllegalStateException) {
             return createInvalidScopeError(rawScope)
         }
+        val pathMatcher = resolvePathGlobMatcher(project, arguments).getOrElse {
+            return createErrorResult(it.message ?: "Invalid '${ParamNames.PATHS}' parameter")
+        }
         requireSmartMode(project)
 
+        // --- simpleName auto-resolve: skip ide_find_class round-trip ---
+        val simpleName = optionalStringArg(arguments, "simpleName")
+        val preResolvedElement: PsiElement? = if (simpleName != null) {
+            val resolved = suspendingReadAction {
+                val cache = PsiShortNamesCache.getInstance(project)
+                val projectScope = GlobalSearchScope.projectScope(project)
+                cache.getClassesByName(simpleName, projectScope).toList()
+            }
+            when {
+                resolved.isEmpty() -> return createErrorResult(
+                    "No class named '$simpleName' found in project scope. " +
+                    "Check the name or use ide_find_class to search."
+                )
+                resolved.size > 1 -> return createErrorResult(
+                    "Ambiguous: ${resolved.size} classes named '$simpleName' found. Qualify with one of: " +
+                    resolved.joinToString(", ") { "\"${it.qualifiedName}\"" } +
+                    ". Use language+symbol or file+line+column instead of simpleName."
+                )
+                else -> resolved[0]
+            }
+        } else null
+        val preResolvedNamed: PsiNamedElement? = preResolvedElement as? PsiNamedElement
+        // --- end simpleName auto-resolve ---
+
         val cursorToken = suspendingReadAction {
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
-                return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+            val targetElement: PsiNamedElement = if (preResolvedNamed != null) {
+                preResolvedNamed
+            } else {
+                val element = resolveElementFromArguments(
+                    project,
+                    arguments,
+                    allowLibraryFilesForPosition = true,
+                    allowSymbolId = true
+                ).getOrElse {
+                    return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
+                }
+                val resolvedTarget = element as? PsiNamedElement ?: PsiUtils.resolveTargetElement(element)
+                (resolvedTarget as? PsiNamedElement)
+                    ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.NO_NAMED_ELEMENT)
             }
 
-            // Symbol-based resolution returns the declaration directly (PsiNamedElement).
-            // Position-based resolution returns a leaf token that needs reference resolution.
-            val targetElement = element as? PsiNamedElement
-                ?: (PsiUtils.resolveTargetElement(element)
-                    ?: return@suspendingReadAction null to createErrorResult(ErrorMessages.NO_NAMED_ELEMENT))
+            // Echo the declaration actually searched: position-based lookup snaps comments and
+            // whitespace to the nearest enclosing named element, and without this echo that
+            // snap is invisible to the caller.
+            val resolvedInfo = resolvedSymbolInfo(
+                project,
+                targetElement,
+                optionalStringArg(arguments, ParamNames.SYMBOL_ID),
+                preserveExactTarget = true
+            )
 
             val usages = ConcurrentLinkedQueue<UsageLocation>()
             val totalFound = AtomicInteger(0)
             val totalCountLimit = collectLimit * 10
-            val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
+            val searchScope = PathGlobScope.wrap(
+                project, BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated), pathMatcher
+            )
 
             try {
                 ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->
@@ -181,16 +275,21 @@ class FindUsagesTool : AbstractMcpTool() {
                 return@suspendingReadAction null to createErrorResult(searchInfrastructureErrorMessage(e))
             }
 
+            // The loop enumerated every reference iff it never exceeded the collection cap;
+            // in that case the (deduped) cache is complete and totalCount is exact.
+            val searchExhausted = totalFound.get() <= collectLimit
+
             val usagesList = usages.toList()
                 .distinctBy { "${it.file}:${it.line}:${it.column}" }
 
-            val smartPointer = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(targetElement)
+            val smartPointer: com.intellij.psi.SmartPsiElementPointer<PsiElement> =
+                SmartPointerManager.getInstance(project).createSmartPsiElementPointer(targetElement as PsiElement)
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
                 suspendingReadAction {
                     val el = smartPointer.element
                         ?: throw IllegalStateException("Target element no longer valid")
-                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated)
+                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated, pathMatcher)
                 }
             }
 
@@ -208,7 +307,16 @@ class FindUsagesTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = searchExtender,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: "")
+                project = project,
+                metadata = mapOf(METADATA_SEARCH_EXHAUSTED to searchExhausted.toString()),
+                serializedMetadata = mapOf(
+                    METADATA_RESOLVED_SYMBOL to PaginationService.SerializedResult(
+                        key = METADATA_RESOLVED_SYMBOL,
+                        data = json.encodeToJsonElement(resolvedInfo),
+                        symbolPointer = smartPointer,
+                        materializedSymbolId = resolvedInfo.symbolId
+                    )
+                )
             )
 
             token to null
@@ -217,18 +325,41 @@ class FindUsagesTool : AbstractMcpTool() {
         val (token, errorResult) = cursorToken
         if (errorResult != null) return errorResult
 
-        return buildPaginatedResult<UsageLocation, FindUsagesResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
-            FindUsagesResult(
-                usages = items,
-                totalCount = page.totalCollected,
-                truncated = page.hasMore,
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(token!!, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<UsageLocation, CompactFindUsagesResult>(pageResult) { items, page ->
+                CompactFindUsagesResult(
+                    usages = items.map { "${it.file}:${it.line}:${it.column} [${it.type}] ${it.context}" },
+                    totalCount = page.totalCollected,
+                    truncated = page.hasMore,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    resolvedSymbol = decodeResolvedSymbol(page.metadata)?.let { "${it.name} (${it.kind}) in ${it.file}:${it.line}" },
+                    totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
+                )
+            }
+        } else {
+            buildPaginatedResult<UsageLocation, FindUsagesResult>(pageResult) { items, page ->
+                FindUsagesResult(
+                    usages = items,
+                    totalCount = page.totalCollected,
+                    truncated = page.hasMore,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale,
+                    resolvedSymbol = decodeResolvedSymbol(page.metadata),
+                    totalIsExact = computeTotalIsExact(page.metadata, page.hasMore, page.totalCollected)
+                )
+            }
+        }
+    }
+
+    private fun decodeResolvedSymbol(metadata: Map<String, String>): ResolvedSymbolInfo? {
+        return metadata[METADATA_RESOLVED_SYMBOL]?.let {
+            runCatching { json.decodeFromString<ResolvedSymbolInfo>(it) }.getOrNull()
         }
     }
 
@@ -244,11 +375,14 @@ class FindUsagesTool : AbstractMcpTool() {
         seenKeys: Set<String>,
         limit: Int,
         scope: BuiltInSearchScope,
-        excludeGenerated: Boolean
+        excludeGenerated: Boolean,
+        pathMatcher: PathGlobMatcher?
     ): List<PaginationService.SerializedResult> {
         val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
         val count = AtomicInteger(0)
-        val searchScope = BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated)
+        val searchScope = PathGlobScope.wrap(
+            project, BuiltInSearchScopeResolver.resolveGlobalScope(project, scope, excludeGenerated), pathMatcher
+        )
 
         try {
             ReferencesSearch.search(targetElement, searchScope).forEach(Processor { reference ->

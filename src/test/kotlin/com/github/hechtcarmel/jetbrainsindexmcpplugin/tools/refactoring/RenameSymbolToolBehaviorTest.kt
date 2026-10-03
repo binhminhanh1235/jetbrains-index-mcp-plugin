@@ -1,198 +1,19 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
-import com.intellij.testFramework.IndexingTestUtil
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import java.nio.file.Files
-import java.nio.file.Path
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.SymbolIdRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
+import com.intellij.openapi.application.ReadAction
+import com.intellij.psi.PsiElement
+import com.intellij.util.containers.MultiMap
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-    }
-
-    private fun writeProjectFile(relativePath: String, content: String): Path {
-        val basePath = requireNotNull(project.basePath)
-        val path = Path.of(basePath, relativePath)
-        Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(path.toString())) {
-            "Failed to refresh VFS for test file ${path}"
-        }
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-        return path
-    }
-
-    private fun requireJsTsToolRoutingCapability(testName: String): Boolean {
-        if (!PluginDetectors.javaScript.isAvailable) {
-            System.err.println("$testName: skipped - JavaScript plugin not available")
-            return false
-        }
-
-        return try {
-            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
-            true
-        } catch (_: ClassNotFoundException) {
-            System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
-            false
-        }
-    }
-
-    fun testJsTsFileRenameRetargetsImportsThroughSemanticHooks() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testJsTsFileRenameRetargetsImportsThroughSemanticHooks")) return@runBlocking
-
-        writeProjectFile(
-            "src/utils/leaf.ts",
-            "export const leafThing = 1;\n"
-        )
-        writeProjectFile(
-            "src/app.ts",
-            """
-            import { leafThing } from './utils/leaf';
-            import './utils/leaf';
-            export { leafThing } from './utils/leaf';
-            const lazy = import('./utils/leaf');
-            const nested = {
-              leaf: leafThing,
-            };
-            """.trimIndent()
-        )
-
-        val result = RenameSymbolTool().execute(project, buildJsonObject {
-            put("file", "src/utils/leaf.ts")
-            put("targetType", "file")
-            put("line", 0)
-            put("column", 0)
-            put("newName", "leaf-renamed.ts")
-        })
-
-        assertFalse("JS/TS file rename should succeed", result.isError)
-        val payload = json.decodeFromString<RefactoringResult>((result.content.single() as ContentBlock.Text).text)
-
-        val basePath = requireNotNull(project.basePath)
-        assertTrue(Files.exists(Path.of(basePath, "src/utils/leaf-renamed.ts")))
-        assertFalse(Files.exists(Path.of(basePath, "src/utils/leaf.ts")))
-
-        val appText = Files.readString(Path.of(basePath, "src/app.ts"))
-        assertTrue(appText.contains("import { leafThing } from './utils/leaf-renamed';"))
-        assertTrue(appText.contains("import './utils/leaf-renamed';"))
-        assertTrue(appText.contains("export { leafThing } from './utils/leaf-renamed';"))
-        assertTrue(appText.contains("import('./utils/leaf-renamed')"))
-        assertFalse(appText.contains("./utils/leaf'"))
-        assertFalse(appText.contains("./utils/leaf\""))
-        assertTrue(payload.affectedFiles.contains("src/utils/leaf-renamed.ts"))
-        assertTrue(payload.affectedFiles.contains("src/app.ts"))
-        assertEquals(payload.affectedFiles.size, payload.changesCount)
-        assertNull(payload.unretargetedImporters)
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-    }
-
-    fun testJsTsSameDirectoryFileRenameDoesNotRetargetDirectorySegment() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testJsTsSameDirectoryFileRenameDoesNotRetargetDirectorySegment")) return@runBlocking
-
-        writeProjectFile(
-            "src/jobs/generate-recurring-gastos.logic.ts",
-            "export const calculateOverduePeriods = () => 0;\nexport const MAX_OVERDUE_ITERATIONS = 24;\n"
-        )
-        writeProjectFile(
-            "src/jobs/generate-recurring-gastos.ts",
-            """
-            import { calculateOverduePeriods, MAX_OVERDUE_ITERATIONS } from './generate-recurring-gastos.logic';
-            export { calculateOverduePeriods, MAX_OVERDUE_ITERATIONS } from './generate-recurring-gastos.logic';
-            """.trimIndent()
-        )
-        writeProjectFile(
-            "tests/generate-recurring-gastos.test.ts",
-            """
-            import { calculateOverduePeriods, MAX_OVERDUE_ITERATIONS } from '../src/jobs/generate-recurring-gastos.logic.ts';
-            void calculateOverduePeriods;
-            void MAX_OVERDUE_ITERATIONS;
-            """.trimIndent()
-        )
-
-        val result = RenameSymbolTool().execute(project, buildJsonObject {
-            put("file", "src/jobs/generate-recurring-gastos.logic.ts")
-            put("targetType", "file")
-            put("newName", "generate-recurring-gastos.logic_smoke.ts")
-        })
-
-        assertFalse("JS/TS same-directory file rename should succeed", result.isError)
-        val payload = json.decodeFromString<RefactoringResult>((result.content.single() as ContentBlock.Text).text)
-
-        val basePath = requireNotNull(project.basePath)
-        val jobText = Files.readString(Path.of(basePath, "src/jobs/generate-recurring-gastos.ts"))
-        val testText = Files.readString(Path.of(basePath, "tests/generate-recurring-gastos.test.ts"))
-
-        assertTrue(jobText.contains("./generate-recurring-gastos.logic_smoke"))
-        assertTrue(testText.contains("../src/jobs/generate-recurring-gastos.logic_smoke.ts"))
-        assertFalse(jobText.contains("././generate-recurring-gastos.logic_smoke"))
-        assertFalse(testText.contains("../src/jobs/./generate-recurring-gastos.logic_smoke.ts"))
-        assertTrue(payload.affectedFiles.contains("src/jobs/generate-recurring-gastos.ts"))
-        assertTrue(payload.affectedFiles.contains("tests/generate-recurring-gastos.test.ts"))
-        assertNull(payload.unretargetedImporters)
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-    }
-
-    fun testJsTsFileRenameDoesNotReportFalseUnretargetedImportersWhenPlatformUpdatesImporters() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testJsTsFileRenameDoesNotReportFalseUnretargetedImportersWhenPlatformUpdatesImporters")) {
-            return@runBlocking
-        }
-
-        writeProjectFile(
-            "src/frontend/src/__mcp_pr175_fixture__/config.ts",
-            "export const loadConfig = () => ({});\n"
-        )
-        writeProjectFile(
-            "src/frontend/src/__mcp_pr175_fixture__/importOnly.ts",
-            """
-            import { loadConfig } from "./config";
-
-            export const importedName = loadConfig;
-            """.trimIndent()
-        )
-        writeProjectFile(
-            "src/frontend/src/__mcp_pr175_fixture__/index.ts",
-            """
-            export { loadConfig } from "./config";
-            export * from "./config";
-            """.trimIndent()
-        )
-
-        val result = RenameSymbolTool().execute(project, buildJsonObject {
-            put("file", "src/frontend/src/__mcp_pr175_fixture__/config.ts")
-            put("targetType", "file")
-            put("newName", "configRenamed.ts")
-        })
-
-        assertFalse("JS/TS file rename should succeed", result.isError)
-        val payload = json.decodeFromString<RefactoringResult>((result.content.single() as ContentBlock.Text).text)
-
-        val basePath = requireNotNull(project.basePath)
-        val importOnlyText = Files.readString(
-            Path.of(basePath, "src/frontend/src/__mcp_pr175_fixture__/importOnly.ts")
-        )
-        val indexText = Files.readString(
-            Path.of(basePath, "src/frontend/src/__mcp_pr175_fixture__/index.ts")
-        )
-
-        assertTrue(importOnlyText.contains("\"./configRenamed\""))
-        assertTrue(indexText.contains("\"./configRenamed\""))
-        assertFalse(importOnlyText.contains("\"./config\""))
-        assertFalse(indexText.contains("\"./config\""))
-        assertNull(payload.warnings)
-        assertNull(payload.unretargetedImporters)
-        assertFalse(payload.message.contains("could not be auto-retargeted"))
-        IndexingTestUtil.waitUntilIndexesAreReady(project)
-    }
+class RenameSymbolToolBehaviorTest : McpPlatformTestCase() {
 
     fun testExplicitFileRenameIgnoresMalformedCoordinatesDuringFullToolExecution() = runBlocking {
         writeProjectFile(
@@ -208,10 +29,434 @@ class RenameSymbolToolBehaviorTest : BasePlatformTestCase() {
             put("newName", "readme-renamed.txt")
         })
 
-        assertFalse("Explicit file rename should ignore malformed line/column values: ${result.content}", result.isError)
+        assertToolSucceeded("Explicit file rename should ignore malformed line/column values", result)
+        assertProjectFileAbsent("docs/readme.txt")
+        assertProjectFileExists("docs/readme-renamed.txt")
+        assertFileContains("docs/readme-renamed.txt", "Rename me through file mode.")
+    }
 
-        val basePath = requireNotNull(project.basePath)
-        assertFalse(Files.exists(Path.of(basePath, "docs/readme.txt")))
-        assertTrue(Files.exists(Path.of(basePath, "docs/readme-renamed.txt")))
+    // ── Java: symbol rename ──
+    // McpPlatformTestCase has no Java source root by default. Registering `src` makes fixture
+    // references resolve like real project sources; without it RenameProcessor sees only the
+    // declaration and cannot update even same-file call sites.
+
+    fun testJavaRenameMethodUpdatesCallSitesWithinFile() = runBlocking {
+        registerSourceRoot("src")
+        writeProjectFile(
+            "src/UserService.java", """
+            public class UserService {
+                public String getDisplayName() {
+                    return "name";
+                }
+                public String show() {
+                    return getDisplayName();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/UserService.java")
+            put("line", 2)
+            put("column", 19)
+            put("newName", "getFullName")
+        })
+
+        assertToolSucceeded("Java method rename should succeed", result)
+        assertRenamedInFile("src/UserService.java", "getDisplayName", "getFullName")
+        assertFileContains("src/UserService.java", "public String getFullName()")
+        assertFileContains("src/UserService.java", "return getFullName();")
+    }
+
+    fun testRenameBaseDryRunDescribesAndBindsTheBaseMethod() = runBlocking {
+        registerSourceRoot("rename-base-preview-src")
+        writeProjectFile(
+            "rename-base-preview-src/previewbase/Base.java", """
+            package previewbase;
+
+            class Base {
+                void execute() {}
+            }
+            """.trimIndent()
+        )
+        writeProjectFile(
+            "rename-base-preview-src/previewbase/Child.java", """
+            package previewbase;
+
+            class Child extends Base {
+                @Override void execute() {}
+            }
+            """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "rename-base-preview-src/previewbase/Child.java")
+            put("targetType", "symbol")
+            put("line", 4)
+            put("column", 20)
+            put("newName", "run")
+            put("overrideStrategy", "rename_base")
+            put("dryRun", true)
+        })
+
+        assertToolSucceeded("rename_base preview should return a target", result)
+        val target = Json.parseToJsonElement(toolText(result)).jsonObject.getValue("target").jsonObject
+        assertEquals("execute", target.getValue("name").jsonPrimitive.content)
+        assertEquals("rename-base-preview-src/previewbase/Base.java", target.getValue("file").jsonPrimitive.content)
+
+        val resolved = ReadAction.compute<PsiElement, Throwable> {
+            SymbolIdRegistry.getInstance().resolve(project, target.getValue("symbolId").jsonPrimitive.content).getOrThrow()
+        }
+        assertEquals("Base.java", resolved.containingFile.name)
+        assertFileContains("rename-base-preview-src/previewbase/Base.java", "void execute()")
+        assertFileContains("rename-base-preview-src/previewbase/Child.java", "void execute()")
+    }
+
+    fun testJavaRenameFieldUpdatesReferencesWithinFile() = runBlocking {
+        registerSourceRoot("src")
+        writeProjectFile(
+            "src/FieldRenameTarget.java", """
+            public class FieldRenameTarget {
+                public int count = 0;
+                public void increment() {
+                    count = count + 1;
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/FieldRenameTarget.java")
+            put("line", 2)
+            put("column", 16)
+            put("newName", "total")
+        })
+
+        assertToolSucceeded("Java field rename should succeed", result)
+        assertFileContains("src/FieldRenameTarget.java", "public int total = 0;")
+        assertFileContains("src/FieldRenameTarget.java", "total = total + 1;")
+        assertFileDoesNotContain("src/FieldRenameTarget.java", "int count")
+        assertFileDoesNotContain("src/FieldRenameTarget.java", "count = count")
+    }
+
+    fun testJavaRenameClassRenamesFile() = runBlocking {
+        writeProjectFile(
+            "src/OldName.java", """
+            public class OldName {
+                public void doWork() {}
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/OldName.java")
+            put("line", 1)
+            put("column", 14)
+            put("newName", "NewName")
+        })
+
+        assertToolSucceeded("Java class rename should succeed", result)
+        assertProjectFileAbsent("src/OldName.java")
+        assertProjectFileExists("src/NewName.java")
+        assertFileContains("src/NewName.java", "public class NewName {")
+        assertFileDoesNotContain("src/NewName.java", "OldName")
+    }
+
+    fun testJavaRenameParameterUpdatesUsagesInBody() = runBlocking {
+        writeProjectFile(
+            "src/Processor.java", """
+            public class Processor {
+                public String process(String input) {
+                    return input.trim();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/Processor.java")
+            put("line", 2)
+            put("column", 34)
+            put("newName", "rawValue")
+        })
+
+        assertToolSucceeded("Java parameter rename should succeed", result)
+        assertFileContains("src/Processor.java", "public String process(String rawValue)")
+        assertFileContains("src/Processor.java", "return rawValue.trim();")
+        assertFileDoesNotContain("src/Processor.java", "input")
+    }
+
+    // ── Java: cross-file symbol rename ──
+    //
+    // Cross-file reference updating is the whole point of routing a rename through the IDE
+    // index, so the referencing file — not just the declaring one — carries the assertions.
+    // A source root is required for `ReferencesSearch` to see the second file at all.
+
+    fun testJavaRenameMethodUpdatesCallSiteInAnotherFile() = runBlocking {
+        registerSourceRoot("cross-method-src")
+        writeProjectFile(
+            "cross-method-src/crossmethod/Greeter.java", """
+            package crossmethod;
+
+            public class Greeter {
+                public String getDisplayName() {
+                    return "name";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "cross-method-src/crossmethod/GreeterClient.java", """
+            package crossmethod;
+
+            public class GreeterClient {
+                public String describe(Greeter greeter) {
+                    return greeter.getDisplayName();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "cross-method-src/crossmethod/Greeter.java")
+            put("line", 4)
+            put("column", 19)
+            put("newName", "getFullName")
+        })
+
+        assertToolSucceeded("Cross-file Java method rename should succeed", result)
+        assertRenamedInFile("cross-method-src/crossmethod/Greeter.java", "getDisplayName", "getFullName")
+        assertRenamedInFile("cross-method-src/crossmethod/GreeterClient.java", "getDisplayName", "getFullName")
+        assertFileContains("cross-method-src/crossmethod/GreeterClient.java", "return greeter.getFullName();")
+    }
+
+    fun testJavaRenameClassUpdatesReferencingFileAndRenamesSourceFile() = runBlocking {
+        registerSourceRoot("cross-class-src")
+        writeProjectFile(
+            "cross-class-src/crossclass/LegacyReport.java", """
+            package crossclass;
+
+            public class LegacyReport {
+                public String title() {
+                    return "report";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "cross-class-src/crossclass/ReportPrinter.java", """
+            package crossclass;
+
+            public class ReportPrinter {
+                public String print(LegacyReport source) {
+                    return source.title();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "cross-class-src/crossclass/LegacyReport.java")
+            put("line", 3)
+            put("column", 14)
+            put("newName", "ArchivedReport")
+        })
+
+        assertToolSucceeded("Cross-file Java class rename should succeed", result)
+        assertProjectFileAbsent("cross-class-src/crossclass/LegacyReport.java")
+        assertProjectFileExists("cross-class-src/crossclass/ArchivedReport.java")
+        assertFileContains("cross-class-src/crossclass/ArchivedReport.java", "public class ArchivedReport {")
+        assertRenamedInFile("cross-class-src/crossclass/ReportPrinter.java", "LegacyReport", "ArchivedReport")
+        assertFileContains("cross-class-src/crossclass/ReportPrinter.java", "public String print(ArchivedReport source)")
+    }
+
+    // ── Java: file rename mode ──
+    //
+    // Renaming a Java file without renaming its matching public class leaves
+    // `public class Foo` inside `Bar.java` — guaranteed non-compiling output. File mode must
+    // retarget onto the class (which renames the file and all references), but ONLY when the
+    // class name matches the file base name; otherwise a plain file rename must be preserved.
+
+    fun testJavaFileRenameRetargetsToMatchingClassAndUpdatesReferences() = runBlocking {
+        registerSourceRoot("file-rename-src")
+        writeProjectFile(
+            "file-rename-src/filerename/ExternalCaller.java", """
+            package filerename;
+
+            public class ExternalCaller {
+                public String call() {
+                    return "called";
+                }
+            }
+        """.trimIndent()
+        )
+        writeProjectFile(
+            "file-rename-src/filerename/CallerClient.java", """
+            package filerename;
+
+            public class CallerClient {
+                public String use(ExternalCaller caller) {
+                    return caller.call();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "file-rename-src/filerename/ExternalCaller.java")
+            put("targetType", "file")
+            put("newName", "ExternalGreetingCaller.java")
+        })
+
+        assertToolSucceeded("Java file rename with matching class should succeed", result)
+        assertProjectFileAbsent("file-rename-src/filerename/ExternalCaller.java")
+        assertProjectFileExists("file-rename-src/filerename/ExternalGreetingCaller.java")
+        assertRenamedInFile(
+            "file-rename-src/filerename/ExternalGreetingCaller.java",
+            "ExternalCaller",
+            "ExternalGreetingCaller"
+        )
+        assertFileContains(
+            "file-rename-src/filerename/ExternalGreetingCaller.java",
+            "public class ExternalGreetingCaller {"
+        )
+        assertRenamedInFile(
+            "file-rename-src/filerename/CallerClient.java",
+            "ExternalCaller",
+            "ExternalGreetingCaller"
+        )
+    }
+
+    fun testJavaFileRenameWithMismatchedClassNameFallsBackToPlainFileRename() = runBlocking {
+        writeProjectFile(
+            "src/misc/Helpers.java", """
+            class HelperImpl {
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/misc/Helpers.java")
+            put("targetType", "file")
+            put("newName", "Utility.java")
+        })
+
+        assertToolSucceeded("Mismatched-class Java file rename should fall back to plain file rename", result)
+        assertProjectFileAbsent("src/misc/Helpers.java")
+        assertProjectFileExists("src/misc/Utility.java")
+        assertFileContains("src/misc/Utility.java", "class HelperImpl")
+        assertFileDoesNotContain("src/misc/Utility.java", "class Utility")
+    }
+
+    // ── Conflict error sanitization ──
+    //
+    // Java's conflict messages are built for the IDE's HTML ConflictsDialog: element names
+    // arrive wrapped in <b><code>…</code></b>. A method-onto-existing-method rename is used
+    // here because ConflictsUtil.checkMethodConflicts produces exactly that markup, so this
+    // test fails when the sanitization is removed.
+
+    fun testJavaRenameConflictErrorContainsNoHtmlMarkup() = runBlocking {
+        writeProjectFile(
+            "src/ConflictHost.java", """
+            public class ConflictHost {
+                public String getName() {
+                    return "a";
+                }
+                public String getTitle() {
+                    return "b";
+                }
+            }
+        """.trimIndent()
+        )
+
+        val result = RenameSymbolTool().execute(project, buildJsonObject {
+            put("file", "src/ConflictHost.java")
+            put("targetType", "symbol")
+            put("line", 5)
+            put("column", 19)
+            put("newName", "getName")
+        })
+
+        assertToolFailed("Renaming a method onto an existing method name should report a conflict", result)
+        val message = toolText(result)
+        assertTrue("Expected a name-conflict error, got: $message", message.contains("Name conflict"))
+        assertTrue("Conflict message should name the conflicting method, got: $message", message.contains("getName"))
+        assertFalse("Conflict message must not contain '<b>': $message", message.contains("<b>"))
+        assertFalse("Conflict message must not contain '<code>': $message", message.contains("<code>"))
+        assertFalse("Conflict message must not contain '&lt;': $message", message.contains("&lt;"))
+    }
+
+    // ── Silent platform aborts must not be reported as success ──
+
+    /**
+     * The regression test for the silent-abort bug. In production,
+     * `BaseRefactoringProcessor.run()` returns normally on abort paths (conflicts dialog
+     * cancelled, read-only files) — verified against the platform bytecode. In unit-test
+     * mode the platform converts every such abort into an exception before `run()` returns,
+     * so the silent return is reproduced through the tool's `processorRunHook` instead.
+     * Without post-run verification the tool reported `success: true` with the target's file
+     * in `affectedFiles` for a rename that changed nothing; this test fails with "expected
+     * an error but tool succeeded" if the verification is removed.
+     */
+    fun testSilentlyAbortedRenameReportsErrorInsteadOfSuccess() = runBlocking {
+        writeProjectFile(
+            "src/AbortRename.java", """
+            public class AbortRename {
+                public String process(String input) {
+                    return input.trim();
+                }
+            }
+        """.trimIndent()
+        )
+
+        val tool = RenameSymbolTool()
+        tool.processorRunHook = { /* BaseRefactoringProcessor.run() returning without applying */ }
+
+        val result = tool.execute(project, buildJsonObject {
+            put("file", "src/AbortRename.java")
+            put("targetType", "symbol")
+            put("line", 2)
+            put("column", 19)
+            put("newName", "processRenamed")
+        })
+
+        assertToolFailed("An aborted rename must not be reported as success", result)
+        assertTrue(
+            "Expected the honest abort error, got: ${toolText(result)}",
+            toolText(result).contains("was not applied")
+        )
+        assertFileContains("src/AbortRename.java", "public String process(String input)")
+        assertFileDoesNotContain("src/AbortRename.java", "processRenamed")
+    }
+
+    /**
+     * In production, `RenameProcessor.preprocessUsages` builds the conflicts dialog directly
+     * via `prepareConflictsDialog` — it never routes through the overridable `showConflicts` —
+     * and an unanswered or cancelled dialog silently aborts the rename. The headless
+     * processor therefore overrides `prepareConflictsDialog` to proceed and capture the
+     * sanitized conflicts. That path is unreachable end-to-end in unit-test mode
+     * (`preprocessUsages` throws `ConflictsInTestsException` first), so the override is
+     * exercised directly. If it is removed, the base implementation constructs the real
+     * Swing conflicts dialog, which fails in headless tests, and `capturedConflicts` stays
+     * empty.
+     */
+    fun testHeadlessRenameProcessorProceedsThroughConflictsDialogAndCapturesSanitizedConflicts() {
+        val psiFile = myFixture.addFileToProject("conflictdialog/Host.java", "public class Host {}")
+        val psiClass = com.intellij.psi.util.PsiTreeUtil
+            .findChildOfType(psiFile, com.intellij.psi.PsiClass::class.java)
+            ?: error("Fixture class not found")
+
+        val processor = HeadlessRenameProcessor(project, psiClass, "RenamedHost", false, false)
+        val conflicts = MultiMap<PsiElement, String>()
+        conflicts.putValue(psiClass, "Field <b><code>bar</code></b> will hide the local variable")
+
+        val dialog = processor.prepareConflictsDialog(conflicts, null)
+
+        assertTrue("The headless conflicts dialog must proceed with the rename", dialog.showAndGet())
+        assertFalse("The headless conflicts dialog must not request the conflicts view", dialog.isShowConflicts())
+        assertEquals(
+            listOf("Field bar will hide the local variable"),
+            processor.capturedConflicts
+        )
     }
 }

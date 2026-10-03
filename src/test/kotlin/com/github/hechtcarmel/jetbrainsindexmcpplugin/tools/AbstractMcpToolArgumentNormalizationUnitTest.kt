@@ -1,7 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.openapi.project.Project
 import junit.framework.TestCase
 import kotlinx.serialization.json.JsonNull
@@ -17,7 +19,14 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
     private val project = Proxy.newProxyInstance(
         Project::class.java.classLoader,
         arrayOf(Project::class.java)
-    ) { _, _, _ -> null } as Project
+    ) { proxy, method, args ->
+        when (method.name) {
+            "equals" -> proxy === args?.get(0)
+            "hashCode" -> System.identityHashCode(proxy)
+            "toString" -> "argument-normalization-project-proxy"
+            else -> null
+        }
+    } as Project
 
     fun testOptionalBlankToNullNormalization() {
         val arguments = buildJsonObject { put("cursor", JsonPrimitive("   ")) }
@@ -123,6 +132,57 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
         )
     }
 
+    fun testSymbolIdIsIgnoredUnlessTheToolExplicitlyAllowsIt() {
+        val arguments = buildJsonObject {
+            put("symbolId", JsonPrimitive("sym_handle"))
+        }
+
+        assertEquals("MISSING", tool.lookupModeNameForTest(arguments))
+        assertEquals("SYMBOL_ID", tool.lookupModeNameForTest(arguments, allowSymbolId = true))
+    }
+
+    fun testUndeclaredNonPrimitiveSymbolIdIsNotParsed() {
+        val arguments = buildJsonObject {
+            put("symbolId", buildJsonObject { put("unexpected", JsonPrimitive(true)) })
+        }
+
+        val result = tool.resolveElementForTest(project, arguments)
+
+        assertTrue(result.isFailure)
+        assertEquals(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED, result.exceptionOrNull()?.message)
+    }
+
+    fun testAllowedSymbolIdCannotBeCombinedWithAnotherTargetSelector() {
+        val arguments = buildJsonObject {
+            put("symbolId", JsonPrimitive("sym_handle"))
+            put("file", JsonPrimitive("src/Main.kt"))
+            put("line", JsonPrimitive(12))
+            put("column", JsonPrimitive(5))
+        }
+
+        val result = tool.resolveElementForTest(project, arguments, allowSymbolId = true)
+
+        assertTrue(result.isFailure)
+        assertEquals(
+            ErrorMessages.SYMBOL_ID_AND_OTHER_TARGET_EXCLUSIVE,
+            result.exceptionOrNull()?.message
+        )
+    }
+
+    fun testHandleEnabledResolverUsesItsOwnMissingTargetMessage() {
+        val result = tool.resolveElementForTest(
+            project,
+            buildJsonObject { },
+            allowSymbolId = true
+        )
+
+        assertTrue(result.isFailure)
+        assertEquals(
+            ErrorMessages.SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED,
+            result.exceptionOrNull()?.message
+        )
+    }
+
     private fun invokeOptionalStringArg(arguments: JsonObject, name: String): String? {
         val method = findMethod("optionalStringArg")
         return method.invoke(tool, arguments, name) as String?
@@ -146,22 +206,26 @@ class AbstractMcpToolArgumentNormalizationUnitTest : TestCase() {
     private class ProbeTool : AbstractMcpTool() {
         override val name: String = "probe"
         override val description: String = "probe"
-        override val inputSchema: JsonObject = buildJsonObject {}
+        override val inputSchema: ToolSchema = ToolSchema()
 
-        override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+        override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
             error("Not used in unit tests")
         }
 
-        fun resolveElementForTest(project: Project, arguments: JsonObject): Result<com.intellij.psi.PsiElement> {
-            return resolveElementFromArguments(project, arguments)
+        fun resolveElementForTest(
+            project: Project,
+            arguments: JsonObject,
+            allowSymbolId: Boolean = false
+        ): Result<com.intellij.psi.PsiElement> {
+            return resolveElementFromArguments(project, arguments, allowSymbolId = allowSymbolId)
         }
 
         fun requiredStringForTest(arguments: JsonObject, name: String): Result<String> {
             return requiredStringArg(arguments, name)
         }
 
-        fun lookupModeNameForTest(arguments: JsonObject): String {
-            return resolveLookupMode(arguments).name
+        fun lookupModeNameForTest(arguments: JsonObject, allowSymbolId: Boolean = false): String {
+            return resolveLookupMode(arguments, allowSymbolId).name
         }
     }
 }

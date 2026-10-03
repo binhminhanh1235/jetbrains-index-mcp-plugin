@@ -7,6 +7,6 @@ class GetProjectOverviewToolUnitTest : TestCase() {
     fun testNameAndSchema() {
         val tool = GetProjectOverviewTool()
         assertEquals(ToolNames.GET_PROJECT_OVERVIEW, tool.name)
-        assertTrue(tool.inputSchema.containsKey("properties"))
+        assertNotNull(tool.inputSchema.properties)
     }
 }

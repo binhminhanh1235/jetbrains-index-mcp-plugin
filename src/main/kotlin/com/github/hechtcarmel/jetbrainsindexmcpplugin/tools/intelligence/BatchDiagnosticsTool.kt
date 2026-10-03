@@ -2,7 +2,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import com.intellij.openapi.project.Project
@@ -28,23 +28,10 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
     override val name = ToolNames.BATCH_DIAGNOSTICS
 
     override val description = """
-        Run diagnostics on multiple files in a single call. Returns errors/warnings for all specified files.
-
-        Use when VFS is already synced (e.g., after ide_verify_change on one file, before checking others).
-        For combined sync + single-file diagnostics, prefer ide_verify_change instead.
-
-        Parameters:
-        - files (required): Array of file paths to analyze
-        - severity: 'errors', 'warnings', 'all' (default: 'errors')
-        - includeBuildErrors: Include compiler build errors (default: true)
-        - includeTestResults: Include test failure results (default: false)
-
-        Returns: filesChecked count + array of per-file diagnostic results.
-
-        Example: {"files": ["src/MyController.java", "src/MyService.java"], "severity": "errors"}
+        Run diagnostics on multiple files in a single call. Returns errors and warnings for all specified files.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema = SchemaBuilder.tool()
         .projectPath()
         .property(
             ParamNames.FILES,
@@ -60,7 +47,7 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.INCLUDE_TEST_RESULTS, "Include test failure results (default: false)")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val files = arguments[ParamNames.FILES]?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
             ?: return createErrorResult("Missing required parameter: ${ParamNames.FILES}")

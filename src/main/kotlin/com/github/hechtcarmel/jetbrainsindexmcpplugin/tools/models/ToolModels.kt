@@ -1,6 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import com.intellij.psi.PsiElement
 
 @Serializable
 data class PositionInput(
@@ -20,6 +23,25 @@ data class UsageLocation(
     val astPath: List<String>,
 )
 
+/**
+ * The declaration a reference search actually targeted. Position-based lookups snap to the
+ * nearest enclosing named element (e.g. a position on a comment resolves to the commented
+ * method or class), so this echo lets clients detect when the search ran against a different
+ * symbol than the one they aimed at.
+ */
+@Serializable
+data class ResolvedSymbolInfo(
+    val symbolId: String,
+    val name: String?,
+    val kind: String?,
+    val container: String?,
+    val file: String?,
+    val line: Int?,
+    val column: Int? = null,
+    val qualifiedName: String? = null,
+    val language: String? = null
+)
+
 @Serializable
 data class FindUsagesResult(
     val usages: List<UsageLocation>,
@@ -30,18 +52,74 @@ data class FindUsagesResult(
     val totalCollected: Int = 0,
     val offset: Int = 0,
     val pageSize: Int = 0,
-    val stale: Boolean = false
+    val stale: Boolean = false,
+    val resolvedSymbol: ResolvedSymbolInfo? = null,
+    // When false, totalCount is a lower bound ("at least N") — the search hit the internal
+    // collection cap before enumerating every reference.
+    val totalIsExact: Boolean = true
 )
 
 // find_definition output
 @Serializable
 data class DefinitionResult(
+    val symbolId: String,
     val file: String,
     val line: Int,
     val column: Int,
     val preview: String,
     val symbolName: String,
     val astPath: List<String>
+)
+
+// ide_symbol_info output
+
+/**
+ * One parameter of a resolved callable signature.
+ *
+ * [type] is the type as the extractor resolved it — for Java PSI that is
+ * `PsiType.getCanonicalText()`, i.e. fully qualified and resolved through imports, type
+ * aliases and generics, which is the whole point of the tool.
+ */
+@Serializable
+data class SymbolParameterInfo(
+    val name: String?,
+    val type: String
+)
+
+/**
+ * Resolved declaration facts for a symbol at a position: what `ide_find_definition` cannot
+ * give because it returns source text as written.
+ *
+ * [signatureSource] states how [signature] was produced, so a client can tell a fully
+ * resolved signature from an IDE-rendered one from a raw source line:
+ * - `java_psi` — built from Java PSI. [parameters] and [returnType] are fully qualified.
+ * - `quick_navigation` — the language's own documentation provider rendered it (the
+ *   Ctrl/Cmd-hover text). Resolved by that language's rules; type names are as the provider
+ *   chooses to render them, so they may be short.
+ * - `element_text` — no documentation provider produced anything; the declaration's own
+ *   source line is echoed back.
+ */
+@Serializable
+data class SymbolInfoResult(
+    val symbolId: String,
+    val name: String,
+    val kind: String?,
+    val qualifiedName: String?,
+    val signature: String,
+    val signatureSource: String,
+    val parameters: List<SymbolParameterInfo>? = null,
+    val returnType: String? = null,
+    val typeParameters: List<String>? = null,
+    val thrownTypes: List<String>? = null,
+    val modifiers: List<String>? = null,
+    val visibility: String? = null,
+    val containingDeclaration: String? = null,
+    val documentation: String? = null,
+    val documentationTruncated: Boolean = false,
+    val file: String? = null,
+    val line: Int? = null,
+    val column: Int? = null,
+    val language: String? = null
 )
 
 // ide_read_file output
@@ -62,7 +140,22 @@ data class ReadFileResult(
 data class TypeHierarchyResult(
     val element: TypeElement,
     val supertypes: List<TypeElement>,
-    val subtypes: List<TypeElement>
+    val subtypes: List<TypeElement>,
+    /** Exact breadth-first wire order; legacy direction-specific arrays remain for compatibility. */
+    val traversal: List<TypeHierarchyTraversalNode> = emptyList(),
+    val returnedNodes: Int = 0,
+    val truncated: Boolean = false,
+    val elapsedMs: Long = 0,
+    val hasMore: Boolean = false,
+    val cursor: String? = null,
+    /** Terminal resource limit: results remain usable, but the query must be narrowed to continue. */
+    val truncationReason: String? = null
+)
+
+@Serializable
+data class TypeHierarchyTraversalNode(
+    val direction: String,
+    val element: TypeElement
 )
 
 @Serializable
@@ -71,14 +164,25 @@ data class TypeElement(
     val file: String?,
     val kind: String,
     val language: String? = null,
-    val supertypes: List<TypeElement>? = null
+    val symbolId: String? = null,
+    val supertypes: List<TypeElement>? = null,
+    /** Traversal-local identity, independent of non-canonical symbol handles. */
+    val nodeId: String? = null,
+    val parentId: String? = null,
+    val depth: Int? = null
 )
 
 // call_hierarchy output
 @Serializable
 data class CallHierarchyResult(
     val element: CallElement,
-    val calls: List<CallElement>
+    val calls: List<CallElement>,
+    val returnedNodes: Int = 0,
+    val truncated: Boolean = false,
+    val elapsedMs: Long = 0,
+    val hasMore: Boolean = false,
+    val cursor: String? = null,
+    val truncationReason: String? = null
 )
 
 @Serializable
@@ -88,7 +192,12 @@ data class CallElement(
     val line: Int,
     val column: Int,
     val language: String? = null,
-    val children: List<CallElement>? = null
+    val symbolId: String? = null,
+    val children: List<CallElement>? = null,
+    /** Parent in the breadth-first discovery tree; stable across pages and handle eviction. */
+    val nodeId: String? = null,
+    val parentId: String? = null,
+    val depth: Int? = null
 )
 
 // find_implementations output
@@ -111,20 +220,38 @@ data class ImplementationLocation(
     val line: Int,
     val column: Int,
     val kind: String,
-    val language: String? = null
+    val language: String? = null,
+    val qualifiedName: String? = null,
+    val symbolId: String? = null,
+    @Transient internal val pointerTarget: PsiElement? = null
 )
 
 
 // ide_diagnostics output
 @Serializable
+data class FileDiagnosticsAnalysis(
+    val file: String,
+    val state: String,
+    val reason: String? = null,
+    val mode: String? = null,
+    /** Problems from this file included in the aggregate response, not its total problem count. */
+    val problemCount: Int = 0,
+    /** Collected problems omitted by the response cap; independent of the coverage state. */
+    val problemsTruncated: Boolean = false
+)
+
+@Serializable
 data class DiagnosticsResult(
     val problems: List<ProblemInfo>? = null,
     val intentions: List<IntentionInfo>? = null,
     val problemCount: Int? = null,
+    val problemsTruncated: Boolean? = null,
     val intentionCount: Int? = null,
     val analysisFresh: Boolean? = null,
     val analysisTimedOut: Boolean? = null,
     val analysisMessage: String? = null,
+    val analysisMode: String? = null,
+    val fileAnalyses: List<FileDiagnosticsAnalysis>? = null,
     val buildErrors: List<BuildMessage>? = null,
     val buildErrorCount: Int? = null,
     val buildWarningCount: Int? = null,
@@ -133,6 +260,48 @@ data class DiagnosticsResult(
     val testResults: List<TestResultInfo>? = null,
     val testSummary: TestSummary? = null,
     val testResultsTruncated: Boolean? = null
+)
+
+// ide_project_diagnostics output
+@Serializable
+data class FileCoverageInfo(
+    val file: String,
+    val state: String,
+    val reason: String? = null
+)
+
+@Serializable
+data class ProjectDiagnosticsResult(
+    val complete: Boolean,
+    val status: String,
+    val filesConsidered: Int,
+    val filesAnalyzed: Int,
+    val filesAnalyzedOpenDaemon: Int,
+    val filesAnalyzedClosedBatch: Int,
+    val filesTimedOut: Int,
+    val filesFailed: Int,
+    val filesSkipped: Int,
+    val filesNotAnalyzed: Int,
+    val incompleteFiles: List<FileCoverageInfo>,
+    val incompleteFilesTruncated: Boolean,
+    val problems: List<ProblemInfo>,
+    val problemCount: Int,
+    val errorCount: Int,
+    val warningCount: Int,
+    val problemsTruncated: Boolean,
+    val durationMs: Long,
+    val analysisMessage: String
+)
+
+@Serializable
+data class ProjectDiagnosticsInProgressResult(
+    val status: String,
+    val analysisId: String,
+    val elapsedSeconds: Long,
+    val filesProcessed: Int,
+    val filesConsidered: Int,
+    val timeoutSeconds: Int,
+    val message: String
 )
 
 @Serializable
@@ -182,7 +351,9 @@ data class RefactoringResult(
     val changesCount: Int,
     val message: String,
     val warnings: List<String>? = null,
-    val unretargetedImporters: List<String>? = null
+    val unretargetedImporters: List<String>? = null,
+    val updatedSymbol: ResolvedSymbolInfo? = null,
+    val invalidatedSymbolId: String? = null
 )
 
 
@@ -199,7 +370,9 @@ data class IndexStatusResult(
 data class SyncFilesResult(
     val syncedPaths: List<String>,
     val syncedAll: Boolean,
-    val message: String
+    val message: String,
+    val refreshedRoots: List<String> = emptyList(),
+    val deletedPaths: List<String> = emptyList()
 )
 
 // ide_build_project output
@@ -224,18 +397,6 @@ data class BuildProjectResult(
     val durationMs: Long
 )
 
-// ide_run_tests output
-@Serializable
-data class RunTestsResult(
-    val success: Boolean,
-    val timedOut: Boolean = false,
-    val testResults: List<TestResultInfo>,
-    val testSummary: TestSummary,
-    val truncated: Boolean = false,
-    val rawOutput: String? = null,
-    val durationMs: Long
-)
-
 // ide_find_symbol output
 @Serializable
 data class FindSymbolResult(
@@ -252,6 +413,7 @@ data class FindSymbolResult(
 
 @Serializable
 data class SymbolMatch(
+    val symbolId: String,
     val name: String,
     val qualifiedName: String?,
     val kind: String,
@@ -259,7 +421,8 @@ data class SymbolMatch(
     val line: Int,
     val column: Int,
     val containerName: String?,
-    val language: String? = null
+    val language: String? = null,
+    @Transient internal val pointerTarget: PsiElement? = null
 )
 
 // ide_find_super_methods output
@@ -278,7 +441,8 @@ data class MethodInfo(
     val file: String,
     val line: Int,
     val column: Int,
-    val language: String? = null
+    val language: String? = null,
+    val symbolId: String? = null
 )
 
 @Serializable
@@ -292,7 +456,8 @@ data class SuperMethodInfo(
     val column: Int?,
     val isInterface: Boolean,
     val depth: Int,
-    val language: String? = null
+    val language: String? = null,
+    val symbolId: String? = null
 )
 
 // ide_find_class output (reuses SymbolMatch)
@@ -351,6 +516,122 @@ data class GetActiveFileResult(
 data class OpenFileResult(
     val file: String,
     val opened: Boolean,
+    val message: String
+)
+
+// ide_list_tests output
+@Serializable
+data class TestEntry(
+    val framework: String,
+    val className: String,
+    val methodName: String?,
+    val displayName: String,
+    val file: String,
+    val line: Int
+)
+
+@Serializable
+data class ListTestsResult(
+    val tests: List<TestEntry>,
+    val count: Int,
+    val truncated: Boolean
+)
+
+// ide_run_tests output
+@Serializable
+enum class TestStatus {
+    @SerialName("passed") PASSED,
+    @SerialName("failed") FAILED,
+    @SerialName("error") ERROR,
+    @SerialName("skipped") SKIPPED;
+
+    /** Statuses that carry a failure/error message. */
+    val isFailure: Boolean get() = this == FAILED || this == ERROR
+}
+
+@Serializable
+data class TestRunEntry(
+    val name: String,
+    val status: TestStatus,
+    val errorMessage: String? = null,
+    val stackTrace: String? = null,
+    /**
+     * Console output this test printed (stdout and stderr merged in print order, as the IDE's
+     * test console shows them; ANSI escapes stripped, system messages excluded). Null when the
+     * test printed nothing or the per-run output budget was already spent (issue #346).
+     */
+    val output: String? = null
+)
+
+@Serializable
+data class RunTestsResult(
+    val success: Boolean,
+    val timedOut: Boolean,
+    val noTestsFound: Boolean,
+    val exitCode: Int,
+    val passed: Int,
+    val failed: Int,
+    val errors: Int,
+    val total: Int,
+    /**
+     * Console output not attributed to any individual test — framework/suite-level messages,
+     * `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed
+     * mid-run (e.g. at timeoutSeconds), which gets no per-test entry. Per-test output is on
+     * each [TestRunEntry.output] (issue #346).
+     */
+    val output: String? = null,
+    val tests: List<TestRunEntry>
+)
+
+/**
+ * Returned by ide_run_tests instead of blocking past the MCP client's own request timeout
+ * (issue #277): the run keeps executing in the IDE and the agent re-calls with [runId].
+ *
+ * [passed], [failed], [errors] and [failures] cover the tests finished so far (issue #426), so
+ * failures surface before the run ends. They are a snapshot, not a verdict: there is
+ * deliberately no `success` field, because `failed = 0` mid-run proves nothing. All zero while
+ * the IDE is still building and the test process has not started.
+ */
+@Serializable
+data class RunTestsInProgressResult(
+    val status: String,
+    val runId: String,
+    val configName: String,
+    val elapsedSeconds: Long,
+    val timeoutSeconds: Int,
+    val passed: Int,
+    val failed: Int,
+    val errors: Int,
+    val message: String,
+    /**
+     * Failed and errored tests finished so far, in run order, under the same stack-trace budget
+     * as the final result. They carry no console output; that arrives with the final result.
+     * Capped at `TestResultsCollector.MAX_PROGRESS_FAILURES` entries; [failed] and [errors]
+     * stay exact past the cap.
+     */
+    val failures: List<TestRunEntry>
+)
+
+/**
+ * Returned by ide_build_project instead of blocking past the MCP client's own request timeout
+ * (same root cause as issue #277): the build keeps executing in the IDE and the agent re-calls
+ * with [buildId]. [timeoutSeconds] is null for unbounded builds (the tool's historical default).
+ */
+@Serializable
+data class BuildInProgressResult(
+    val status: String,
+    val buildId: String,
+    val elapsedSeconds: Long,
+    val timeoutSeconds: Int?,
+    val message: String
+)
+
+@Serializable
+data class LinkInProgressResult(
+    val status: String,
+    val linkId: String,
+    val systemName: String,
+    val elapsedSeconds: Long,
     val message: String
 )
 
@@ -462,7 +743,27 @@ data class VerifyChangeResult(
     val errorCount: Int,
     val errors: List<ProblemInfo>?,
     val testsRun: Boolean,
-    val testSummary: TestSummary?,
-    val testResults: List<TestResultInfo>?,
+    val testRun: RunTestsResult? = null,
     val durationMs: Long
+)
+
+// Compact responses for token reduction
+@Serializable
+data class CompactFindUsagesResult(
+    val usages: List<String>,
+    val totalCount: Int,
+    val truncated: Boolean = false,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    val resolvedSymbol: String? = null,
+    val totalIsExact: Boolean = true
+)
+
+@Serializable
+data class CompactSymbolResult(
+    val symbols: List<String>,
+    val totalCount: Int,
+    val query: String,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false
 )

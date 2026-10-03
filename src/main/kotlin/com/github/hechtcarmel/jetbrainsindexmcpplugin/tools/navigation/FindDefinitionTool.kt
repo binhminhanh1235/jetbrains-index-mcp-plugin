@@ -3,10 +3,11 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DefinitionResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -32,9 +33,8 @@ class FindDefinitionTool : AbstractMcpTool() {
 
         Returns: file path, line/column of definition, code preview, and symbol name.
 
-        Target (mutually exclusive):
-        - file + line + column: position-based lookup
-        - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()})
+        Target (choose one): symbolId; file + line + column; or language + symbol (supported languages: ${supportedSymbolReferenceLanguagesDescription()}).
+        This tool also accepts the equivalent nested target with exactly one of symbolId, position, or qualifiedName + language. Do not mix request shapes.
 
         Example: {"file": "src/Main.java", "line": 15, "column": 10}
         Example: {"language": "Java", "symbol": "com.example.MyClass#processData(String)"}
@@ -42,8 +42,10 @@ class FindDefinitionTool : AbstractMcpTool() {
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
         """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
+        .target()
+        .symbolId()
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
@@ -51,7 +53,8 @@ class FindDefinitionTool : AbstractMcpTool() {
         .intProperty(ParamNames.MAX_PREVIEW_LINES, "Maximum lines for fullElementPreview. Truncates large classes/functions. Default: 50, Max: 500. Only used when fullElementPreview=true.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val requestedSymbolId = optionalStringArg(arguments, ParamNames.SYMBOL_ID)
         val fullElementPreview = arguments[ParamNames.FULL_ELEMENT_PREVIEW]?.jsonPrimitive?.content?.toBoolean() ?: false
         val maxPreviewLines = (arguments[ParamNames.MAX_PREVIEW_LINES]?.jsonPrimitive?.int ?: DEFAULT_MAX_PREVIEW_LINES)
             .coerceIn(1, MAX_ALLOWED_PREVIEW_LINES)
@@ -59,36 +62,35 @@ class FindDefinitionTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            val element = resolveElementFromArguments(
+                project,
+                arguments,
+                allowLibraryFilesForPosition = true,
+                allowSymbolId = true
+            ).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
             // Symbol-based resolution returns the declaration directly (PsiNamedElement).
             // Position-based resolution returns a leaf token that needs reference resolution.
-            val resolvedElement = element as? PsiNamedElement
+            val resolvedElement = if (requestedSymbolId != null) element else element as? PsiNamedElement
                 ?: (PsiUtils.resolveTargetElement(element)
                     ?: return@suspendingReadAction createErrorResult(ErrorMessages.SYMBOL_NOT_RESOLVED))
 
-            // Prefer source files (.java) over compiled files (.class) for library classes
-            val targetElement = PsiUtils.getNavigationElement(resolvedElement)
-
-            // Try the target element first, then its navigationElement (for Kotlin light classes
-            // and import directives where the resolved element may be a compiled class without a virtual file)
-            val effectiveTarget = if (targetElement.containingFile?.virtualFile != null) {
-                targetElement
-            } else {
-                val navElement = targetElement.navigationElement
-                if (navElement != targetElement && navElement.containingFile?.virtualFile != null) {
-                    navElement
-                } else {
-                    targetElement
-                }
-            }
+            // Prefer source files (.java) over compiled files (.class) for library classes,
+            // and hop past a compiled stand-in that has no virtual file of its own.
+            val effectiveTarget = if (requestedSymbolId != null) resolvedElement else
+                PsiUtils.resolveNavigationTarget(resolvedElement)
 
             // Handle package/directory references (e.g., cursor on package segment in import statement)
             if (effectiveTarget is PsiDirectory) {
                 val dirPath = getRelativePath(project, effectiveTarget.virtualFile)
                 return@suspendingReadAction createJsonResult(DefinitionResult(
+                    symbolId = bindExactSymbolId(
+                        project,
+                        effectiveTarget,
+                        requestedSymbolId
+                    ),
                     file = dirPath,
                     line = 1,
                     column = 1,
@@ -110,6 +112,11 @@ class FindDefinitionTool : AbstractMcpTool() {
                     if (dir != null) {
                         val dirPath = getRelativePath(project, dir.virtualFile)
                         return@suspendingReadAction createJsonResult(DefinitionResult(
+                            symbolId = bindExactSymbolId(
+                                project,
+                                effectiveTarget,
+                                requestedSymbolId
+                            ),
                             file = dirPath,
                             line = 1,
                             column = 1,
@@ -135,9 +142,11 @@ class FindDefinitionTool : AbstractMcpTool() {
                 document.getLineStartOffset(targetLine - 1) + 1
 
             // Get preview - either full element code or a few lines around the definition
-            val preview = if (fullElementPreview) {
+            // Implicit record/enum methods may have no own source text. Use source context for
+            // those declarations while preserving the exact handle and its source position.
+            val fullText = if (fullElementPreview) effectiveTarget.text else null
+            val preview = if (fullText != null) {
                 // Extract the complete element code, truncated to maxPreviewLines
-                val fullText = effectiveTarget.text
                 val lines = fullText.lines()
                 if (lines.size > maxPreviewLines) {
                     lines.take(maxPreviewLines).joinToString("\n") +
@@ -146,9 +155,12 @@ class FindDefinitionTool : AbstractMcpTool() {
                     fullText
                 }
             } else {
-                // Original behavior: a few lines around the definition
+                // Original behavior: a few lines around the definition.
+                // The range below is exclusive, so the bound is lineCount (not lineCount - 1):
+                // capping at lineCount - 1 would make the file's last line — including a
+                // definition sitting on it — unreachable.
                 val previewStartLine = maxOf(0, targetLine - 2)
-                val previewEndLine = minOf(document.lineCount - 1, targetLine + 2)
+                val previewEndLine = minOf(document.lineCount, targetLine + 2)
 
                 (previewStartLine until previewEndLine).joinToString("\n") { lineIndex ->
                     val startOffset = document.getLineStartOffset(lineIndex)
@@ -164,6 +176,11 @@ class FindDefinitionTool : AbstractMcpTool() {
             }
 
             createJsonResult(DefinitionResult(
+                symbolId = bindExactSymbolId(
+                    project,
+                    effectiveTarget,
+                    requestedSymbolId
+                ),
                 file = getRelativePath(project, targetFile),
                 line = targetLine,
                 column = targetColumn,

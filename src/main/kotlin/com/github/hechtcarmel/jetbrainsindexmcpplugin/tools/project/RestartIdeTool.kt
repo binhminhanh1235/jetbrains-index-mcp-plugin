@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ex.ApplicationEx
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -18,22 +19,23 @@ class RestartIdeTool : AbstractMcpTool() {
     override val description = """
         Restart the IDE.
 
-        WARNING: this terminates the MCP server. The connection to this IDE will
-        drop immediately and no response will be received after the restart is
-        initiated. Call this as a final step — do not expect to execute further
-        tool calls in the same session.
+        The MCP server shuts down during the restart. Tool calls will fail until
+        the IDE finishes relaunching (typically 30-60 seconds). After that, the
+        Streamable HTTP transport reconnects automatically — poll ide_index_status
+        until it responds, then continue with follow-up commands.
 
-        Typical use: call ide_install_plugin, then ide_restart.
+        Typical use: call ide_install_plugin, then ide_restart, then poll
+        ide_index_status after ~30 seconds to confirm the IDE is back.
 
         Parameters:
         - project_path (optional): only needed when multiple projects are open.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val app = ApplicationManager.getApplication()
         app.invokeLater {
             // Flush unsaved documents up front; the platform's exit sequence persists

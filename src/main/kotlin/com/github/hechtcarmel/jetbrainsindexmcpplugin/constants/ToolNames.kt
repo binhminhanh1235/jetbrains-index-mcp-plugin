@@ -14,21 +14,27 @@ object ToolNames {
     const val FIND_FILE = "ide_find_file"
     const val SEARCH_TEXT = "ide_search_text"
     const val READ_FILE = "ide_read_file"
+    const val SYMBOL_INFO = "ide_symbol_info"
     const val GET_SIGNATURE = "ide_get_signature"
 
     // Intelligence tools
     const val DIAGNOSTICS = "ide_diagnostics"
     const val BATCH_DIAGNOSTICS = "ide_batch_diagnostics"
+    const val PROJECT_DIAGNOSTICS = "ide_project_diagnostics"
+    const val APPLY_QUICK_FIX = "ide_apply_quick_fix"
 
     // Project tools
     const val INDEX_STATUS = "ide_index_status"
     const val SYNC_FILES = "ide_sync_files"
     const val BUILD_PROJECT = "ide_build_project"
+    const val CREATE_MODULE = "ide_create_module"
     const val IMPORT_MODULES = "ide_import_modules"
+    const val LINK_BUILD_SYSTEM = "ide_link_build_system"
+    const val RELOAD_PROJECT = "ide_reload_project"
+    const val LIST_TESTS = "ide_list_tests"
+    const val RUN_TESTS = "ide_run_tests"
     const val GET_DEPENDENCIES = "ide_get_dependencies"
     const val GET_PROJECT_OVERVIEW = "ide_get_project_overview"
-    const val RELOAD_PROJECT = "ide_reload_project"
-    const val RUN_TESTS = "ide_run_tests"
     const val VERIFY_CHANGE = "ide_verify_change"
 
     // Refactoring tools
@@ -40,6 +46,17 @@ object ToolNames {
     const val BATCH_OPTIMIZE_IMPORTS = "ide_batch_optimize_imports"
     const val CONVERT_JAVA_TO_KOTLIN = "ide_convert_java_to_kotlin"
 
+    // Advanced refactoring tools
+    const val CHANGE_SIGNATURE = "ide_change_signature"
+    const val CREATE_FILE = "ide_create_file"
+    const val REPLACE_TEXT_IN_FILE = "ide_replace_text_in_file"
+    const val STRUCTURAL_SEARCH_REPLACE = "ide_structural_search_replace"
+
+    // Code editing tools
+    const val EDIT_MEMBER = "ide_edit_member"
+    const val INSERT_MEMBER = "ide_insert_member"
+    const val REPLACE_MEMBER = "ide_replace_member"
+
     // Editor tools
     const val GET_ACTIVE_FILE = "ide_get_active_file"
     const val OPEN_FILE = "ide_open_file"
@@ -50,6 +67,7 @@ object ToolNames {
     // Project window management
     const val CLOSE_PROJECT = "ide_close_project"
     const val OPEN_PROJECT = "ide_open_project"
+    const val OPEN_WORKSPACE = "ide_open_workspace"
     const val SET_POWER_SAVE_MODE = "ide_set_power_save_mode"
 
     // Lifecycle management
@@ -68,12 +86,18 @@ object ToolNames {
      * Keep this list in sync when adding or removing tool name constants.
      */
     val ALL: List<String> = listOf(
+        APPLY_QUICK_FIX,
+        BATCH_DIAGNOSTICS,
+        BATCH_OPTIMIZE_IMPORTS,
         BUILD_PROJECT,
         CALL_HIERARCHY,
+        CHANGE_SIGNATURE,
         CLOSE_PROJECT,
         CONVERT_JAVA_TO_KOTLIN,
+        CREATE_FILE,
+        CREATE_MODULE,
         DIAGNOSTICS,
-        BATCH_DIAGNOSTICS,
+        EDIT_MEMBER,
         ENROLL_ALL_PROJECTS,
         FILE_STRUCTURE,
         FIND_CLASS,
@@ -90,13 +114,17 @@ object ToolNames {
         GET_SIGNATURE,
         IMPORT_MODULES,
         INDEX_STATUS,
+        INSERT_MEMBER,
         INSTALL_PLUGIN,
         LIFECYCLE_LOG,
+        LINK_BUILD_SYSTEM,
+        LIST_TESTS,
         REFACTOR_MOVE,
         OPEN_FILE,
         OPEN_PROJECT,
+        OPEN_WORKSPACE,
         OPTIMIZE_IMPORTS,
-        BATCH_OPTIMIZE_IMPORTS,
+        PROJECT_DIAGNOSTICS,
         PROJECT_STATUS,
         READ_FILE,
         REFACTOR_RENAME,
@@ -105,6 +133,8 @@ object ToolNames {
         RELEASE_ALL_PROJECTS,
         RELEASE_PROJECT,
         RELOAD_PROJECT,
+        REPLACE_MEMBER,
+        REPLACE_TEXT_IN_FILE,
         RESTART_IDE,
         RUN_TESTS,
         SEARCH_TEXT,
@@ -112,6 +142,8 @@ object ToolNames {
         LIFECYCLE_LOG_FILE,
         SET_POWER_SAVE_MODE,
         SET_PROJECT_MODE,
+        STRUCTURAL_SEARCH_REPLACE,
+        SYMBOL_INFO,
         SYNC_FILES,
         TYPE_HIERARCHY,
         VERIFY_CHANGE

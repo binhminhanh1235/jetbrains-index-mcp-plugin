@@ -2,20 +2,23 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.McpServerService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolDefinition
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ApplyQuickFixTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.BatchDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.ProjectDiagnosticsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.GetSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindDefinitionTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSymbolTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.GetSignatureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.ReadFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SearchTextTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.SymbolInfoTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.EnrollAllProjectsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.GetProjectModesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.LifecycleLogTool
@@ -26,24 +29,34 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProj
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetLifecycleLogFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.LinkBuildSystemTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RunTestsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CloseProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.CreateModuleTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetDependenciesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetIndexStatusTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.GetProjectOverviewTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ImportModulesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.InstallPluginTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenProjectTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ReloadProjectTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.OpenWorkspaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RestartIdeTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.RunTestsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SetPowerSaveModeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.SyncFilesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.VerifyChangeTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.BatchOptimizeImportsTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ChangeSignatureTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.CreateFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.EditMemberTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.InsertMemberTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.MoveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.OptimizeImportsTool
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.BatchOptimizeImportsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReformatCodeTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.RenameSymbolTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceMemberTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.ReplaceTextInFileTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.StructuralSearchReplaceTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.openapi.diagnostic.logger
 import java.util.concurrent.ConcurrentHashMap
@@ -64,10 +77,11 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * - `ide_find_references` - Find all usages of a symbol
  * - `ide_find_definition` - Find symbol definition location
+ * - `ide_symbol_info` - Resolved signature and documentation for the symbol at a position
  * - `ide_find_class` - Class search using CLASS_EP_NAME index
  * - `ide_find_file` - File search using FILE_EP_NAME index
  * - `ide_find_symbol` - Search for symbols by name (universal, popup-backed)
- * - `ide_search_text` - Text search using word index
+ * - `ide_search_text` - Text search using IntelliJ Find in Files (substring and regex matching)
  * - `ide_diagnostics` - Analyze code for problems and available intentions
  * - `ide_build_project` - Build project using IDE's build system (disabled by default)
  * - `ide_index_status` - Check indexing status
@@ -76,7 +90,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ### Language-Specific Navigation Tools
  *
- * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Markdown)
+ * These tools support multiple languages (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Scala, Markdown)
  * and are registered when at least one language handler is available:
  *
  * - `ide_type_hierarchy` - Get class inheritance hierarchy
@@ -91,8 +105,9 @@ import java.util.concurrent.ConcurrentHashMap
  * - `ide_reformat_code` - Reformat code using project code style (disabled by default)
  * - `ide_optimize_imports` - Optimize imports without reformatting (disabled by default)
  *
- * ### Java-Specific Refactoring Tools (IntelliJ IDEA & Android Studio Only)
+ * ### Java-Specific Tools (IntelliJ IDEA & Android Studio Only)
  *
+ * - `ide_list_tests` - List all test methods discovered by test framework extension points (requires Java plugin; uses `com.intellij.testFramework` EP, disabled by default)
  * - `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
  *
  * ### Kotlin Conversion Tools (IntelliJ IDEA with Java & Kotlin Plugins)
@@ -162,34 +177,26 @@ class ToolRegistry {
      *
      * @return List of enabled tool definitions with name, description, and schema
      */
-    fun getToolDefinitions(): List<ToolDefinition> {
+    fun getToolDefinitions(): List<Tool> {
         val settings = McpSettings.getInstance()
         return tools.values
             .filter { settings.isToolEnabled(it.name) }
-            .map { tool ->
-                ToolDefinition(
-                    name = tool.name,
-                    description = tool.description,
-                    inputSchema = tool.inputSchema
-                )
-            }
+            .map { it.toMcpTool() }
     }
 
     /**
      * Gets ALL tool definitions regardless of enabled/disabled state.
-     * Used by settings UI to display all available tools.
+     * Used by settings UI to display all exposed tools.
      *
      * @return List of all tool definitions
      */
-    fun getAllToolDefinitions(): List<ToolDefinition> {
-        return tools.values.map { tool ->
-            ToolDefinition(
-                name = tool.name,
-                description = tool.description,
-                inputSchema = tool.inputSchema
-            )
-        }
-    }
+    fun getAllToolDefinitions(): List<Tool> = tools.values.map { it.toMcpTool() }
+
+    private fun McpTool.toMcpTool() = Tool(
+        name = name,
+        description = description,
+        inputSchema = inputSchema
+    )
 
     /**
      * Registers all built-in tools.
@@ -250,23 +257,29 @@ class ToolRegistry {
         // Navigation tools (universal)
         register(FindUsagesTool())
         register(FindDefinitionTool())
+        register(SymbolInfoTool())
         register(GetSignatureTool())
 
         // Intelligence tools
         register(GetDiagnosticsTool())
         register(BatchDiagnosticsTool())
+        register(ProjectDiagnosticsTool())
+        register(ApplyQuickFixTool())
 
         // Project tools
         register(GetIndexStatusTool())
         register(SyncFilesTool())
         register(BuildProjectTool())
-        register(RunTestsTool())
-        register(VerifyChangeTool())
         register(ReloadProjectTool())
+        register(LinkBuildSystemTool())
+        register(RunTestsTool())
         register(GetDependenciesTool())
         register(GetProjectOverviewTool())
+        register(VerifyChangeTool())
+        register(CreateModuleTool())
         if (PluginDetectors.maven.isAvailable) {
             register(ImportModulesTool())
+            register(OpenWorkspaceTool())
         }
         register(InstallPluginTool())
         register(RestartIdeTool())
@@ -280,6 +293,17 @@ class ToolRegistry {
         register(ReformatCodeTool())
         register(OptimizeImportsTool())
         register(BatchOptimizeImportsTool())
+
+        // Advanced refactoring tools (universal - disabled by default)
+        register(ReplaceTextInFileTool())
+        register(StructuralSearchReplaceTool())
+        register(ChangeSignatureTool())
+        register(CreateFileTool())
+
+        // Code editing tools (universal - uses Document APIs with PSI for location)
+        register(EditMemberTool())
+        register(InsertMemberTool())
+        register(ReplaceMemberTool())
 
         // Fast search tools (universal)
         register(FindClassTool())
@@ -323,7 +347,7 @@ class ToolRegistry {
      * Registers language-specific navigation tools.
      *
      * These tools delegate to language handlers and support multiple languages
-     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust).
+     * (Java, Kotlin, Python, JavaScript/TypeScript, PHP, Rust, Scala).
      *
      * Tools are registered when at least one language handler is available
      * for the tool's functionality.
@@ -342,10 +366,14 @@ class ToolRegistry {
     }
 
     /**
-     * Registers Java-specific refactoring tools.
+     * Registers Java-specific tools.
      *
-     * These tools use Java-specific refactoring APIs and are only available
-     * when the Java plugin is present (IntelliJ IDEA, Android Studio).
+     * These tools depend on APIs that are only available when the Java plugin is present
+     * (IntelliJ IDEA, Android Studio). Includes test-discovery tools and refactoring tools.
+     *
+     * - [ListTestsTool] uses the `com.intellij.testFramework` extension point, which is
+     *   declared by the Java plugin; calling `.extensionList` on it throws in non-Java IDEs.
+     * - [SafeDeleteTool] uses Java-specific refactoring PSI APIs.
      *
      * Note: RenameSymbolTool has been moved to registerUniversalTools() as it
      * now uses the platform-level RenameProcessor which works across all languages.
@@ -354,6 +382,7 @@ class ToolRegistry {
      */
     private fun registerJavaRefactoringTools() {
         val refactoringToolClasses = listOf(
+            "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.ListTestsTool",
             "com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring.SafeDeleteTool"
         )
 
@@ -363,7 +392,7 @@ class ToolRegistry {
                 val tool = toolClass.getDeclaredConstructor().newInstance() as McpTool
                 register(tool)
             } catch (e: Exception) {
-                LOG.warn("Failed to register Java refactoring tool $className: ${e.message}")
+                LOG.warn("Failed to register Java-specific tool $className: ${e.message}")
             }
         }
     }

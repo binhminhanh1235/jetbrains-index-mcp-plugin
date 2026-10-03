@@ -3,7 +3,7 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.DependenciesResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.LibraryDependency
@@ -31,14 +31,14 @@ class GetDependenciesTool : AbstractMcpTool() {
         Useful for understanding what external libraries or internal modules are available.
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty("module", "Module name or path. If omitted, returns project-level summary.")
         .booleanProperty("includeTransitive", "Include transitive dependencies. Default: false.")
         .enumProperty("scope", "Scope filter. Default: all.", listOf("all", "compile", "test", "runtime"))
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val moduleArg = arguments["module"]?.jsonPrimitive?.content
         val includeTransitive = arguments["includeTransitive"]?.jsonPrimitive?.booleanOrNull ?: false
         val scopeArg = arguments["scope"]?.jsonPrimitive?.content?.lowercase() ?: "all"

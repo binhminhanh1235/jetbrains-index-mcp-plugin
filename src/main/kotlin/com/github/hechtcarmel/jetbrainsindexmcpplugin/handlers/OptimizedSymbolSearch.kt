@@ -1,14 +1,18 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.JavaHierarchyMethodComplement
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
@@ -69,16 +73,59 @@ object OptimizedSymbolSearch {
 
                 if (results.size >= limit || popupResults.candidates.size < popupLimit || popupLimit >= popupLimitCap) {
                     LOG.debug("Found ${results.size} symbols via popup-backed search")
-                    return results.take(limit)
+                    if (popupResults.isQualifiedQuery) {
+                        return results.take(limit)
+                    }
+                    return complementSuppressedOverrides(project, results, scope, languageFilter).take(limit)
                 }
 
                 popupLimit = minOf(popupLimitCap, popupLimit * 2)
             }
         } catch (e: Exception) {
+            e.rethrowIfControlFlow()
             LOG.debug("Popup-backed symbol search failed, falling back to contributor iteration: ${e.message}", e)
         }
 
-        return legacySearch(project, pattern, scope, limit, languageFilter)
+        val legacyResults = legacySearch(project, pattern, scope, limit, languageFilter)
+        // Same unqualified check the popup model applies via its separators ('.' and '#').
+        if (pattern.contains('.') || pattern.contains('#')) {
+            return legacyResults
+        }
+        return complementSuppressedOverrides(project, legacyResults, scope, languageFilter).take(limit)
+    }
+
+    /**
+     * Re-adds override implementations that the platform's Go to Symbol stack suppressed.
+     *
+     * For unqualified patterns, `DefaultSymbolNavigationContributor` drops any method whose super
+     * method is also in scope and matches the pattern (hierarchy dedup meant for the popup UI).
+     * That suppression only fires when the un-suppressed super IS part of [results], so querying
+     * the short-names index for every method name already present reconstructs exactly the
+     * suppressed set. [convertToSymbolData] re-applies scope and language filtering, and the
+     * coordinate-key dedup keeps true duplicates (same declaration via multiple contributors)
+     * collapsed.
+     */
+    private fun complementSuppressedOverrides(
+        project: Project,
+        results: List<SymbolData>,
+        scope: GlobalSearchScope,
+        languageFilter: Set<String>?
+    ): List<SymbolData> {
+        if (!PluginDetectors.java.isAvailable) return results
+
+        val methodNames = results.asSequence()
+            .filter { it.kind == "METHOD" || it.kind == "FUNCTION" }
+            .map { it.name }
+            .distinct()
+            .toList()
+        if (methodNames.isEmpty()) return results
+
+        val complemented = methodNames.flatMap { methodName ->
+            JavaHierarchyMethodComplement.methodsNamed(project, methodName, scope)
+                .mapNotNull { convertToSymbolData(it, project, scope, languageFilter) }
+        }
+
+        return (results + complemented).distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
     }
 
     /**
@@ -101,7 +148,12 @@ object OptimizedSymbolSearch {
 
             try {
                 processContributor(contributor, project, pattern, scope, limit, languageFilter, nameFilter, matcher, results, seen)
+            } catch (e: ProcessCanceledException) {
+                // Swallowing cancellation would silently truncate the result set mid-enumeration
+                // while still reporting it as complete.
+                throw e
             } catch (e: Exception) {
+                e.rethrowIfControlFlow()
                 LOG.debug("Error processing contributor ${contributor.javaClass.simpleName}: ${e.message}")
             }
         }
@@ -136,7 +188,10 @@ object OptimizedSymbolSearch {
                     if (nameFilter(name)) {
                         matchingNames.add(name)
                     }
-                    matchingNames.size < limit * 3 // Collect extra for filtering
+                    // No cap: the index streams keys for a scope-blind superset (content +
+                    // libraries + SDK) in hash order, so any cap fills with out-of-scope names
+                    // and silently drops in-scope matches. The result cap below is the limiter.
+                    true
                 },
                 scope,
                 null
@@ -206,6 +261,7 @@ object OptimizedSymbolSearch {
                     val method = item.javaClass.getMethod("getElement")
                     method.invoke(item) as? PsiElement
                 } catch (e: Exception) {
+                    e.rethrowIfControlFlow()
                     null
                 }
             }
@@ -224,25 +280,14 @@ object OptimizedSymbolSearch {
         if (!scope.contains(file)) return null
         val relativePath = ProjectUtils.getToolFilePath(project, file)
 
-        val name = when (targetElement) {
-            is PsiNamedElement -> targetElement.name
-            else -> {
-                try {
-                    val method = targetElement.javaClass.getMethod("getName")
-                    method.invoke(targetElement) as? String
-                } catch (e: Exception) {
-                    null
-                }
-            }
-        } ?: return null
+        val name = PsiUtils.classDisplayName(project, targetElement) ?: return null
 
-        val directQualifiedName = try {
-            val method = targetElement.javaClass.getMethod("getQualifiedName")
-            method.invoke(targetElement) as? String
-        } catch (e: Exception) {
-            null
-        }
-        val qualifiedName = directQualifiedName ?: buildQualifiedNameFromContainer(targetElement, name)
+        val qualifiedName = PsiUtils.qualifiedName(targetElement)
+            ?: if (name.startsWith("<anonymous implementation of ")) {
+                null
+            } else {
+                buildQualifiedNameFromContainer(targetElement, name)
+            }
 
         val line = getLineNumber(project, targetElement) ?: 1
         val kind = determineKind(targetElement)
@@ -256,7 +301,8 @@ object OptimizedSymbolSearch {
             line = line,
             column = getColumnNumber(project, targetElement) ?: 1,
             containerName = containerName,
-            language = language
+            language = language,
+            pointerTarget = targetElement
         )
     }
 
@@ -264,14 +310,9 @@ object OptimizedSymbolSearch {
         var parent = element.parent
 
         while (parent != null) {
-            try {
-                val method = parent.javaClass.getMethod("getQualifiedName")
-                val parentQualifiedName = method.invoke(parent) as? String
-                if (!parentQualifiedName.isNullOrBlank()) {
-                    return "$parentQualifiedName.$name"
-                }
-            } catch (_: Exception) {
-                // Ignore and continue walking up the PSI tree.
+            val parentQualifiedName = PsiUtils.qualifiedName(parent)
+            if (!parentQualifiedName.isNullOrBlank()) {
+                return "$parentQualifiedName.$name"
             }
             parent = parent.parent
         }
@@ -279,7 +320,14 @@ object OptimizedSymbolSearch {
         return null
     }
 
-    private fun getLanguageName(element: PsiElement): String {
+    /**
+     * The normalized language label used across tool responses — the same spelling the
+     * `language` parameter accepts, so a returned value can be fed straight back into a
+     * `language` + `symbol` lookup.
+     *
+     * Internal rather than private because `ide_symbol_info` reports the same label.
+     */
+    internal fun getLanguageName(element: PsiElement): String {
         return when (element.language.id) {
             "JAVA" -> "Java"
             "kotlin" -> "Kotlin"
@@ -307,6 +355,8 @@ object OptimizedSymbolSearch {
     }
 
     private fun determineKind(element: PsiElement): String {
+        PsiUtils.kotlinClassKind(element)?.let { return it }
+
         val className = element.javaClass.simpleName.lowercase()
         return when {
             // Rust types
@@ -345,6 +395,7 @@ object OptimizedSymbolSearch {
             }
             null
         } catch (e: Exception) {
+            e.rethrowIfControlFlow()
             null
         }
     }

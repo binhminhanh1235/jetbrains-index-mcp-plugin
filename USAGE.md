@@ -14,45 +14,60 @@ These tools work in every supported JetBrains IDE:
 |------|-------------|---------|
 | `ide_find_references` | Find all references to a symbol | Enabled |
 | `ide_find_definition` | Find symbol definition location | Enabled |
+| `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Enabled |
+| `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position | Enabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
-| `ide_get_signature` | Get method/function/class signature at a position | Enabled |
-| `ide_find_symbol` | Search code symbols by name *(disabled by default)* | Disabled |
-| `ide_search_text` | Text search using word index | Enabled |
-| `ide_diagnostics` | Analyze file problems with fresh IDE diagnostics, plus optional build/test results | Enabled |
+| `ide_find_symbol` | Search code symbols by name | Enabled |
+| `ide_search_text` | Text search using IntelliJ Find in Files (substring + regex) | Enabled |
+| `ide_diagnostics` | Analyze one file or a bounded multi-file batch with per-file coverage states, plus optional build/test results | Enabled |
+| `ide_batch_diagnostics` | Run diagnostics on multiple files in a single call | Enabled |
+| `ide_apply_quick_fix` | Apply an available quick fix or intention action at a position in an open file | Enabled |
+| `ide_project_diagnostics` | Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata; long analyses return an `analysisId` to poll | Enabled |
 | `ide_index_status` | Check indexing status | Enabled |
-| `ide_sync_files` | Force sync VFS/PSI cache | Enabled |
-| `ide_reload_project` | Reload linked Maven/Gradle build models | Disabled |
-| `ide_import_modules` | Import external Maven projects as modules | Disabled |
-| `ide_build_project` | Build project with structured errors | Disabled |
-| `ide_run_tests` | Execute tests programmatically with structured results | Disabled |
-| `ide_verify_change` | Execute build and test suite inside a smart revert block | Enabled |
-| `ide_get_dependencies` | Get project dependencies with module/library scopes | Enabled |
-| `ide_get_project_overview` | Get high-level summary of project structure | Enabled |
-| `ide_read_file` | Read file content by path or qualified name | Disabled |
-| `ide_get_active_file` | Get currently active editor file(s) | Disabled |
-| `ide_open_file` | Open file in editor with navigation | Disabled |
+| `ide_sync_files` | Force sync VFS/PSI cache for relative or in-project absolute paths, including deleted paths through existing parents | Enabled |
+| `ide_verify_change` | Verify a file change (sync VFS + diagnostics + optional nearby tests) | Enabled |
+| `ide_get_project_overview` | Structured overview of project architecture (modules, languages, frameworks, entry points) | Enabled |
+| `ide_get_dependencies` | Get module and library dependencies with scopes | Enabled |
+| `ide_reload_project` | Reload linked Maven/Gradle build models | Enabled |
+| `ide_import_modules` | Import external Maven projects as modules | Enabled |
+| `ide_open_workspace` | Scan root directory for Maven projects, or open an explicit module list, in one window | Enabled |
+| `ide_create_module` | Add a directory as an IntelliJ module content root for non-Maven projects | Enabled |
+| `ide_build_project` | Build project with structured errors; long builds return a `buildId` to poll | Enabled |
+| `ide_run_tests` | Run tests via run configs; structured pass/fail results with per-test console output from the IDE's test runner (any framework). FQN class/method targeting is Java/Kotlin-only; other languages pass an existing run-config name. Long runs return a `runId` to poll so the MCP client never times out; each poll reports the failures so far | Enabled |
+| `ide_read_file` | Read file content by path or qualified name | Enabled |
+| `ide_get_active_file` | Get currently active editor file(s) | Enabled |
+| `ide_open_file` | Open file in editor with navigation | Enabled |
 | `ide_refactor_rename` | Rename symbol with reference updates (all languages) | Enabled |
 | `ide_move_file` | Move file to new directory with IDE-aware move semantics | Enabled |
 | `ide_reformat_code` | Reformat code using project code style | Disabled |
-| `ide_optimize_imports` | Optimize imports without reformatting code | Disabled |
+| `ide_optimize_imports` | Optimize imports without reformatting code | Enabled |
+| `ide_batch_optimize_imports` | Optimize imports in multiple files in one call | Enabled |
+| `ide_structural_search_replace` | Pattern-based code search and transformation (Java, Kotlin) | Enabled |
+| `ide_change_signature` | Preview or change a Java/Kotlin JVM method signature by exact/nested target, updating callers automatically | Disabled |
+| `ide_create_file` | Create a new source file with content, immediately indexed by IntelliJ | Enabled |
+| `ide_replace_text_in_file` | Find and replace text using IntelliJ's Document API | Enabled |
+| `ide_edit_member` | Replace an entire member declaration (signature + body) with new content (Java, Kotlin) | Enabled |
+| `ide_insert_member` | Insert a new member at a structural position (Java, Kotlin) | Disabled |
+| `ide_replace_member` | Replace method body or field initializer, preserving signature (Java, Kotlin) | Disabled |
 
-### Extended Tools (Language-Aware)
+## Extended Tools (Language-Aware)
 
 These tools activate based on available language plugins:
 
 | Tool | Description | Languages |
 |------|-------------|-----------|
-| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust |
-| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust |
-| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP |
-| `ide_file_structure` | Hierarchical file structure *(disabled by default)* | Java, Kotlin, Python, JS/TS, PHP, Markdown |
+| `ide_type_hierarchy` | Get type inheritance hierarchy | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_call_hierarchy` | Analyze method call relationships | Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala |
+| `ide_find_implementations` | Find interface implementations | Java, Kotlin, Python, JS/TS, PHP, Rust, Scala |
+| `ide_find_super_methods` | Find overridden methods | Java, Kotlin, Python, JS/TS, PHP, Scala |
+| `ide_file_structure` | Legacy file structure text; opt-in structured nodes and exact handles via `includeNodes`/`includeSymbolIds` | Java, Kotlin, Python, JS/TS, PHP, Markdown, Scala |
 
-### Java-Specific Refactoring Tools
+### Java-Specific Tools
 
 | Tool | Description |
 |------|-------------|
+| `ide_list_tests` | List all test methods/classes discovered by the IDE's test frameworks |
 | `ide_convert_java_to_kotlin` | Convert Java files to Kotlin using the IDE converter *(disabled by default)* |
 | `ide_refactor_safe_delete` | Safely delete with usage check |
 
@@ -64,18 +79,23 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 |------|-------------|---------|
 | `ide_project_status` | Combined view of all open and managed projects with mode per row | Enabled |
 | `ide_set_project_mode` | Set a project's lifecycle mode (active/background/dormant/closed) | Disabled |
-| `ide_get_project_modes` | List all managed projects and their current modes | Disabled |
+| `ide_get_project_modes` | List all managed projects and their current modes | Enabled |
 | `ide_set_all_project_modes` | Set all managed open projects to the same mode | Disabled |
 | `ide_enroll_all_projects` | Enroll all currently open projects in lifecycle management | Disabled |
 | `ide_release_project` | Remove a project from lifecycle management | Disabled |
 | `ide_release_all_projects` | Release all managed projects from lifecycle management at once | Disabled |
 | `ide_lifecycle_log` | Query recent lifecycle events with trigger reasons | Disabled |
 | `ide_set_lifecycle_log_file` | Enable or disable persistent lifecycle log file writes | Disabled |
-| `ide_set_power_save_mode` | Toggle Power Save Mode directly | Enabled |
-| `ide_close_project` | Close a project window | Enabled |
+| `ide_set_power_save_mode` | Toggle Power Save Mode directly | Disabled |
+| `ide_close_project` | Close a project window | Disabled |
 | `ide_open_project` | Open a project by path and wait for indexing | Enabled |
-| `ide_install_plugin` | Install a plugin zip into the IDE | Enabled |
+| `ide_install_plugin` | Install a plugin zip into the IDE | Disabled |
 | `ide_restart` | Restart the IDE | Enabled |
+
+---
+
+**Claude Code users:** To enforce IDE tool usage and prevent agents from falling back to grep/sed/Edit,
+see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse` hook scripts.
 
 ---
 
@@ -85,21 +105,26 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 - [Universal Tools](#universal-tools)
   - [ide_find_references](#ide_find_references)
   - [ide_find_definition](#ide_find_definition)
+  - [ide_symbol_info](#ide_symbol_info)
+  - [ide_get_signature](#ide_get_signature)
   - [ide_find_class](#ide_find_class)
   - [ide_find_file](#ide_find_file)
-  - [ide_get_signature](#ide_get_signature)
   - [ide_search_text](#ide_search_text)
   - [ide_find_symbol](#ide_find_symbol)
   - [ide_diagnostics](#ide_diagnostics)
+  - [ide_batch_diagnostics](#ide_batch_diagnostics)
+  - [ide_apply_quick_fix](#ide_apply_quick_fix)
+  - [ide_project_diagnostics](#ide_project_diagnostics)
   - [ide_index_status](#ide_index_status)
   - [ide_sync_files](#ide_sync_files)
+  - [ide_verify_change](#ide_verify_change)
+  - [ide_get_project_overview](#ide_get_project_overview)
+  - [ide_get_dependencies](#ide_get_dependencies)
   - [ide_reload_project](#ide_reload_project)
   - [ide_import_modules](#ide_import_modules)
+  - [ide_open_workspace](#ide_open_workspace)
   - [ide_build_project](#ide_build_project)
   - [ide_run_tests](#ide_run_tests)
-  - [ide_verify_change](#ide_verify_change)
-  - [ide_get_dependencies](#ide_get_dependencies)
-  - [ide_get_project_overview](#ide_get_project_overview)
   - [ide_read_file](#ide_read_file)
   - [ide_get_active_file](#ide_get_active_file)
   - [ide_open_file](#ide_open_file)
@@ -109,12 +134,21 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 - [Project Window Management](#project-window-management)
   - [ide_set_power_save_mode](#ide_set_power_save_mode)
   - [ide_close_project](#ide_close_project)
+  - [ide_create_module](#ide_create_module)
   - [ide_open_project](#ide_open_project)
 - [Refactoring Tools](#refactoring-tools)
   - [ide_refactor_rename](#ide_refactor_rename)
   - [ide_move_file](#ide_move_file)
   - [ide_reformat_code](#ide_reformat_code)
   - [ide_optimize_imports](#ide_optimize_imports)
+  - [ide_batch_optimize_imports](#ide_batch_optimize_imports)
+  - [ide_structural_search_replace](#ide_structural_search_replace)
+  - [ide_change_signature](#ide_change_signature)
+  - [ide_create_file](#ide_create_file)
+  - [ide_replace_text_in_file](#ide_replace_text_in_file)
+  - [ide_edit_member](#ide_edit_member)
+  - [ide_insert_member](#ide_insert_member)
+  - [ide_replace_member](#ide_replace_member)
 - [Extended Tools (Language-Aware)](#extended-tools-language-aware)
   - [ide_type_hierarchy](#ide_type_hierarchy)
   - [ide_call_hierarchy](#ide_call_hierarchy)
@@ -130,12 +164,9 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
   - [ide_release_all_projects](#ide_release_all_projects)
   - [ide_enroll_all_projects](#ide_enroll_all_projects)
   - [ide_lifecycle_log](#ide_lifecycle_log)
-  - [ide_set_power_save_mode](#ide_set_power_save_mode)
-  - [ide_close_project](#ide_close_project)
-  - [ide_open_project](#ide_open_project)
-  - [ide_install_plugin](#ide_install_plugin)
-  - [ide_restart](#ide_restart)
-- [Java-Specific Refactoring Tools](#java-specific-refactoring-tools)
+  - [ide_set_lifecycle_log_file](#ide_set_lifecycle_log_file)
+- [Java-Specific Tools](#java-specific-tools)
+  - [ide_list_tests](#ide_list_tests)
   - [ide_convert_java_to_kotlin](#ide_convert_java_to_kotlin)
   - [ide_refactor_safe_delete](#ide_refactor_safe_delete)
 - [Error Handling](#error-handling)
@@ -160,6 +191,75 @@ Most tools operate on a specific location in code and require these parameters:
 | `line` | integer | 1-based line number |
 | `column` | integer | 1-based column number. For dotted expressions like `json.dumps()` or `os.path.join()`, point to the member token (`dumps`, `join`) when targeting the member definition. |
 
+### Opaque Symbol IDs
+
+`ide_find_definition` and `ide_symbol_info` accept and return opaque handles tied to the exact
+PSI target and its original file identity. Lookups preserve that target, including non-named and
+synthetic elements; declarations without their own source text use a source-context preview.
+Pass `symbolId` alone instead of coordinates or `language` + `symbol`; when `project_path` is
+omitted, the handle routes the request to its owning open project. Handles are non-canonical, so
+different IDs may identify the same declaration and must not be compared for symbol equality.
+They expire on server restart, project close, declaration/file deletion, one hour of inactivity,
+or eviction from the 4,096-entry cache. Self-navigating synthetic PSI targets (such as implicit
+enum methods) also expire after their backing source file changes because a hard pointer cannot
+prove that the exact synthetic declaration survived the edit. Rediscover the target after
+`SYMBOL_ID_EXPIRED`.
+
+### Structured Lookup Targets
+
+`ide_find_definition` and `ide_symbol_info` also accept a nested `target` with exactly one
+variant: `{ "symbolId": "sym_..." }`, `{ "position": { "file": "src/Foo.java", "line": 3,
+"column": 8 } }`, or `{ "qualifiedName": "com.example.Foo#bar", "language": "Java" }`.
+Do not mix `target` with top-level selectors. Existing top-level requests remain valid.
+Validation runs before PSI synchronization, and `target.symbolId` routes to its owning project.
+
+### Refactoring Preview Contract
+
+`ide_refactor_rename` and `ide_refactor_safe_delete` accept `dryRun: true`. The request follows
+normal target resolution, validation, usage discovery, and conflict discovery, but does not enter
+the refactoring/source-write phase, save documents, or create an undo command. File contents
+therefore remain byte-for-byte unchanged.
+
+Refactoring previews return this top-level shape (the contents of `plannedChange` depend on the
+operation):
+
+```json
+{
+  "dryRun": true,
+  "canApply": true,
+  "target": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUser",
+    "kind": "method",
+    "container": "com.example.UserService",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "qualifiedName": "com.example.UserService#findUser",
+    "language": "Java"
+  },
+  "plannedChange": {
+    "operation": "rename",
+    "targetType": "symbol",
+    "from": "findUser",
+    "to": "findUserById",
+    "overrideStrategy": "rename_base",
+    "relatedRenamingStrategy": "all"
+  },
+  "affectedFiles": ["src/main/java/com/example/UserService.java"],
+  "usageCount": 4,
+  "conflictCount": 0,
+  "warnings": [],
+  "elapsedMs": 18
+}
+```
+
+`canApply: false` means discovery found a blocker that the request did not override, or could not
+finish safely; always inspect `warnings` and `conflictCount`. Safe delete with `force: true` can be
+applicable while warning about usages or incomplete discovery, matching its apply semantics.
+`affectedFiles` is an estimate from the preview search. To apply, send the same operation again with
+`dryRun` omitted or `false`; a preview is not an apply token and does not reserve project state.
+
 ### Symbol Reference Parameters
 
 Some tools support identifying the target element by fully qualified symbol reference instead of file position. The following parameters are available as an alternative to `file` + `line` + `column`:
@@ -171,7 +271,7 @@ Some tools support identifying the target element by fully qualified symbol refe
 
 **Important:** The two parameter groups are **mutually exclusive** — provide either `file` + `line` + `column` OR `language` + `symbol`, not both.
 
-**Supported languages:** Java, JS, TS, and Python. Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
+**Supported languages:** Java, JavaScript, TypeScript, Python, and PHP. Availability is dynamic — a language is accepted only when its plugin is installed (e.g., Python in PyCharm, PHP in PhpStorm). Unsupported languages return an explicit error listing the currently supported symbol-reference languages.
 
 **Python symbol grammar:** Symbols must be module-qualified (dotted path with ≥2 segments):
 - `pkg.mod.ClassName` — class
@@ -185,6 +285,8 @@ Parameter lists are not supported (Python has no overload-by-signature); bare un
 - `modulePath#exportName` — named export (e.g., `src/utils#formatDate`)
 - `modulePath#default` — default export (e.g., `src/index#default`)
 - `modulePath#ClassName.memberName` — class member (e.g., `src/models#User.validate`)
+
+**PHP symbol grammar:** `\Namespace\ClassName` or `\Namespace\ClassName::method()` (e.g., `\App\Service\UserService::find()`).
 
 **Deterministic outcomes for JS/TS symbol resolution:**
 - `unsupported_grammar` — symbol does not match accepted forms
@@ -210,7 +312,7 @@ Parameter lists are not supported (Python has no overload-by-signature); bare un
 
 **Note:** Module-qualified lookup remains v1 grammar and bounded; unsupported cases should fall back to `file` + `line` + `column`.
 
-**Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
+**Tools that support symbol references:** `ide_find_references`, `ide_find_definition`, `ide_symbol_info`, `ide_call_hierarchy`, `ide_find_implementations`, `ide_find_super_methods`.
 
 ---
 
@@ -227,12 +329,14 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 - Understanding code dependencies
 - Preparing for refactoring
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target for a fresh search (mutually exclusive):** top-level `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`; this tool also accepts the equivalent nested `target`. Pagination requests pass `cursor` instead.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Do not combine with top-level selectors. |
+| `symbolId` | string | Conditional | Opaque ID returned by a previous semantic result. Omit all other target selectors. |
 | `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
 | `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
@@ -240,6 +344,7 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default: true** — keeps valid runtime references from generated DI factories, MapStruct mappers, gRPC stubs, and serializers. Set `false` to drop generated call sites when they dominate results. |
+| `paths` | array | No | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero results. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
 | `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -305,7 +410,18 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
   "totalCollected": 2,
   "offset": 0,
   "pageSize": 100,
-  "stale": false
+  "stale": false,
+  "resolvedSymbol": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUser",
+    "kind": "method",
+    "container": "com.example.UserService",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "qualifiedName": "com.example.UserService#findUser(java.lang.String)",
+    "language": "Java"
+  }
 }
 ```
 
@@ -327,18 +443,21 @@ Finds the definition/declaration location of a symbol at a given source location
 - Understanding where a method, class, variable, or field is declared
 - Looking up the original definition from a usage site
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target (mutually exclusive):** top-level `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`; this tool also accepts the equivalent nested `target`
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Do not combine with top-level selectors. |
+| `symbolId` | string | Conditional | Opaque handle returned by this tool or `ide_symbol_info`. Pass it alone to resolve the exact target after edits or rename. |
 | `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
 | `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
-| `maxPreviewLines` | integer | No | Limit `fullElementPreview` output size (default: 50, max: 500) |
+| `fullElementPreview` | boolean | No | Return the complete element code instead of a preview snippet (default: false) |
+| `maxPreviewLines` | integer | No | Limit `fullElementPreview` output size (default: 50, max: 500). Only used when `fullElementPreview` is `true` |
 
 **Example Request (position-based):**
 
@@ -375,6 +494,7 @@ Finds the definition/declaration location of a symbol at a given source location
 
 ```json
 {
+  "symbolId": "sym_4LWQhYb7xR6Fv8nJ3p2t",
   "file": "src/main/java/com/example/UserService.java",
   "line": 15,
   "column": 17,
@@ -385,6 +505,156 @@ Finds the definition/declaration location of a symbol at a given source location
 ```
 
 **Path note:** Project results use relative paths. Dependency/library results may use absolute paths or `jar://` URLs.
+
+---
+
+### ide_symbol_info
+
+Returns the resolved signature and documentation of the symbol at a position, so a signature check
+does not cost a whole-file read.
+
+**Use when:**
+- Checking whether a call site is compatible before changing it
+- Picking between overloads
+- Reading a declaration's doc comment without opening the declaring file
+
+**How it differs from `ide_find_definition`:** that tool returns *source text* — parameter types
+appear as the short names the author imported, and no doc comment is included. This tool returns
+types as the IDE resolved them.
+
+**Type resolution by language:**
+
+| `signatureSource` | When | Type names |
+|-------------------|------|------------|
+| `java_psi` | Java declarations (and Kotlin light elements) | Fully qualified, plus structured `parameters` and `returnType` |
+| `quick_navigation` | Any language with a documentation provider — Kotlin, Python, JS/TS, Go, PHP, Rust | As that language's Quick Documentation renders them; often short |
+| `element_text` | No documentation provider answered | The declaration's own source line |
+
+**Target (mutually exclusive):** top-level `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`; this tool also accepts the equivalent nested `target`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Do not combine with top-level selectors. |
+| `symbolId` | string | Conditional | Opaque handle returned by this tool or `ide_find_definition`. Pass it alone to resolve the exact target after edits or rename. |
+| `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
+| `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
+| `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
+| `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
+| `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
+| `includeDoc` | boolean | No | Include the rendered doc comment (default: true) |
+| `maxDocLength` | integer | No | Truncate documentation beyond this many characters (default: 4000, max: 20000) |
+| `project_path` | string | No | Project root path |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_symbol_info",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "symbolId": "sym_4LWQhYb7xR6Fv8nJ3p2t",
+  "name": "findUser",
+  "kind": "method",
+  "qualifiedName": "com.example.UserService#findUser(java.lang.String)",
+  "signature": "public com.example.model.User findUser(java.lang.String id) throws com.example.NotFoundException",
+  "signatureSource": "java_psi",
+  "parameters": [
+    { "name": "id", "type": "java.lang.String" }
+  ],
+  "returnType": "com.example.model.User",
+  "thrownTypes": ["com.example.NotFoundException"],
+  "modifiers": ["public"],
+  "visibility": "public",
+  "containingDeclaration": "com.example.UserService",
+  "documentation": "Looks up a user by id.\n\nParams:\nid - the user id\nReturns:\nthe user, never null",
+  "documentationTruncated": false,
+  "file": "src/main/java/com/example/UserService.java",
+  "line": 15,
+  "column": 35,
+  "language": "Java"
+}
+```
+
+**Note:** on the `java_psi` path `qualifiedName` uses this plugin's `symbol` format, so it can be
+passed straight back to `ide_find_references`, `ide_call_hierarchy`, or `ide_find_implementations`
+as the `symbol` argument. A callable includes its resolved parameter list, because the bare
+`Container#name` form is rejected as ambiguous as soon as the method is overloaded. On the other
+`signatureSource` paths the container is a best-effort dotted AST path rather than a resolved FQN,
+so address those symbols by position instead.
+
+---
+
+### ide_get_signature
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get the signature (parameters, return type) of a method, function, or class at a position.
+Useful when you need to know how to call a function without reading the entire file.
+
+**Use when:**
+- Checking method parameters and return types without reading the whole file
+- Understanding function signatures when writing call sites
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Project-relative file path |
+| `line` | integer | Yes | 1-based line number |
+| `column` | integer | Yes | 1-based column number |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_signature",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "name": "findUser",
+  "signature": "public User findUser(String id)",
+  "kind": "method",
+  "returnType": "User",
+  "parameters": [
+    {
+      "name": "id",
+      "type": "String"
+    }
+  ],
+  "containingClass": "UserService",
+  "file": "src/main/java/com/example/UserService.java",
+  "line": 15,
+  "language": "JAVA"
+}
+```
 
 ---
 
@@ -437,6 +707,7 @@ Searches for classes and interfaces by name using the IDE's class index.
 {
   "classes": [
     {
+      "symbolId": "sym_user-service",
       "name": "UserService",
       "qualifiedName": "com.example.service.UserService",
       "kind": "INTERFACE",
@@ -512,10 +783,10 @@ Searches for files by name using the IDE's file index.
 
 ### ide_search_text
 
-Searches for text using the IDE's pre-built word index. Significantly faster than file scanning.
+Searches for text using IntelliJ's Find in Files engine, matching the IDE's own search behaviour. Plain-text queries do substring matching (e.g. `a_word` finds `a_word_and_another_word`); regex queries use regular expression matching.
 
 **Use when:**
-- Searching for exact word occurrences across the codebase
+- Searching for text or patterns across the codebase
 - Finding string literals, comments, or code patterns
 - Filtering searches by context (code only, comments only, strings only)
 
@@ -523,12 +794,18 @@ Searches for text using the IDE's pre-built word index. Significantly faster tha
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Text to search for; treated as an exact word unless `regex` is `true` |
+| `query` | string | Yes | Text to search for; treated as a substring unless `regex` is `true` |
 | `regex` | boolean | No | Treat `query` as a regular expression (default: false) |
 | `context` | string | No | Where to search: `"code"`, `"comments"`, `"strings"`, or `"all"` (default) |
 | `caseSensitive` | boolean | No | Case sensitive search (default: true) |
+| `wholeWord` | boolean | No | Match whole words only (default: false — substring match) |
 | `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
-| `limit` | integer | No | Maximum results (default: 100, max: 500) |
+| `paths` | array | No | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `limit` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
+| `cursor` | string | No | Pagination cursor from a previous response |
+| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
+
+Supports cursor-based pagination: the first call returns results plus `nextCursor`; pass `cursor` to get the next page.
 
 **Example Request:**
 
@@ -577,7 +854,9 @@ Regex example:
     }
   ],
   "totalCount": 1,
-  "query": "TODO"
+  "query": "TODO",
+  "nextCursor": null,
+  "hasMore": false
 }
 ```
 
@@ -592,7 +871,11 @@ Analyzes code diagnostics from three sources:
 - optional build output from the last build,
 - optional test results from open test run tabs.
 
-File problems are collected through explicit daemon analysis, so they do not depend on the target project window being active. Intentions/quick fixes are best-effort and require the file to already be open in an editor.
+File problems are collected through explicit daemon analysis, so they do not depend on the target
+project window being active. Analyze either one `file` or a non-empty `files` list. Multi-file calls
+share one configured analysis timeout budget for the whole request, rather than restarting the
+budget for every file. Intentions/quick fixes are best-effort, require the file to already be open
+in an editor, and are available only in single-file mode.
 
 **Use when:**
 - Finding code issues in a file
@@ -606,14 +889,16 @@ File problems are collected through explicit daemon analysis, so they do not dep
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file relative to project root |
-| `line` | integer | No | 1-based line number for intention lookup (default: 1) |
-| `column` | integer | No | 1-based column number for intention lookup (default: 1) |
-| `startLine` | integer | No | Filter problems to start from this line |
-| `endLine` | integer | No | Filter problems to end at this line |
+| `file` | string | No | One project-relative or in-project absolute file to analyze. Mutually exclusive with `files`. At least one of `file`, `files`, `includeBuildErrors`, or `includeTestResults` must be provided |
+| `files` | string[] | No | Up to 100 supplied project-relative or in-project absolute paths analyzed under one shared timeout budget. Aliases and duplicates are tolerated and analyzed once; whitespace in filenames is preserved. Mutually exclusive with `file` |
+| `line` | integer | No | 1-based line number for intention lookup (default: 1). Single `file` only |
+| `column` | integer | No | 1-based column number for intention lookup (default: 1). Single `file` only |
+| `startLine` | integer | No | Filter problems to start from this line. Single `file` only |
+| `endLine` | integer | No | Filter problems to end at this line. Single `file` only |
 | `includeBuildErrors` | boolean | No | Include errors/warnings from the last build (default: `false`) |
 | `includeTestResults` | boolean | No | Include test results from open test run tabs (default: `false`) |
 | `severity` | string | No | Filter diagnostics by `all`, `errors`, or `warnings` (default: `all`) |
+| `maxProblems` | integer | No | Maximum code problems returned across the file(s) (default: 100, max: 500) |
 | `testResultFilter` | string | No | Filter test results by `failed` or `all` (default: `failed`) |
 | `maxBuildErrors` | integer | No | Maximum build messages to return (default: 100, max: 500) |
 | `maxTestResults` | integer | No | Maximum test results to return (default: 100, max: 500) |
@@ -627,6 +912,39 @@ File problems are collected through explicit daemon analysis, so they do not dep
     "name": "ide_diagnostics",
     "arguments": {
       "file": "src/main/java/com/example/UserService.java"
+    }
+  }
+}
+```
+
+**Example Request (build output only, no file analysis):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_diagnostics",
+    "arguments": {
+      "includeBuildErrors": true,
+      "severity": "errors"
+    }
+  }
+}
+```
+
+**Example Request (multiple files):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_diagnostics",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/UserController.java"
+      ],
+      "severity": "errors"
     }
   }
 }
@@ -649,10 +967,46 @@ File problems are collected through explicit daemon analysis, so they do not dep
   ],
   "intentions": [],
   "problemCount": 1,
+  "problemsTruncated": false,
   "intentionCount": 0,
   "analysisFresh": true,
   "analysisTimedOut": false,
-  "analysisMessage": "Intentions are unavailable because the file is not open in an editor."
+  "analysisMessage": "Intentions are unavailable because the file is not open in an editor.",
+  "analysisMode": "closed_batch"
+}
+```
+
+**Example Response (multiple files):**
+
+```json
+{
+  "problems": [
+    {
+      "message": "Cannot resolve symbol 'UnknownType'",
+      "severity": "ERROR",
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 12,
+      "column": 9
+    }
+  ],
+  "problemCount": 1,
+  "problemsTruncated": false,
+  "fileAnalyses": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "state": "analyzed",
+      "mode": "closed_batch",
+      "problemCount": 1,
+      "problemsTruncated": false
+    },
+    {
+      "file": "src/main/java/com/example/UserController.java",
+      "state": "analyzed",
+      "mode": "closed_batch",
+      "problemCount": 0,
+      "problemsTruncated": false
+    }
+  ]
 }
 ```
 
@@ -660,13 +1014,244 @@ File problems are collected through explicit daemon analysis, so they do not dep
 - `analysisFresh = true` means the file problems came from a fresh explicit IDE analysis pass instead of cached editor highlights.
 - `analysisTimedOut = true` means the file analysis budget was exceeded; build/test sections may still be returned.
 - `analysisMessage` explains degraded cases such as timeouts or missing live editor context for intentions.
-- `line` and `column` affect intention lookup only; file problems are collected for the whole file, then filtered by `startLine` / `endLine` if provided.
+- `analysisMode` reports which analysis path produced the file problems: `open_daemon` (file open in an editor, fresh daemon highlights) or `closed_batch` (public batch analysis); `null` when no analysis ran.
+- The four legacy top-level analysis fields above apply to single-file calls. Multi-file calls return one aggregate `problems` list and `fileAnalyses: [{file, state, reason?, mode?, problemCount, problemsTruncated}]`. States match project diagnostics: `analyzed`, `timed_out`, `failed`, `skipped` (not eligible, with a reason), or `not_analyzed` (not started before the shared deadline), plus `not_found` for a missing/deleted requested file.
+- Code problems share the requested `maxProblems` response cap. Top-level `problemsTruncated` reports known omissions (absent without code analysis); each file's flag identifies affected paths and its `problemCount` counts returned problems, not all detected problems. An `analyzed` file can have zero returned problems and `problemsTruncated: true`. Re-query such a path using `file`, narrowing `startLine`/`endLine` if needed.
+- The multi-file timeout is shared from before path resolution. A file whose analysis starts but exceeds its remaining budget is `timed_out`; files not started before exhaustion are `not_analyzed`. One analyzer's `ProcessCanceledException` is `failed` when the request coroutine itself is still active.
+- Single-file calls use the same complete-operation timeout: disk refresh, PSI setup, and waiting for the shared analysis lock all consume it. An open-editor daemon that reports it did not run can fall back to batch analysis within the remaining budget; a daemon that consumes the timeout returns `timed_out` without starting a second batch budget.
+- The analyzed file is refreshed from disk and committed to PSI before analysis, so problems describe the file as it is on disk. There is no need to call `ide_sync_files` first after editing a file with an external tool.
+- `line` and `column` affect intention lookup only; file problems are collected for the whole file, then filtered by `startLine` / `endLine` if provided. All four location fields are rejected with `files`.
 
 **Severity Values:**
 - `ERROR` - Compilation error
 - `WARNING` - Potential problem
 - `WEAK_WARNING` - Minor issue
 - `INFO` - Informational
+
+---
+
+### ide_project_diagnostics
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Analyzes many files — up to the whole project, including files not open in any editor — for code problems, with fail-closed coverage metadata (issue #246).
+
+**Coverage contract:** every file in scope gets exactly one state — `analyzed`, `timed_out`, `failed`, `skipped` (not eligible for analysis, with reason), or `not_analyzed` (cut off by `maxFiles`/`timeoutSeconds`). The top-level `complete` flag is `true` only when every considered file was analyzed. **An empty `problems` list is a clean signal only when `complete` is `true`** — otherwise inspect `incompleteFiles` and the per-state counts. Open files are analyzed with fresh daemon highlights (`filesAnalyzedOpenDaemon`); closed files use the IDE's public batch analysis (`filesAnalyzedClosedBatch`), which covers errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope.
+
+Long analyses use the same long-poll pattern as `ide_build_project`: each call blocks at most `waitSeconds` (default 45); a still-running call returns `{"status": "running", "analysisId": "..."}` and you poll with that `analysisId` while analysis continues in the IDE. Only one analysis runs per project at a time.
+
+**Use when:**
+- Verifying the whole project (or a directory) is clean before committing, without opening files
+- Getting diagnostics for files that are not open in any editor
+- Needing proof of analysis coverage, not just an empty result
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paths` | string[] | No | Files or directories relative to the project root; omit to analyze every file in the project's content roots |
+| `severity` | string | No | Filter problems by `all`, `errors`, or `warnings` (default: `all`) |
+| `maxFiles` | integer | No | Maximum files to analyze (default: 1000, max: 10000). Overflow files are reported `not_analyzed` and `complete` becomes `false` |
+| `maxProblems` | integer | No | Maximum problems returned across all files (default: 1000, max: 5000). `problemCount` keeps counting beyond it |
+| `timeoutSeconds` | integer | No | Maximum seconds for the whole analysis (default: 600, max: 3600). Remaining files are reported `not_analyzed` when it elapses |
+| `analysisId` | string | No | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis instead of starting a new one |
+| `waitSeconds` | integer | No | Maximum seconds this call may block (default: 45, max: 55). Keep below your MCP client's request timeout |
+| `project_path` | string | No | Project root path |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_project_diagnostics",
+    "arguments": {
+      "paths": ["src/main"]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "complete": false,
+  "status": "completed",
+  "filesConsidered": 214,
+  "filesAnalyzed": 213,
+  "filesAnalyzedOpenDaemon": 2,
+  "filesAnalyzedClosedBatch": 211,
+  "filesTimedOut": 1,
+  "filesFailed": 0,
+  "filesSkipped": 0,
+  "filesNotAnalyzed": 0,
+  "incompleteFiles": [
+    {
+      "file": "src/main/java/com/example/Huge.java",
+      "state": "timed_out",
+      "reason": "File diagnostics analysis timed out after 30000ms."
+    }
+  ],
+  "incompleteFilesTruncated": false,
+  "problems": [
+    {
+      "message": "Cannot resolve symbol 'UnknownType'",
+      "severity": "ERROR",
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 42,
+      "column": 9,
+      "endLine": 42,
+      "endColumn": 20
+    }
+  ],
+  "problemCount": 1,
+  "errorCount": 1,
+  "warningCount": 0,
+  "problemsTruncated": false,
+  "durationMs": 48230,
+  "analysisMessage": "Files open in an editor are analyzed with fresh daemon highlights (open_daemon); closed files use the IDE's public batch analysis (closed_batch), which reports errors and warnings but not weak warnings or editor-only annotators. Binary files are excluded from scope. Treat an empty problems list as a clean signal only when complete=true."
+}
+```
+
+**In-Progress Response** (poll with the returned `analysisId`):
+
+```json
+{
+  "status": "running",
+  "analysisId": "1f0d5b1e-3f9a-4a9e-9d3b-8a1c2e4f5a6b",
+  "elapsedSeconds": 46,
+  "filesProcessed": 118,
+  "filesConsidered": 214,
+  "timeoutSeconds": 600,
+  "message": "Analysis is still executing (118/214 files processed, 46s elapsed, 600s limit). Call ide_project_diagnostics again with {\"analysisId\": \"1f0d5b1e-3f9a-4a9e-9d3b-8a1c2e4f5a6b\"} to keep waiting for its results (include the same project_path if you provided one)."
+}
+```
+
+---
+
+### ide_batch_diagnostics
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Run diagnostics on multiple files in a single MCP call. Returns errors and warnings for all specified files.
+
+**Use when:**
+- Checking multiple modified files for compilation errors without multiple round-trips
+- Rapidly validating code health across a set of files after editing
+- Use after `ide_sync_files` or `ide_verify_change` when VFS is already synchronized
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | Yes | Array of file paths to run diagnostics on |
+| `severity` | string | No | Severity filter: `"errors"` (default), `"warnings"`, or `"all"` |
+| `includeBuildErrors` | boolean | No | Include compiler build errors (default: true) |
+| `includeTestResults` | boolean | No | Include test failure results (default: false) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_batch_diagnostics",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/OrderService.java"
+      ],
+      "severity": "errors"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "filesChecked": 2,
+  "hasErrors": true,
+  "results": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "problemCount": 1,
+      "analysisFresh": true,
+      "analysisTimedOut": false,
+      "problems": [
+        {
+          "message": "Cannot resolve symbol 'User'",
+          "severity": "ERROR",
+          "line": 15,
+          "column": 12
+        }
+      ]
+    },
+    {
+      "file": "src/main/java/com/example/OrderService.java",
+      "problemCount": 0,
+      "analysisFresh": true,
+      "analysisTimedOut": false
+    }
+  ]
+}
+```
+
+---
+
+### ide_apply_quick_fix
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Apply an available quick fix or intention action at a specific position in an open file.
+The file must be open in the editor. Use `ide_diagnostics` first to discover available intentions/quick fixes at a position, then call this tool to apply one.
+
+**Use when:**
+- Automatically fixing compile errors or warnings discovered by `ide_diagnostics`
+- Applying IDE quick fixes (import missing class, add type annotation, fix syntax)
+- Previewing available quick fixes without applying them (`preview: true`)
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Project-relative path to the file |
+| `line` | integer | No | 1-based line number for the quick fix position (default: 1) |
+| `column` | integer | No | 1-based column number (default: 1) |
+| `fixIndex` | integer | No | 0-based index of the fix to apply (default: 0) |
+| `fixName` | string | No | Case-insensitive substring of the fix name to apply (takes precedence over `fixIndex`) |
+| `preview` | boolean | No | If true, return available fixes without applying (default: false) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_apply_quick_fix",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 12,
+      "fixName": "Import class"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "appliedFix": "Import class 'com.example.model.User'",
+  "message": "Successfully applied quick fix: Import class 'com.example.model.User'"
+}
+```
 
 ---
 
@@ -723,7 +1308,7 @@ Force the IDE to synchronize its virtual file system and PSI cache with external
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `paths` | array of strings | No | File or directory paths relative to project root to sync. If omitted, syncs the entire project |
+| `paths` | string[] | No | File or directory paths relative to the selected project/content root, or absolute paths inside any project/content root. Relative paths try the project base and then module content roots when `project_path` is omitted or selects the project base; selecting a specific content root confines relative resolution there. A deleted path known to VFS refreshes its nearest existing parent; unknown missing paths, relative `..` traversal, and symlink escapes are rejected. If omitted or empty, syncs the entire selected root |
 
 **Example Request:**
 
@@ -745,15 +1330,199 @@ Force the IDE to synchronize its virtual file system and PSI cache with external
 {
   "syncedPaths": ["src/main/java/com/example/NewFile.java"],
   "syncedAll": false,
-  "message": "Synced 1 path(s)"
+  "message": "Synchronized 1 path(s).",
+  "refreshedRoots": ["/Users/dev/project/src/main/java/com/example/NewFile.java"],
+  "deletedPaths": []
+}
+```
+
+For a requested path that no longer exists, `syncedPaths` and `deletedPaths` preserve the
+normalized requested path while `refreshedRoots` identifies the nearest existing parent actually
+refreshed shallowly. New paths are discovered one component at a time through shallow ancestor
+refreshes; only explicitly requested existing targets are refreshed recursively. `refreshedRoots`
+uses absolute, system-independent paths and includes discovery ancestors and explicit targets when neither refresh covers the other. The complete batch is validated before the VFS is touched, so all invalid entries are reported together and one escaping or
+unsafe path fails the call without partially refreshing earlier paths. Absolute paths are matched
+against every allowed project/content root even when `project_path` selects another root; relative
+paths stay confined when a specific content root is selected. Neither form can escape the resolved
+project's allowed roots, and the call fails explicitly if none can be resolved safely.
+
+---
+
+### ide_verify_change
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Verify a code change by syncing the file system, checking for compilation/syntax errors, and optionally running nearby tests.
+Replaces calling `ide_sync_files`, `ide_diagnostics`, and `ide_run_tests` individually.
+
+**Use when:**
+- After modifying a file, performing an immediate verification in a single MCP call
+- Checking compilation errors and regression tests near the changed file
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | The file that was changed (project-relative path) |
+| `runTests` | boolean | No | Also run nearby test files (default: false) |
+| `timeoutSeconds` | integer | No | Total timeout in seconds (default: 120) |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_verify_change",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "runTests": true
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "syncComplete": true,
+  "diagnosticsPass": true,
+  "errorCount": 0,
+  "testsRun": true,
+  "testRun": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "durationMs": 1200,
+    "success": true
+  },
+  "durationMs": 1850
+}
+```
+
+---
+
+### ide_get_project_overview
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get a structured overview of the project architecture.
+Returns modules, source roots, detected languages, frameworks, build systems, top-level packages, and entry points.
+
+**Use when:**
+- First exploring a new codebase
+- Understanding project architecture, technology stack, and module structure
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_project_overview",
+    "arguments": {}
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "name": "my-service",
+  "basePath": "/Users/dev/my-service",
+  "moduleCount": 2,
+  "modules": [
+    {
+      "name": "core",
+      "productionSourceRoots": 1,
+      "testSourceRoots": 1
+    },
+    {
+      "name": "api",
+      "productionSourceRoots": 1,
+      "testSourceRoots": 1
+    }
+  ],
+  "languages": ["Java", "Kotlin"],
+  "frameworks": ["Spring"],
+  "buildSystem": "Gradle",
+  "topLevelPackages": ["com.example.core", "com.example.api"],
+  "entryPoints": [],
+  "testFrameworks": ["JUnit"]
+}
+```
+
+---
+
+### ide_get_dependencies
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Get project dependencies from the IDE's module model.
+Provides module-level and library-level dependencies with scopes (`COMPILE`, `TEST`, `RUNTIME`, `PROVIDED`).
+
+**Use when:**
+- Understanding external libraries and internal module dependencies
+- Checking library versions and dependency scopes
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `module` | string | No | Module name or path. If omitted, returns primary module dependencies |
+| `includeTransitive` | boolean | No | Include transitive dependencies (default: false) |
+| `scope` | string | No | Scope filter: `"all"` (default), `"compile"`, `"test"`, `"runtime"` |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_get_dependencies",
+    "arguments": {
+      "module": "core",
+      "scope": "compile"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "module": "core",
+  "moduleDependencies": [],
+  "libraryDependencies": [
+    {
+      "name": "Gradle: org.springframework:spring-core:5.3.9",
+      "groupId": "org.springframework",
+      "artifactId": "spring-core",
+      "version": "5.3.9",
+      "scope": "COMPILE",
+      "isExported": false
+    }
+  ],
+  "totalCount": 1
 }
 ```
 
 ---
 
 ### ide_reload_project
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
 Force-reload the project build model (Maven, Gradle, or both). Equivalent to clicking **"Reload All Maven Projects"** or **"Reload Gradle Project"** in the IDE.
 
@@ -779,9 +1548,31 @@ Build model reload scheduled for Maven in 'engine'. IntelliJ is resolving depend
 
 ---
 
+### ide_link_build_system
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
+
+Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. Use when `ide_reload_project` reports "build file found on disk but project is not linked" — this tool does the equivalent of clicking "Load Maven/Gradle Project" in the IDE notification bar.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Absolute path of the project directory to link. Defaults to the resolved project's base path. |
+| `project_path` | string | No | Selects the project when multiple are open. |
+
+**Example request:**
+```json
+{ "path": "/Users/dev/myproject" }
+```
+
+**Example response:**
+```json
+"Maven project linked — dependency resolution scheduled."
+```
+
+---
+
 ### ide_import_modules
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 > **Requires**: Maven plugin
 
 Import one or more external Maven project directories as modules into the current IntelliJ window, enabling cross-project code intelligence and refactoring. Already imported module roots are skipped.
@@ -814,11 +1605,62 @@ Imported 2 module(s):
 
 ---
 
+### ide_open_workspace
+
+> **Requires**: Maven plugin
+
+Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence. Alternatively, provide an explicit list of Maven project paths. Creates a temporary aggregator POM with relative module paths.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No* | Root directory to scan for Maven projects (each must contain a `pom.xml`). Mutually exclusive with `modules`. |
+| `modules` | array of strings | No* | Explicit list of absolute paths to Maven project directories. Mutually exclusive with `path`. Uses SHA-based caching so the same module combination reuses the cached workspace. |
+| `timeoutSeconds` | integer | No | Timeout in seconds for opening and indexing (default: 600) |
+| `project_path` | string | No | Selects the IntelliJ project window when multiple are open |
+
+*Either `path` or `modules` must be provided, but not both.
+
+**Example (scan directory):**
+
+```json
+{
+  "name": "ide_open_workspace",
+  "arguments": {
+    "path": "/Users/dev/monorepo"
+  }
+}
+```
+
+**Example (explicit modules):**
+
+```json
+{
+  "name": "ide_open_workspace",
+  "arguments": {
+    "modules": [
+      "/Users/dev/casehub/platform",
+      "/Users/dev/casehub/engine",
+      "/Users/dev/casehub/worker"
+    ]
+  }
+}
+```
+
+**Example Response:**
+
+```
+Workspace opened with 3 Maven projects from /Users/dev/monorepo. IntelliJ is indexing in the background.
+```
+
+---
+
 ### ide_build_project
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMake (CLion)).
 
-Build the project using the IDE's build system (supports JPS, Gradle, Maven).
+**Long-running builds:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the build is still executing when the wait budget ends, the call returns `{"status": "running", "buildId": "..."}` while the build continues inside the IDE — call the tool again with that `buildId` to keep waiting.
 
 **Use when:**
 - Checking for compilation errors after code changes
@@ -831,7 +1673,9 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 |-----------|------|----------|-------------|
 | `rebuild` | boolean | No | Full rebuild instead of incremental build (default: false) |
 | `includeRawOutput` | boolean | No | Include raw build output log (default: false) |
-| `timeoutSeconds` | integer | No | Timeout in seconds. No timeout if omitted |
+| `timeoutSeconds` | integer | No | Max seconds the whole build may take before it is reported timed out, enforced across polls. No limit if omitted. Ignored with `buildId` |
+| `buildId` | string | No | `buildId` from a previous `{"status": "running"}` response — attaches to that build and keeps waiting instead of starting a new one |
+| `waitSeconds` | integer | No | Max seconds this call may block before returning results or a `running` status (default: 45, max: 55). Keep below the MCP client's request timeout |
 
 **Example Request:**
 
@@ -871,31 +1715,49 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven).
 
 ### ide_run_tests
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+Run tests using the IDE's run configuration infrastructure. Returns structured pass/fail results with per-test error messages, failure stack traces, and console output.
 
-Execute tests programmatically with structured pass/fail output. Target a specific file/line/column, or a fully qualified class name.
+Results are read directly from the IDE's test runner rather than from report files on disk, so they always reflect this run and work with any Service-Message-based framework (JUnit, TestNG, pytest, Jest, Go test, PHPUnit).
+
+Each test entry carries an `output` field with the console output that test printed — stdout and stderr merged in print order, exactly as the IDE's test console shows them, with ANSI escapes stripped and system messages (the launch command line, "Process finished with exit code …") excluded. Output not attributed to any individual test — framework and suite messages, `@BeforeAll`/`@AfterAll` prints, build-runner log lines, and prints from a test killed mid-run (e.g. at `timeoutSeconds`), which gets no per-test entry — comes back on the result's top-level `output` field. A test that printed nothing carries `output: null`.
+
+Failed or errored tests carry a `stackTrace` alongside `errorMessage`. Very long traces and outputs are trimmed in the middle (keeping the start and the end — for traces that is the throw site and the root cause of chained exceptions), and on mass failures per-run size budgets apply: earlier failures keep their traces, later entries carry `errorMessage` only, and per-test output stops attaching once its own budget is spent.
+
+**Language and scope support:**
+- Passing an **existing run configuration name** via `target` works for any language/framework.
+- Passing a **class or method FQN** via `target` (`com.example.MyTest` or `com.example.MyTest#testFoo`) is supported for Java/Kotlin.
+- Passing a **batch array** via `targets` (`["com.example.TestA", "com.example.TestB#testMethod"]`, max 50 entries) runs all specified tests in a single test run (Java/Kotlin).
+- Passing a **package name** via `package` (`com.example.service`) runs all tests in that package (Java/Kotlin).
+- Passing a **directory path** via `directory` (`src/test/kotlin/com/example`) runs all tests in that directory (works across Java/Kotlin, Python, JS/TS, Go, etc.).
+- Passing a **module name** via `module` (`core-service`) runs all tests in that IntelliJ module.
+
+**Long-running runs:** each call blocks at most `waitSeconds` (default 45) so the MCP client's own request timeout (60s in Claude Code) is never hit. If the run is still going when the wait budget ends — whether the IDE is still compiling before the test process starts, or the tests themselves are still executing — the call returns `{"status": "running", "runId": "..."}` while the run continues inside the IDE — call the tool again with that `runId` (and no test selector) to keep waiting. A running response also reports the tests finished so far: `passed`, `failed` and `errors` counts, plus `failures`, the first 50 failed or errored tests with `errorMessage` and `stackTrace`, so you can act on failures before the run ends. Console output arrives only with the final result, and the counts are a snapshot, not a verdict: there is no `success` field until the run ends. The run itself is bounded by `timeoutSeconds`, counted from when the test process starts (build time before that is not billed to the run): once it expires the test process is killed and the next poll reports `timedOut: true`.
 
 **Use when:**
-- Running unit/integration tests and getting structured results back
-- Verifying code changes fix a specific test
-- Retrieving detailed test failure messages and stack traces
-
-**Target (mutually exclusive):** `file` + `line` + `column` OR `className`
+- Running a specific test class or method after a code change
+- Running a scoped batch of tests across classes, packages, directories, or modules
+- Verifying that a fix resolves a test failure
+- Getting structured test results without dropping to a terminal
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Conditional | File containing tests. Required for position-based targeting. |
-| `line` | integer | Conditional | Target a specific test method by line. |
-| `column` | integer | Conditional | Target a specific test method by column. |
-| `className` | string | Conditional | FQN of test class (alternative to file/line). |
-| `scope` | string | No | Execution scope. One of `file`, `class`, `method`, `module`, `all`. (Default: auto-detect) |
-| `rerunFailed` | boolean | No | Re-run only last failed tests. (Default: false) |
-| `includeRawOutput` | boolean | No | Include raw stdout/stderr output from the test runner. (Default: false) |
-| `timeoutSeconds` | integer | No | Timeout in seconds. (Default: 300) |
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+| `target` | string | Conditional* | Single test selector: (1) existing run config name (any language), (2) FQN class `com.example.MyTest`, (3) FQN method `com.example.MyTest#testFoo`. FQN forms (2) and (3) are **Java/Kotlin-only** |
+| `targets` | array of strings | Conditional* | Batch test selector: array of fully qualified class names or `class#method` (max 50 entries) to run together in a single test run (**Java/Kotlin-only**) |
+| `package` | string | Conditional* | Package scope selector: fully qualified package name to run all tests in that package (e.g. `com.example.service`) (**Java/Kotlin-only**) |
+| `directory` | string | Conditional* | Directory scope selector: relative path to test source directory (e.g. `src/test/kotlin`) to run all tests in that directory (all supported test frameworks) |
+| `module` | string | Conditional* | Module scope selector: IntelliJ module name to run all tests in that module |
+| `runId` | string | Conditional* | `runId` from a previous `{"status": "running"}` response — attaches to that run and keeps waiting instead of starting a new one |
+| `timeoutSeconds` | integer | No | Max seconds the whole test run may take before its process is killed, counted from test process start and enforced across polls (default: 120). Ignored with `runId` |
+| `waitSeconds` | integer | No | Max seconds this call may block before returning results or a `running` status (default: 45, max: 55). Keep below the MCP client's request timeout |
+| `activateToolWindow` | boolean | No | Open (activate) the Run tool window for this run. Default: `false` — the run executes in the background without stealing focus; its content is still added to the Run tool window |
+| `includeSuccessOutput` | boolean | No | Include console output for passed/successful tests (and successful run-level output). Default: `false` — console output is omitted for passed tests to save tokens, but retained for failed/errored tests. Set to `true` to retrieve console output for all tests |
 
-**Example Request:**
+*Exactly one of `target`, `targets`, `package`, `directory`, `module`, or `runId` is required.
+
+**Example Request (single method):**
 
 ```json
 {
@@ -903,7 +1765,35 @@ Execute tests programmatically with structured pass/fail output. Target a specif
   "params": {
     "name": "ide_run_tests",
     "arguments": {
-      "className": "com.example.UserServiceTest"
+      "target": "com.example.MyTest#testFoo"
+    }
+  }
+}
+```
+
+**Example Request (batch targets):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_run_tests",
+    "arguments": {
+      "targets": ["com.example.UserTest", "com.example.OrderTest#testCheckout"]
+    }
+  }
+}
+```
+
+**Example Request (package scope):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_run_tests",
+    "arguments": {
+      "package": "com.example.service"
     }
   }
 }
@@ -915,43 +1805,55 @@ Execute tests programmatically with structured pass/fail output. Target a specif
 {
   "success": false,
   "timedOut": false,
-  "durationMs": 1500,
-  "testSummary": {
-    "total": 5,
-    "passed": 4,
-    "failed": 1,
-    "ignored": 0,
-    "durationMs": 1200
-  },
-  "testResults": [
+  "noTestsFound": false,
+  "exitCode": 1,
+  "passed": 2,
+  "failed": 1,
+  "errors": 0,
+  "total": 3,
+  "output": "shared fixture initialized\n",
+  "tests": [
+    { "name": "com.example.MyTest.testFoo", "status": "passed", "output": "Hello world\n" },
+    { "name": "com.example.MyTest.testBar", "status": "passed", "output": null },
     {
-      "name": "testFindUser",
-      "status": "PASSED",
-      "durationMs": 100,
-      "className": "com.example.UserServiceTest",
-      "locationUrl": "java:test://com.example.UserServiceTest/testFindUser"
-    },
-    {
-      "name": "testDeleteUser",
-      "status": "FAILED",
-      "durationMs": 50,
-      "className": "com.example.UserServiceTest",
-      "locationUrl": "java:test://com.example.UserServiceTest/testDeleteUser",
-      "errorMessage": "java.lang.AssertionError: Expected false",
-      "errorStackTrace": "at com.example.UserServiceTest.testDeleteUser(UserServiceTest.java:42)"
+      "name": "com.example.MyTest.testBaz",
+      "status": "failed",
+      "errorMessage": "expected:<1> but was:<2>",
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)",
+      "output": "state before assertion: 2\n"
     }
-  ],
-  "truncated": false,
-  "rawOutput": null
+  ]
+}
+```
+
+**Example Response (run still executing after the wait budget):**
+
+```json
+{
+  "status": "running",
+  "runId": "6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f",
+  "configName": "MyTest",
+  "elapsedSeconds": 45,
+  "timeoutSeconds": 7200,
+  "passed": 12,
+  "failed": 1,
+  "errors": 0,
+  "message": "Test run 'MyTest' is still executing (45s elapsed, 7200s limit). So far 12 passed, 1 failed, 0 errors. The failed and errored tests are listed in 'failures'. The run continues in the IDE. Call ide_run_tests again with {\"runId\": \"6f9c1f6e-2a41-4b7e-9c8d-1a2b3c4d5e6f\"} to keep waiting for its results (include the same project_path if you provided one).",
+  "failures": [
+    {
+      "name": "com.example.MyTest.testBaz",
+      "status": "failed",
+      "errorMessage": "expected:<1> but was:<2>",
+      "stackTrace": "java.lang.AssertionError: expected:<1> but was:<2>\n\tat com.example.MyTest.testBaz(MyTest.java:42)",
+      "output": null
+    }
+  ]
 }
 ```
 
 ---
 
 ### ide_read_file
-
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
 Read file content by file path or fully qualified class name.
 
@@ -1005,8 +1907,6 @@ Read file content by file path or fully qualified class name.
 
 ### ide_get_active_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
 Get the currently active file(s) open in the IDE editor, including split panes.
 
 **Use when:**
@@ -1052,8 +1952,6 @@ Get the currently active file(s) open in the IDE editor, including split panes.
 
 ### ide_open_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
 Open a file in the IDE editor with optional line/column navigation.
 
 **Use when:**
@@ -1096,8 +1994,6 @@ Open a file in the IDE editor with optional line/column navigation.
 ---
 
 ### ide_find_symbol
-
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
 
 Searches for code symbols (classes, interfaces, methods, fields, and functions) by name using the IDE's semantic index and IntelliJ's Go to Symbol matching.
 
@@ -1160,6 +2056,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 {
   "symbols": [
     {
+      "symbolId": "sym_user-service",
       "name": "UserService",
       "qualifiedName": "com.example.service.UserService",
       "kind": "INTERFACE",
@@ -1169,6 +2066,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
       "containerName": null
     },
     {
+      "symbolId": "sym_user-service-impl",
       "name": "UserServiceImpl",
       "qualifiedName": "com.example.service.UserServiceImpl",
       "kind": "CLASS",
@@ -1178,6 +2076,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
       "containerName": null
     },
     {
+      "symbolId": "sym_find-user",
       "name": "findUser",
       "qualifiedName": "com.example.service.UserService.findUser",
       "kind": "METHOD",
@@ -1200,6 +2099,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 - `INTERFACE` - Interface
 - `ENUM` - Enum type
 - `ANNOTATION` - Annotation type
+- `OBJECT` - Kotlin object declaration
 - `RECORD` - Record class (Java 16+)
 - `METHOD` - Method
 - `FIELD` - Field or constant
@@ -1212,11 +2112,9 @@ For Markdown heading outlines, use `ide_file_structure`.
 
 ## Plugin Development
 
-> **Note**: Both tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
-
 ### ide_install_plugin
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Install a plugin zip into the IDE, replacing any existing version. When no path is given, auto-detects the most recently modified zip in `build/distributions/` of the active project — the output of `./gradlew buildPlugin`.
 
@@ -1255,9 +2153,7 @@ Plugin 'com.example.my-plugin' installed from my-plugin-1.0.0.zip. Restart the I
 
 ### ide_restart
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
-Restart the IDE. This terminates the MCP connection — the AI assistant will lose connectivity and must reconnect after the IDE comes back up.
+Restart the IDE. The MCP server shuts down while the IDE relaunches and starts again on its own once the previous projects reopen. This is not a terminal step: the assistant should poll `ide_index_status` until it responds (usually well under a minute), then continue with follow-up calls.
 
 **Use when:**
 - Loading a freshly installed plugin after `ide_install_plugin`
@@ -1280,17 +2176,15 @@ Restart the IDE. This terminates the MCP connection — the AI assistant will lo
 }
 ```
 
-> **Note**: The MCP connection drops immediately after this call. Reconnect your AI assistant client before making further tool calls.
+> **Note**: Tool calls fail while the IDE is relaunching. Streamable HTTP clients need no reconnect — every call is an independent POST, so the next call succeeds as soon as the server is listening again. Legacy SSE clients must reopen the `/index-mcp/sse` stream. Symbol handles and search cursors issued before the restart are invalid afterwards, and after `ide_install_plugin` the client's cached tool list may be stale — reconnect the client so it re-fetches `tools/list` and picks up changed schemas. If the server has not answered after a few minutes, the restart was probably intercepted (for example by a save dialog); report it instead of polling forever.
 
 ---
 
 ## Project Window Management
 
-> **Note**: All tools in this section are disabled by default. Enable them in Settings > Tools > Index MCP Server.
-
 ### ide_set_power_save_mode
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Enable or disable IDE Power Save Mode. When enabled, background inspections and code analysis are suspended, reducing CPU and memory pressure. The index and all code intelligence operations (find usages, refactoring, navigation) remain fully functional.
 
@@ -1331,7 +2225,7 @@ Power Save Mode enabled (IDE-wide).
 
 ### ide_close_project
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Close an open project window and free its memory. The project can be reopened later via Recent Projects or `ide_open_project`.
 
@@ -1369,9 +2263,60 @@ Project 'myproject' is closing.
 
 ---
 
-### ide_open_project
+### ide_create_module
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
+
+**Side effects:** Creates a `<name>.iml` file in the target directory and registers the module in `.idea/modules.xml`. To undo: Project Structure (Cmd+;) → Modules → select → minus button. Indexing of the new content root is async — call `ide_index_status` if subsequent tools hit dumb mode.
+
+**Use when:**
+- Adding a non-Maven project directory for IDE indexing and code intelligence
+- Enabling search, navigation, and diagnostics for TypeScript or plain directories
+- Excluding directories like `node_modules` or `dist` from indexing
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Absolute directory path to add as a module content root |
+| `name` | string | No | Module name. Defaults to the directory name |
+| `excludes` | string[] | No | Relative paths to exclude from indexing (e.g., `["node_modules", "dist"]`) |
+| `project_path` | string | No | Target project when multiple projects are open |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_create_module",
+    "arguments": {
+      "path": "/Users/dev/my-frontend",
+      "excludes": ["node_modules", "dist"]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Module 'my-frontend' created with content root: /Users/dev/my-frontend
+Module file: /Users/dev/my-frontend/my-frontend.iml
+Excluded 2 directories
+Note: indexing is async — call ide_index_status if subsequent tools hit dumb mode."
+    }
+  ]
+}
+```
+
+---
+
+### ide_open_project
 
 Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
 
@@ -1386,6 +2331,8 @@ Requires at least one project to already be open (needed as the JSON-RPC context
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | Yes | Absolute filesystem path of the project directory to open |
+| `autoLink` | boolean | No | Automatically link an unlinked Maven/Gradle build system after opening. Default: false. |
+| `excludeDirectories` | string[] | No | Directory names to exclude from indexing and refactoring scope (e.g. `["wksp", ".claude", "node_modules"]`). Applied after autoLink. Each entry must not be blank or contain `..`. |
 | `timeoutSeconds` | integer | No | Maximum seconds to wait for opening + indexing. Default: 600 |
 | `project_path` | string | No | Selects the JSON-RPC context project when multiple are open |
 
@@ -1419,7 +2366,7 @@ Project 'myproject' is open and ready.
 
 Renames a symbol or file and updates all references across the project. This tool uses IntelliJ's `RenameProcessor` which is language-agnostic and works across **all languages** supported by your IDE.
 
-**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Ruby, and any language with IntelliJ plugin support.
+**Supported Languages:** Java, Kotlin, Python, JavaScript, TypeScript, Go, PHP, Rust, Scala, Ruby, and any language with IntelliJ plugin support.
 
 **Features:**
 - Language-specific name validation (identifier rules, keyword detection)
@@ -1427,7 +2374,9 @@ Renames a symbol or file and updates all references across the project. This too
 - **Automatic related element renaming** - getters/setters, overriding methods, test classes are renamed automatically
 - Explicit `targetType` mode selection (`symbol` or `file`)
 - Conflict detection before rename execution (returns error instead of showing dialog)
+- Read-only preview with usage/conflict discovery (`dryRun: true`)
 - Supports IDE undo for rename changes
+- Constructor rename previews target the containing class and include its type usages; file collisions include existing directories.
 
 **Use when:**
 - Renaming identifiers to improve code clarity
@@ -1438,13 +2387,55 @@ Renames a symbol or file and updates all references across the project. This too
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file containing the symbol |
+| `target` | object | Conditional | Structured symbol selector containing exactly one of `symbolId`, `position: {file, line, column}`, or `qualifiedName` + `language`. Mutually exclusive with legacy top-level selectors. |
+| `symbolId` | string | Conditional | Exact symbol handle. Omit `file`, `line`, and `column`; `targetType` may be omitted or set to `symbol`. |
+| `file` | string | Conditional | Path to the file containing the symbol, or the file to rename. Required for legacy position-based symbol lookup and file rename. |
+| `language` | string | Conditional | Legacy qualified-name selector language; requires `symbol` and is mutually exclusive with other target selectors. |
+| `symbol` | string | Conditional | Legacy qualified symbol name; requires `language` and is mutually exclusive with other target selectors. |
 | `targetType` | string | No | `symbol` (requires 1-based `line` + `column`) or `file` (renames the file itself; placeholder coordinates are ignored) |
 | `line` | integer | No | 1-based line number for symbol rename |
 | `column` | integer | No | 1-based column number for symbol rename |
 | `newName` | string | Yes | The new name for the symbol |
 | `overrideStrategy` | string | No | How to handle overriding methods: `"rename_base"` (default), `"rename_only_current"`, or `"ask"` |
 | `relatedRenamingStrategy` | string | No | How to handle automatic renaming of related symbols: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"` |
+| `dryRun` | boolean | No | Resolve and validate the target, discover usages/conflicts, and return a preview without changing or saving files (default: `false`) |
+
+**Example Request (symbolId):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_rename",
+    "arguments": {
+      "symbolId": "sym_opaque-handle",
+      "newName": "findUserById"
+    }
+  }
+}
+```
+
+**Example Request (preview):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_rename",
+    "arguments": {
+      "target": { "symbolId": "sym_opaque-handle" },
+      "newName": "findUserById",
+      "dryRun": true
+    }
+  }
+}
+```
+
+The common preview response is described in [Refactoring Preview Contract](#refactoring-preview-contract).
+For rename, `plannedChange` contains `operation: "rename"`, `targetType`, `from`, `to`,
+`overrideStrategy`, and `relatedRenamingStrategy`. `canApply` is false when discovery is incomplete,
+the target/scope is read-only, an interactive-only plan cannot be represented exactly, or conflicts
+were found. The preview performs no refactoring/source write, document save, or undo registration.
 
 **Example Request (Java):**
 
@@ -1508,7 +2499,15 @@ Renames a symbol or file and updates all references across the project. This too
     "src/test/java/com/example/UserServiceTest.java"
   ],
   "changesCount": 3,
-  "message": "Successfully renamed 'findUser' to 'findUserById' (also renamed 2 related element(s))"
+  "message": "Successfully renamed 'findUser' to 'findUserById' (also renamed 2 related element(s))",
+  "updatedSymbol": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUserById",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "language": "Java"
+  }
 }
 ```
 
@@ -1538,6 +2537,9 @@ Move a file to a new directory using the IDE's refactoring engine. Applies langu
 - Automatically creates destination directory if it doesn't exist
 - Detects name conflicts at the destination
 - Fails fast for ambiguous PHP semantic moves instead of reporting a false success
+- Surfaces the IDE's move conflicts (e.g. a package-private class moved away from its users) as `warnings` instead of dropping them
+- Keeps consumers compiling on a same-package move between modules or source roots: imports naming the unchanged package that the IDE's usage rewrite removed from consuming Java files are restored, and each repair is listed in `warnings`
+- Warns when the destination lies outside every source root, i.e. in a directory no module compiles yet (a new Maven/Gradle module the IDE has not imported); reload or link the build system afterwards
 
 **Use when:**
 - Reorganizing project structure
@@ -1599,7 +2601,7 @@ Move a file to a new directory using the IDE's refactoring engine. Applies langu
 
 ### ide_reformat_code
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Reformat code according to the project's code style settings. Equivalent to the IDE's "Reformat Code" action (<kbd>Ctrl+Alt+L</kbd> / <kbd>Cmd+Opt+L</kbd>).
 
@@ -1647,6 +2649,617 @@ Reformat code according to the project's code style settings. Equivalent to the 
 
 ---
 
+### ide_optimize_imports
+
+Optimize imports in a file: remove unused imports and organize the remaining imports according to the project code style. Equivalent to the IDE's "Optimize Imports" action (<kbd>Ctrl+Alt+O</kbd> / <kbd>Cmd+Opt+O</kbd>). Does **not** reformat code. Supports undo (Ctrl/Cmd+Z).
+
+**Use when:**
+- Removing unused imports after code changes
+- Organizing imports without touching the rest of the file's formatting
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_optimize_imports",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java"
+    }
+  }
+}
+```
+
+---
+
+### ide_batch_optimize_imports
+
+> **Availability**: Universal Tool - works in all JetBrains IDEs
+
+Optimize imports in multiple files with a single call. Removes unused imports and organizes remaining imports according to project code style.
+Replaces calling `ide_optimize_imports` multiple times with a single round-trip.
+
+**Use when:**
+- Cleaning up unused imports across multiple files after refactoring
+- Formatting imports in bulk across a module or directory
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `files` | string[] | Yes | Array of file paths to optimize imports for |
+| `project_path` | string | No | Absolute path to project root |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_batch_optimize_imports",
+    "arguments": {
+      "files": [
+        "src/main/java/com/example/UserService.java",
+        "src/main/java/com/example/OrderService.java"
+      ]
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "filesProcessed": 2,
+  "successCount": 2,
+  "failureCount": 0,
+  "results": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "status": "ok"
+    },
+    {
+      "file": "src/main/java/com/example/OrderService.java",
+      "status": "ok"
+    }
+  ]
+}
+```
+
+---
+
+### ide_structural_search_replace
+
+Pattern-based code search and transformation using IntelliJ's Structural Search and Replace (SSR) engine. Matches code patterns structurally rather than textually — understands types, expressions, statements, and code structure.
+
+**Languages:** Java, Kotlin.
+
+When `replacePattern` is omitted, the tool performs search-only and returns matching locations. When `replacePattern` is provided, the tool replaces all matches.
+
+**Use when:**
+- Finding code patterns that text search cannot express (e.g., all calls to a deprecated method with specific argument types)
+- Applying systematic code transformations across the project
+- Migrating API usage patterns
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `searchPattern` | string | Yes | Structural search pattern using IntelliJ SSR syntax |
+| `replacePattern` | string | No | Replacement pattern. If omitted, search-only mode |
+| `filePattern` | string | No | IntelliJ file mask to filter files (e.g., `"*.java"`, `"*.kt"`). Default: `"*.java"` |
+| `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
+| `paths` | array | No | Project-relative path globs restricting matching, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope` and `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+
+**Example Request (search-only):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_structural_search_replace",
+    "arguments": {
+      "searchPattern": "$Instance$.$MethodCall$($Parameter$)",
+      "filePattern": "*.java"
+    }
+  }
+}
+```
+
+**Example Request (search and replace):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_structural_search_replace",
+    "arguments": {
+      "searchPattern": "System.out.println($arg$)",
+      "replacePattern": "logger.info($arg$)",
+      "filePattern": "*.java",
+      "scope": "project_production_files"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "matchCount": 12,
+  "replacedCount": 12,
+  "matches": null,
+  "message": "Replaced 12 of 12 match(es)"
+}
+```
+
+---
+
+### ide_edit_member
+
+Replace an entire member declaration (signature + body) with new content. The tool locates the member by name, optional parameter count, and optional line number, then replaces the complete declaration.
+
+Replacement must contain one syntactically valid declaration of the original category, optionally
+surrounded by comments. Names/signatures may change, and nested declarations are allowed. Invalid
+or ambiguous content is rejected before editing; use `ide_refactor_safe_delete` for deletion.
+`updatedSymbol` identifies only the exact replacement, never its containing class. If the handle
+cannot be restored after an applied edit, it is invalidated and the response asks for rediscovery.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Rewriting a method signature and body together
+- Replacing a field declaration with a different type or initializer
+- Updating a member where both signature and body need to change
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one nested selector: `{symbolId}`, `{position:{file,line,column}}`, or `{qualifiedName,language}`. Do not combine it with `symbolId`, `language`+`symbol`, `file`, `class`, `member`, `parameterCount`, or `line`. |
+| `symbolId` | string | Conditional | Exact member handle. Omit `file`, `class`, `member`, `parameterCount`, and `line`. |
+| `language` | string | Conditional | Legacy semantic lookup language; provide together with `symbol` and omit all other selectors. |
+| `symbol` | string | Conditional | Legacy qualified member name; provide together with `language` and omit all other selectors. |
+| `file` | string | Conditional | Relative file path. Required only for the legacy file + member selector. |
+| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
+| `member` | string | Conditional | Name of the member to replace. Required only for the legacy file + member selector. |
+| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
+| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
+| `content` | string | Yes | The full replacement declaration (signature + body) |
+| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_edit_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "member": "findUser",
+      "parameterCount": 1,
+      "content": "public User findUser(String id) {\n    return userRepository.findById(id).orElseThrow(() -> new NotFoundException(id));\n}"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Replaced method 'findUser' entirely",
+  "startLine": 15,
+  "endLine": 18,
+  "updatedSymbol": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUser",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "language": "Java"
+  }
+}
+```
+
+---
+
+### ide_change_signature
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
+
+Change a method's signature — name, return type, visibility, and parameters — with automatic updates to all callers using IntelliJ's Change Signature refactoring. Supports reordering, adding, removing, and renaming parameters.
+
+**Languages:** Java methods and Kotlin JVM functions.
+
+For Kotlin, use a source position or `symbolId`. Selecting an override starts the change at its
+base declaration so the interface, implementations, and callers are updated together. Preview
+identifies that base without rebinding the original override's handle; after apply,
+`updatedSymbol` describes the original handle's declaration when it remains available.
+
+Preview and apply both refuse discovered conflicts, incomplete discovery, read-only scope,
+and missing defaults for new required caller/delegate arguments (which would produce
+non-compiling calls). Return-type changes with overriders are conservatively refused even
+when narrower overriding return types could safely be retained; unchanged return types are allowed.
+Java override targets do not redirect to the base: select the base explicitly for hierarchy-wide
+changes. Changing only a Java override can otherwise break its override contract.
+
+**Use when:**
+- Adding a new parameter to a method and providing a default value for existing callers
+- Changing parameter order, types, or names across the project
+- Changing method visibility or return type
+- Generating a delegate method to preserve binary compatibility
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | object | Conditional | Structured method selector containing exactly one of `symbolId`, `position: {file, line, column}`, or `qualifiedName` + `language`. Mutually exclusive with legacy top-level selectors. |
+| `symbolId` | string | Conditional | Exact method handle. Omit `file`, `line`, and `column`. |
+| `file` | string | Conditional | Path to the file containing the method, relative to project root. Required for legacy position lookup. |
+| `line` | integer | Conditional | 1-based line number of the method for legacy position lookup. |
+| `column` | integer | Conditional | 1-based column number of the method name for legacy position lookup. |
+| `language` | string | Conditional | Legacy qualified-name selector language; requires `symbol` and is mutually exclusive with other target selectors. |
+| `symbol` | string | Conditional | Legacy qualified method name; requires `language` and is mutually exclusive with other target selectors. |
+| `newName` | string | No | New method name (unchanged if omitted) |
+| `newReturnType` | string | No | New return type (unchanged if omitted) |
+| `newVisibility` | string | No | New visibility: `"public"`, `"protected"`, `"private"`, or `"package-private"` (unchanged if omitted; `"package-local"` is accepted as a legacy alias) |
+| `newParameters` | array | No | Array of parameter objects defining the new parameter list. Each object: `{ oldIndex, name, type, defaultValue }`. Use `oldIndex: -1` for new parameters. |
+| `generateDelegate` | boolean | No | Generate a delegate method with the old signature that calls the new one (default: false) |
+| `dryRun` | boolean | No | Resolve and validate the method, discover callers/conflicts, and return a preview without changing or saving files (default: `false`) |
+
+**`newParameters` object fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `oldIndex` | integer | Index in the original parameter list (0-based), or `-1` for a new parameter |
+| `name` | string | Parameter name |
+| `type` | string | Parameter type (e.g., `"String"`, `"int"`, `"List<String>"`) |
+| `defaultValue` | string | Argument expression for a new required parameter when callers or a generated delegate need it. Override-only changes need no default; trailing varargs may be empty. |
+
+**Example Request (add parameter):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_change_signature",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17,
+      "newParameters": [
+        { "oldIndex": 0, "name": "id", "type": "String" },
+        { "oldIndex": -1, "name": "includeDeleted", "type": "boolean", "defaultValue": "false" }
+      ]
+    }
+  }
+}
+```
+
+**Example Request (rename + change visibility):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_change_signature",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "line": 15,
+      "column": 17,
+      "newName": "findUserById",
+      "newVisibility": "public"
+    }
+  }
+}
+```
+
+**Example Request (preview):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_change_signature",
+    "arguments": {
+      "target": { "symbolId": "sym_opaque-handle" },
+      "newName": "findUserById",
+      "newParameters": [
+        { "oldIndex": 0, "name": "id", "type": "String" },
+        { "oldIndex": -1, "name": "includeDeleted", "type": "boolean", "defaultValue": "false" }
+      ],
+      "dryRun": true
+    }
+  }
+}
+```
+
+The common preview response is described in [Refactoring Preview Contract](#refactoring-preview-contract).
+For change signature, `plannedChange` contains `operation: "changeSignature"`, the current
+signature in `before`, and the requested name/return type/visibility/parameters/delegate options in
+`requested`. `canApply` is false when discovery is incomplete, a target or affected file is
+read-only, or conflicts were found. Preview does not invoke the refactoring processor's write
+phase, save documents, or register undo.
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Changed signature of 'findUserById'",
+  "affectedFiles": [
+    "src/main/java/com/example/UserService.java",
+    "src/main/java/com/example/UserController.java",
+    "src/test/java/com/example/UserServiceTest.java"
+  ],
+  "changesCount": 3,
+  "updatedSymbol": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUserById",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "language": "Java"
+  }
+}
+```
+
+---
+
+### ide_create_file
+
+Create a new source file with content, immediately indexed by IntelliJ. The file is created through IntelliJ's VFS, so it is instantly available for `ide_find_references`, `ide_refactor_rename`, `ide_edit_member`, and all other IDE tools without needing `ide_sync_files`.
+
+Use this instead of the Write tool for creating `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. The file must not already exist.
+
+**Use when:**
+- Creating new source files that need to be immediately indexed
+- Adding new classes, interfaces, or modules to the project
+- Generating files that other IDE tools need to reference right away
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the new file relative to project root. File must not already exist. |
+| `content` | string | Yes | The file content to write |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_create_file",
+    "arguments": {
+      "file": "src/main/java/com/example/NewService.java",
+      "content": "package com.example;\n\npublic class NewService {\n}"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/NewService.java",
+  "message": "Created file 'src/main/java/com/example/NewService.java' (immediately indexed)"
+}
+```
+
+---
+
+### ide_replace_text_in_file
+
+Find and replace text in a file using IntelliJ's Document API. Performs plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to the index, PSI, and all other IDE tools without needing `ide_sync_files`.
+
+Use this for mechanical text substitutions — e.g., replacing a method call wrapper, updating import paths, or renaming a local pattern. For structural refactoring (renaming symbols across the project), use `ide_refactor_rename` instead.
+
+**Use when:**
+- Replacing a deprecated method call pattern across a file
+- Updating import paths or string constants
+- Applying regex-based text transformations
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `searchText` | string | Yes | Text to find. Treated as literal unless `regex` is true |
+| `replaceText` | string | Yes | Replacement text. Passed through as-is (no escape processing). Supports regex group references (`$1`, `$2`) when `regex` is true |
+| `regex` | boolean | No | Treat `searchText` as a regular expression (default: false) |
+| `caseSensitive` | boolean | No | Case-sensitive matching (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_replace_text_in_file",
+    "arguments": {
+      "file": "src/main/java/com/example/Service.java",
+      "searchText": "OldHelper.wrap(",
+      "replaceText": "("
+    }
+  }
+}
+```
+
+**Example Request (regex):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_replace_text_in_file",
+    "arguments": {
+      "file": "src/main/java/com/example/Utils.java",
+      "searchText": "LOG\\.debug\\((.*)\\)",
+      "replaceText": "LOG.trace($1)",
+      "regex": true
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/Service.java",
+  "replacements": 3,
+  "message": "Replaced 3 occurrence(s) of 'OldHelper.wrap(' in Service.java"
+}
+```
+
+---
+
+### ide_insert_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
+
+Insert a new member (method, field, inner class, etc.) at a structural position within a class or at the top level of a file.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Adding a new method to a class
+- Adding a new field or constant
+- Inserting a member at a specific position relative to an existing member
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file relative to project root |
+| `content` | string | Yes | The full member declaration to insert |
+| `class` | string | No | Class name to insert into (omit for top-level insertion) |
+| `position` | string | No | Where to insert: `before`, `after`, `first`, or `last` (default: `last`) |
+| `anchor` | string | No | Name of an existing member to position relative to (required for `before`/`after`) |
+| `anchorParameterCount` | integer | No | Number of parameters to disambiguate overloaded anchor methods |
+| `anchorLine` | integer | No | 1-based line number to disambiguate the anchor member |
+| `reformat` | boolean | No | Reformat the inserted code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_insert_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "class": "UserService",
+      "content": "public void deleteUser(String id) {\n    userRepository.deleteById(id);\n}",
+      "position": "after",
+      "anchor": "findUser"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Inserted member",
+  "startLine": 22,
+  "endLine": 25
+}
+```
+
+---
+
+### ide_replace_member
+
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
+
+Replace only the body of a method or the initializer of a field, preserving the existing signature. This is safer than `ide_edit_member` when the signature should remain unchanged.
+
+**Languages:** Java, Kotlin.
+
+**Use when:**
+- Changing method implementation without altering the signature
+- Updating a field initializer
+- Fixing a bug inside a method body
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one nested selector: `{symbolId}`, `{position:{file,line,column}}`, or `{qualifiedName,language}`. Do not combine it with `symbolId`, `language`+`symbol`, `file`, `class`, `member`, `parameterCount`, or `line`. |
+| `symbolId` | string | Conditional | Exact member handle. Omit `file`, `class`, `member`, `parameterCount`, and `line`. |
+| `language` | string | Conditional | Legacy semantic lookup language; provide together with `symbol` and omit all other selectors. |
+| `symbol` | string | Conditional | Legacy qualified member name; provide together with `language` and omit all other selectors. |
+| `file` | string | Conditional | Relative file path. Required only for the legacy file + member selector. |
+| `class` | string | No | Class name to scope the search (required for inner classes or when the member name is ambiguous) |
+| `member` | string | Conditional | Name of the member whose body/initializer to replace. Required only for the legacy file + member selector. |
+| `parameterCount` | integer | No | Number of parameters to disambiguate overloaded methods |
+| `line` | integer | No | 1-based line number to disambiguate when multiple members share the same name |
+| `content` | string | Yes | The new method body (without braces) or field initializer (without `=` sign) |
+| `reformat` | boolean | No | Reformat the replaced code using project code style (default: true) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_replace_member",
+    "arguments": {
+      "file": "src/main/java/com/example/UserService.java",
+      "member": "findUser",
+      "parameterCount": 1,
+      "content": "    log.info(\"Finding user: {}\", id);\n    return userRepository.findById(id).orElseThrow();"
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "success": true,
+  "file": "src/main/java/com/example/UserService.java",
+  "message": "Replaced body of method 'findUser'",
+  "startLine": 16,
+  "endLine": 18,
+  "updatedSymbol": {
+    "symbolId": "sym_opaque-handle",
+    "name": "findUser",
+    "file": "src/main/java/com/example/UserService.java",
+    "line": 15,
+    "column": 17,
+    "language": "Java"
+  }
+}
+```
+
+---
+
 ## Extended Tools (Language-Aware)
 
 These tools activate based on available language plugins:
@@ -1656,13 +3269,19 @@ These tools activate based on available language plugins:
 - **Go** - GoLand, IntelliJ Ultimate with Go plugin
 - **PHP** - PhpStorm, IntelliJ Ultimate with PHP plugin
 - **Rust** - RustRover, IntelliJ Ultimate with Rust plugin, CLion
+- **Scala** - IntelliJ IDEA with the Scala plugin (Scala 2 sources)
 - **Markdown** - heading outlines in file structure for IDEs with the bundled Markdown plugin
 
 Navigation tools appear according to installed language plugins. PHP file structure requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled. Markdown file structure can appear even in IDEs without a code-language handler when the bundled Markdown plugin is enabled.
 
 ### ide_type_hierarchy
 
-Retrieves the complete type hierarchy for a class or interface.
+Retrieves the legacy nested type hierarchy, or bounded breadth-first pages when `maxNodes` is supplied.
+
+Legacy responses share one handle budget across the root, supertypes and subtypes. The root keeps
+its ID; all nodes remain present, with optional IDs omitted after the budget. Use bounded pages
+when every returned node needs an ID. Querying through a member's ID does not rebind that input ID
+to its enclosing type.
 
 **Use when:**
 - Exploring class inheritance chains
@@ -1674,14 +3293,22 @@ Retrieves the complete type hierarchy for a class or interface.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `symbolId` | string | No* | Exact type handle returned by a semantic result. |
 | `file` | string | No* | Path to the file relative to project root |
 | `line` | integer | No* | 1-based line number |
 | `column` | integer | No* | 1-based column number |
 | `className` | string | No* | Fully qualified class name (alternative to position) |
+| `language` | string | No* | Language for a qualified semantic target; must have an installed symbol-reference handler |
+| `symbol` | string | No* | Fully qualified symbol reference used with `language` |
+| `maxNodes` | integer | No | Opt into pagination with 1–500 nodes. Omit for a legacy tree; cursor pages default to 100 |
+| `cursor` | string | No | Opaque continuation from a previous page. When present, target/search options are ignored; `maxNodes` may set the next page size |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include supertypes/subtypes in generated sources (KSP/Dagger/annotation-processor output). Default: true — keeps generated types in the hierarchy |
 
-*Either `file`/`line`/`column` OR `className` must be provided.
+*Provide exactly one nested `target` variant, or one legacy target: `symbolId`,
+`file`/`line`/`column`, `language`/`symbol`, or `className`.
+
+**Rust note:** `className` is not supported for Rust — use `file` + `line` + `column` instead.
 
 **Example Request (by position):**
 
@@ -1691,6 +3318,7 @@ Retrieves the complete type hierarchy for a class or interface.
   "params": {
     "name": "ide_type_hierarchy",
     "arguments": {
+      "maxNodes": 100,
       "file": "src/main/java/com/example/ArrayList.java",
       "line": 5,
       "column": 14
@@ -1707,6 +3335,7 @@ Retrieves the complete type hierarchy for a class or interface.
   "params": {
     "name": "ide_type_hierarchy",
     "arguments": {
+      "maxNodes": 100,
       "className": "java.util.ArrayList",
       "scope": "project_and_libraries"
     }
@@ -1722,6 +3351,7 @@ Retrieves the complete type hierarchy for a class or interface.
   "params": {
     "name": "ide_type_hierarchy",
     "arguments": {
+      "maxNodes": 100,
       "className": "App\\Models\\User"
     }
   }
@@ -1733,35 +3363,118 @@ Retrieves the complete type hierarchy for a class or interface.
 ```json
 {
   "element": {
+    "symbolId": "sym_user-service-impl",
     "name": "com.example.UserServiceImpl",
     "file": "src/main/java/com/example/UserServiceImpl.java",
     "kind": "CLASS",
-    "language": "Java"
+    "language": "Java",
+    "nodeId": "n0",
+    "depth": 0
   },
   "supertypes": [
     {
+      "symbolId": "sym_user-service",
       "name": "com.example.UserService",
       "file": "src/main/java/com/example/UserService.java",
       "kind": "INTERFACE",
-      "language": "Java"
+      "language": "Java",
+      "nodeId": "n1",
+      "parentId": "n0",
+      "depth": 1
     },
     {
+      "symbolId": "sym_base-service",
       "name": "com.example.BaseService",
       "file": "src/main/java/com/example/BaseService.java",
       "kind": "ABSTRACT_CLASS",
-      "language": "Java"
+      "language": "Java",
+      "nodeId": "n2",
+      "parentId": "n0",
+      "depth": 1
     }
   ],
   "subtypes": [
     {
+      "symbolId": "sym_admin-user-service-impl",
       "name": "com.example.AdminUserServiceImpl",
       "file": "src/main/java/com/example/AdminUserServiceImpl.java",
       "kind": "CLASS",
-      "language": "Java"
+      "language": "Java",
+      "nodeId": "n3",
+      "parentId": "n0",
+      "depth": 1
     }
-  ]
+  ],
+  "traversal": [
+    {
+      "direction": "supertype",
+      "element": {
+        "symbolId": "sym_user-service",
+        "name": "com.example.UserService",
+        "file": "src/main/java/com/example/UserService.java",
+        "kind": "INTERFACE",
+        "language": "Java",
+        "nodeId": "n1",
+        "parentId": "n0",
+        "depth": 1
+      }
+    },
+    {
+      "direction": "supertype",
+      "element": {
+        "symbolId": "sym_base-service",
+        "name": "com.example.BaseService",
+        "file": "src/main/java/com/example/BaseService.java",
+        "kind": "ABSTRACT_CLASS",
+        "language": "Java",
+        "nodeId": "n2",
+        "parentId": "n0",
+        "depth": 1
+      }
+    },
+    {
+      "direction": "subtype",
+      "element": {
+        "symbolId": "sym_admin-user-service-impl",
+        "name": "com.example.AdminUserServiceImpl",
+        "file": "src/main/java/com/example/AdminUserServiceImpl.java",
+        "kind": "CLASS",
+        "language": "Java",
+        "nodeId": "n3",
+        "parentId": "n0",
+        "depth": 1
+      }
+    }
+  ],
+  "returnedNodes": 3,
+  "truncated": false,
+  "elapsedMs": 14,
+  "hasMore": false,
+  "cursor": null
 }
 ```
+
+Without `maxNodes`/`cursor`, the response preserves nested `supertypes` and the original independent
+subtype limit. Supply `maxNodes` to opt into paging. In paged mode, `returnedNodes == traversal.size`
+and excludes the repeated root. `traversal` carries the combined BFS order; `supertypes` and `subtypes`
+are filtered views. Each node carries `nodeId`, `parentId` and `depth` for its first-discovery parent
+(root depth 0). These traversal-local IDs remain stable across pages and are independent of symbol
+handles. `maxNodes` bounds returned nodes and expansion work.
+
+Follow `cursor` while present. If a retention budget is exhausted, the computed page remains usable:
+`hasMore` and `truncated` are true, `cursor` is null, and `truncationReason` explains how to narrow the
+query. This is a terminal resource limit, not a complete hierarchy.
+
+Hierarchy cursors store the remaining PSI frontier as smart pointers and are scoped to the exact
+project and MCP session. The independent cache keeps at most 128 snapshots and ten per traversal,
+expires entries after ten minutes without access, and enforces aggregate pointer/text budgets.
+Eviction prefers old replay snapshots to the latest frontier; replay retention is bounded, not
+guaranteed for an entire traversal. Repeating a live cursor with the same page size and PSI version
+reuses its retained successor cursor. Returned handles are rebound on each page independently of
+cursor TTL, so symbol-cache eviction cannot leave stale IDs in an otherwise valid page.
+An expired, evicted, wrong-project, wrong-tool, or invalidated cursor must
+restart the query without `cursor`. The Streamable HTTP transport is stateless between requests and
+does not reliably deliver live progress; page metadata is the progress contract.
 
 **Kind Values:**
 - `CLASS` - Concrete class
@@ -1783,19 +3496,22 @@ Analyzes method call relationships to find callers or callees.
 - Analyzing impact of method changes
 - Debugging to understand how a method is reached
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target (mutually exclusive):** `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `symbolId` | string | Conditional | Exact callable handle. Omit coordinates and name selectors. |
 | `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
 | `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
 | `language` | string | Conditional | Language of the symbol (e.g., `"Java"`). Required for symbol-based lookup. |
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `direction` | string | Yes | `"callers"` or `"callees"` |
-| `depth` | integer | No | How deep to traverse (default: 3, max: 5) |
+| `depth` | integer | No | How deep to traverse across all pages (default: 3, max: 5) |
+| `maxNodes` | integer | No | Opt into pagination with 1–500 nodes. Omit for a legacy tree; cursor pages default to 100 |
+| `cursor` | string | No | Opaque continuation from a previous page. When present, target/search options are ignored; `maxNodes` may set the next page size |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include callers/callees in generated sources (KSP/Dagger/annotation-processor output). Default: true |
 
@@ -1807,6 +3523,7 @@ Analyzes method call relationships to find callers or callees.
   "params": {
     "name": "ide_call_hierarchy",
     "arguments": {
+      "maxNodes": 100,
       "file": "src/main/java/com/example/UserService.java",
       "line": 20,
       "column": 10,
@@ -1824,6 +3541,7 @@ Analyzes method call relationships to find callers or callees.
   "params": {
     "name": "ide_call_hierarchy",
     "arguments": {
+      "maxNodes": 100,
       "language": "Java",
       "symbol": "com.example.UserService#validateUser(String)",
       "direction": "callers",
@@ -1838,30 +3556,58 @@ Analyzes method call relationships to find callers or callees.
 ```json
 {
   "element": {
+    "symbolId": "sym_validate-user",
     "name": "UserService.validateUser(String)",
     "file": "src/main/java/com/example/UserService.java",
     "line": 20,
     "column": 17,
-    "language": "Java"
+    "language": "Java",
+    "nodeId": "n0",
+    "depth": 0
   },
   "calls": [
     {
+      "symbolId": "sym_create-user",
       "name": "UserController.createUser(UserRequest)",
       "file": "src/main/java/com/example/UserController.java",
       "line": 45,
       "column": 17,
-      "language": "Java"
+      "language": "Java",
+      "nodeId": "n1",
+      "parentId": "n0",
+      "depth": 1
     },
     {
+      "symbolId": "sym_update-user",
       "name": "UserController.updateUser(String, UserRequest)",
       "file": "src/main/java/com/example/UserController.java",
       "line": 62,
       "column": 17,
-      "language": "Java"
+      "language": "Java",
+      "nodeId": "n2",
+      "parentId": "n0",
+      "depth": 1
     }
-  ]
+  ],
+  "returnedNodes": 2,
+  "truncated": true,
+  "elapsedMs": 22,
+  "hasMore": true,
+  "cursor": "hier_opaque-continuation"
 }
 ```
+
+Without `maxNodes`/`cursor`, `calls` retains nested `children` and the original per-node limits.
+Kotlin getter and setter handles remain distinct callable targets, each expanding its own body.
+Querying a source property or parameter does not rebind its input ID to the selected callable.
+
+Large legacy trees may omit optional `symbolId` values once the response's handle budget is used;
+the root keeps its handle. Use `maxNodes` and follow `cursor` to obtain handles for every page.
+Supply `maxNodes` to receive bounded BFS pages with traversal-local `nodeId`, `parentId`, and `depth`
+for the first-discovery tree. `returnedNodes` excludes the root. Follow `cursor` while present;
+retention-budget exhaustion returns the computed page and `truncationReason` with `hasMore=true`
+and no cursor. Narrow the query to continue. Cursor lifetime and response metadata follow
+[`ide_type_hierarchy`](#ide_type_hierarchy).
 
 ---
 
@@ -1869,19 +3615,21 @@ Analyzes method call relationships to find callers or callees.
 
 Finds all concrete implementations of an interface, abstract class, or abstract method.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust (not Go — Go uses implicit interfaces).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Rust, Scala (not Go — Go uses implicit interfaces).
 
 **Use when:**
 - Locating classes that implement an interface
 - Finding classes that extend an abstract class
 - Finding all overriding methods for polymorphic behavior analysis
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target for a fresh search (mutually exclusive):** top-level `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`; this tool also accepts the equivalent nested `target`. Pagination requests pass `cursor` instead.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Do not combine with top-level selectors. |
+| `symbolId` | string | Conditional | Exact type/method handle. Omit coordinates and name selectors. |
 | `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
 | `line` | integer | Conditional | 1-based line number. Required for position-based lookup. |
 | `column` | integer | Conditional | 1-based column number. Required for position-based lookup. |
@@ -1930,6 +3678,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 {
   "implementations": [
     {
+      "symbolId": "sym-jpa-user-repository",
       "name": "com.example.JpaUserRepository",
       "file": "src/main/java/com/example/JpaUserRepository.java",
       "line": 12,
@@ -1937,6 +3686,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
       "kind": "CLASS"
     },
     {
+      "symbolId": "sym-in-memory-user-repository",
       "name": "com.example.InMemoryUserRepository",
       "file": "src/main/java/com/example/InMemoryUserRepository.java",
       "line": 8,
@@ -1960,7 +3710,7 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 
 Finds the complete inheritance hierarchy for a method - all parent methods it overrides or implements.
 
-**Languages:** Java, Kotlin, Python, JS/TS, PHP (not Go or Rust — they use composition/traits instead of classical inheritance).
+**Languages:** Java, Kotlin, Python, JS/TS, PHP, Scala (not Go or Rust — they use composition/traits instead of classical inheritance).
 
 **Use when:**
 - Finding which interface method an implementation overrides
@@ -1970,12 +3720,14 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 **Position flexibility:** The position (line/column) can be anywhere within the method - on the name, inside the body, or on the @Override annotation. The tool automatically finds the enclosing method.
 
-**Target (mutually exclusive):** `file` + `line` + `column` OR `language` + `symbol`
+**Target (mutually exclusive):** top-level `symbolId` OR `file` + `line` + `column` OR `language` + `symbol`; this tool also accepts the equivalent nested `target`.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `target` | object | Conditional | Exactly one of `symbolId`, `position` (`file`, `line`, `column`), or `qualifiedName` + `language`. Do not combine with top-level selectors. |
+| `symbolId` | string | Conditional | Exact method handle. Omit coordinates and name selectors. |
 | `file` | string | Conditional | Project-relative file path, or a dependency/library absolute path or `jar://` URL previously returned by the plugin. Required for position-based lookup. |
 | `line` | integer | Conditional | 1-based line number (any line within the method). Required for position-based lookup. |
 | `column` | integer | Conditional | 1-based column number (any position within the method). Required for position-based lookup. |
@@ -2018,6 +3770,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 ```json
 {
   "method": {
+    "symbolId": "sym-find-user-impl",
     "name": "findUser",
     "signature": "findUser(String id): User",
     "containingClass": "com.example.UserServiceImpl",
@@ -2027,6 +3780,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
   },
   "hierarchy": [
     {
+      "symbolId": "sym-find-user-base",
       "name": "findUser",
       "signature": "findUser(String id): User",
       "containingClass": "com.example.AbstractUserService",
@@ -2038,6 +3792,7 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
       "depth": 1
     },
     {
+      "symbolId": "sym-find-user-interface",
       "name": "findUser",
       "signature": "findUser(String id): User",
       "containingClass": "com.example.UserService",
@@ -2067,11 +3822,9 @@ Finds the complete inheritance hierarchy for a method - all parent methods it ov
 
 ### ide_file_structure
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
-
 Get the hierarchical structure of a source file, similar to the IDE's Structure view (<kbd>Cmd+7</kbd> / <kbd>Alt+7</kbd>).
 
-**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown.
+**Languages:** Java, Kotlin, Python, JavaScript, TypeScript, PHP, Markdown, Scala.
 
 PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDEA Ultimate with the PHP plugin enabled.
 
@@ -2085,6 +3838,9 @@ PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDE
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | string | Yes | Path to the file relative to project root |
+| `includeNodes` | boolean | No | Include structured declaration nodes. Default: false |
+| `includeSymbolIds` | boolean | No | Bind exact handles for nodes; implies `includeNodes`. Default: false |
+| `maxSymbolIds` | integer | No | Handle budget when `includeSymbolIds=true`, from 1 to 100. Default: 100 |
 
 **Example Request:**
 
@@ -2094,7 +3850,9 @@ PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDE
   "params": {
     "name": "ide_file_structure",
     "arguments": {
-      "file": "src/main/kotlin/com/example/UserService.kt"
+      "file": "src/main/kotlin/com/example/UserService.kt",
+      "includeNodes": true,
+      "includeSymbolIds": true
     }
   }
 }
@@ -2106,21 +3864,124 @@ PHP support requires the PHP plugin and is available in PhpStorm or IntelliJ IDE
 {
   "file": "src/main/kotlin/com/example/UserService.kt",
   "language": "Kotlin",
-  "structure": "interface UserService :15\n  fun findUser(id: String): User :16\n  fun deleteUser(id: String) :17\n\nclass UserServiceImpl :20\n  val repository: UserRepository :21\n  override fun findUser(id: String): User :23\n  override fun deleteUser(id: String) :30\n  private fun validate(id: String) :37"
+  "structure": "interface UserService (lines 15-18)\n  fun findUser(id: String): User (line 16)\n  fun deleteUser(id: String) (line 17)\n\nclass UserServiceImpl (lines 20-42)\n  val repository: UserRepository (line 21)\n  override fun findUser(id: String): User (lines 23-29)\n  override fun deleteUser(id: String) (lines 30-35)\n  private fun validate(id: String) (lines 37-41)",
+  "nodes": [
+    {
+      "name": "UserService",
+      "kind": "INTERFACE",
+      "modifiers": ["public"],
+      "signature": "interface UserService",
+      "line": 15,
+      "endLine": 18,
+      "symbolId": "sym_user-service",
+      "children": [
+        {
+          "name": "findUser",
+          "kind": "METHOD",
+          "modifiers": [],
+          "signature": "fun findUser(id: String): User",
+          "line": 16,
+          "endLine": 16,
+          "symbolId": "sym_find-user",
+          "children": []
+        }
+      ]
+    }
+  ]
 }
 ```
 
+**Compatibility:** `structure` remains the original human-readable tree. Structured `nodes` are
+opt-in with `includeNodes=true`, so existing calls avoid the structured payload and handle
+allocation. Set
+`includeSymbolIds=true` when exact handles are needed; this also enables `nodes`. Handle allocation
+is limited to 100 per response by default and can be lowered with `maxSymbolIds` (1–100), preventing
+one large outline from evicting handles owned by other tools. `symbolIdsTruncated` reports whether
+the per-response budget was hit; `symbolIdsOmitted` counts eligible nodes left without a handle.
+The ordinary session/TTL/LRU rules still apply to returned handles.
+
+Each element in `structure` still includes both start and end line numbers (for example,
+`(lines 42-65)` for multi-line elements and `(line 42)` for single-line elements). Kotlin nodes use
+semantic kinds (`INTERFACE`, `CLASS`, `ENUM`, `ANNOTATION`, `OBJECT`) instead of inferring the kind
+from the common `KtClass` implementation type.
+
 ---
 
-## Java-Specific Refactoring Tools
+## Java-Specific Tools
 
 These tools require the Java plugin and are only available in **IntelliJ IDEA** and **Android Studio**.
 
 `ide_convert_java_to_kotlin` also requires the Kotlin plugin and is disabled by default.
 
+### ide_list_tests
+
+> **Availability**: Requires Java plugin — only available in **IntelliJ IDEA** and **Android Studio** (uses the `com.intellij.testFramework` extension point declared by the Java plugin)
+
+List test methods and classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.), with support for file, package, directory, module, class-pattern, and framework filtering, as well as pagination.
+
+**Use when:**
+- Discovering what tests exist before running them
+- Finding the exact FQN of a test class or method to pass to `ide_run_tests`
+- Filtering tests by package, directory, module, name pattern, or framework
+- Paginating through large test suites
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to the project root (required when multiple projects are open) |
+| `file` | string | No | Path to a specific test file relative to project root |
+| `package` | string | No | Fully qualified package name to filter tests (e.g. `com.example.service`) |
+| `directory` | string | No | Relative path to test directory to filter tests (e.g. `src/test/kotlin`) |
+| `module` | string | No | IntelliJ module name to filter tests |
+| `classPattern` | string | No | Glob pattern to match test class names (e.g. `*UnitTest` or `**/*Test`) |
+| `framework` | string | No | Test framework name filter (e.g. `JUnit4`, `JUnit5`, `TestNG`) |
+| `maxResults` | integer | No | Maximum number of tests to return per page (default: 500, max: 10000) |
+| `offset` | integer | No | Zero-based index of the first test to return (default: 0) |
+
+**Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_list_tests",
+    "arguments": {
+      "package": "com.example.service",
+      "classPattern": "*UnitTest",
+      "maxResults": 100,
+      "offset": 0
+    }
+  }
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "tests": [
+    {
+      "framework": "JUnit4",
+      "className": "UserServiceUnitTest",
+      "methodName": "testFindUser",
+      "displayName": "UserServiceUnitTest.testFindUser",
+      "file": "src/test/kotlin/com/example/service/UserServiceUnitTest.kt",
+      "line": 42
+    }
+  ],
+  "count": 1,
+  "total": 1,
+  "offset": 0,
+  "truncated": false
+}
+```
+
+---
+
 ### ide_convert_java_to_kotlin
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Convert one or more Java files to Kotlin using IntelliJ's built-in J2K (Java-to-Kotlin) converter.
 
@@ -2210,16 +4071,39 @@ Safely deletes an element, first checking for usages.
 - Cleaning up dead code
 - Safely removing methods or classes
 
+Generated Kotlin JVM methods without their own source declaration are rejected in both preview
+and apply, even with `force`. Select the intended source declaration explicitly.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file |
-| `line` | integer | Yes | 1-based line number |
-| `column` | integer | Yes | 1-based column number |
+| `target` | object | Conditional | Structured symbol selector containing exactly one of `symbolId`, `position: {file, line, column}`, or `qualifiedName` + `language`. Mutually exclusive with legacy top-level selectors. |
+| `symbolId` | string | Conditional | Exact symbol handle. Use only with `target_type: "symbol"` and omit coordinates. |
+| `file` | string | Conditional | Path to the file. Required for position-based symbol deletion and file deletion. |
+| `language` | string | Conditional | Legacy qualified-name selector language; requires `symbol` and is mutually exclusive with other target selectors. |
+| `symbol` | string | Conditional | Legacy qualified symbol name; requires `language` and is mutually exclusive with other target selectors. |
+| `target_type` | string | No | What to delete: `"symbol"` (default) or `"file"` (deletes the entire file if no symbol has external usages) |
+| `line` | integer | Conditional | 1-based line number. Required with `file` for position-based symbol deletion. |
+| `column` | integer | Conditional | 1-based column number. Required with `file` and `line` for position-based symbol deletion. |
 | `force` | boolean | No | Force deletion even if usages exist (default: false) |
+| `dryRun` | boolean | No | Resolve the target and discover usages/blockers without deleting or saving anything (default: `false`) |
 
 **Example Request:**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_safe_delete",
+    "arguments": {
+      "symbolId": "sym_opaque-handle"
+    }
+  }
+}
+```
+
+**Example Request (position-based):**
 
 ```json
 {
@@ -2235,12 +4119,55 @@ Safely deletes an element, first checking for usages.
 }
 ```
 
+**Example Request (preview):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_safe_delete",
+    "arguments": {
+      "target": { "symbolId": "sym_opaque-handle" },
+      "dryRun": true
+    }
+  }
+}
+```
+
+The common preview response is described in [Refactoring Preview Contract](#refactoring-preview-contract).
+For safe delete, `plannedChange` contains `operation: "safeDelete"`, `targetType`, `name`, and
+`force`. External usages contribute to both `usageCount` and `conflictCount`; `canApply` is false
+when usages exist and `force` is false, a usage search fails without `force`, or the target is not
+writable. A file with no discovered top-level declaration keeps the existing apply eligibility but
+reports that complete usage discovery cannot be proven. Preview never invokes deletion, saves
+documents, or registers undo, and it does not invalidate the target's `symbolId`.
+
+An applied symbol deletion includes `invalidatedSymbolId` only when the request selected the target
+with an incoming `symbolId` (legacy or nested). Position-based, qualified-name, and file deletion
+requests omit it.
+
+**Example Request (delete an entire file):**
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "ide_refactor_safe_delete",
+    "arguments": {
+      "file": "src/main/java/com/example/UnusedUtils.java",
+      "target_type": "file"
+    }
+  }
+}
+```
+
 **Example Response (safe to delete):**
 
 ```json
 {
   "success": true,
-  "message": "Successfully deleted 'LegacyHelper'"
+  "message": "Successfully deleted 'LegacyHelper'",
+  "invalidatedSymbolId": "sym_opaque-handle"
 }
 ```
 
@@ -2264,24 +4191,9 @@ Safely deletes an element, first checking for usages.
 
 ## Error Handling
 
-### JSON-RPC Standard Errors
+### Tool-Level Errors
 
-| Code | Name | When It Occurs |
-|------|------|----------------|
-| -32700 | Parse Error | Invalid JSON in request |
-| -32600 | Invalid Request | Missing required JSON-RPC fields |
-| -32601 | Method Not Found | Unknown tool or method name |
-| -32602 | Invalid Params | Missing or invalid parameters |
-| -32603 | Internal Error | Unexpected server error |
-
-### Custom MCP Errors
-
-| Code | Name | When It Occurs |
-|------|------|----------------|
-| -32001 | Index Not Ready | IDE is indexing (dumb mode) |
-| -32002 | File Not Found | Specified file doesn't exist |
-| -32003 | Symbol Not Found | No symbol at the specified position |
-| -32004 | Refactoring Conflict | Refactoring cannot be completed |
+Tool failures (file not found, symbol not found, IDE indexing, refactoring conflicts, etc.) are reported as a normal `tools/call` result with `isError: true` and a human-readable message in `content`, per the MCP specification — never as JSON-RPC errors with custom codes.
 
 ### Example Error Response
 
@@ -2289,12 +4201,29 @@ Safely deletes an element, first checking for usages.
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "error": {
-    "code": -32001,
-    "message": "IDE is in dumb mode, indexes not available. Please wait for indexing to complete."
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "IDE is in dumb mode, indexes not available. Please wait for indexing to complete."
+      }
+    ],
+    "isError": true
   }
 }
 ```
+
+### JSON-RPC Standard Errors
+
+JSON-RPC error codes appear only for protocol-level failures handled by the MCP SDK:
+
+| Code | Name | When It Occurs |
+|------|------|----------------|
+| -32700 | Parse Error | Invalid JSON in request |
+| -32600 | Invalid Request | Missing required JSON-RPC fields |
+| -32601 | Method Not Found | Unknown JSON-RPC method name (an unknown *tool* name returns an `isError` result instead) |
+| -32602 | Invalid Params | Missing or invalid parameters |
+| -32603 | Internal Error | Unexpected server error |
 
 ### Handling Dumb Mode
 
@@ -2316,7 +4245,7 @@ If `isDumbMode` is `true`, wait and retry later.
 
 ## Project Lifecycle Management
 
-When working across multiple projects simultaneously, idle ones consume memory unnecessarily. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity. Projects enroll on first MCP use and auto-reopen when targeted by an MCP call — existing tools require no changes.
+When working across multiple projects simultaneously, idle ones consume memory unnecessarily. Lifecycle management automatically sleeps and wakes projects based on window focus and MCP activity. Projects enroll on first MCP use and auto-reopen when targeted by an MCP call — existing tools require no changes. Every MCP tool call restarts a project's idle countdown (which only runs while its window is unfocused), and the editor tabs a `dormant` transition closes are remembered — across IDE restarts — and reopened when the window regains focus or the project is released.
 
 **Lifecycle modes:**
 
@@ -2324,7 +4253,7 @@ When working across multiple projects simultaneously, idle ones consume memory u
 |------|-----------|---------|-----------|--------|
 | `active` | off | open | loaded | full |
 | `background` | on | open | loaded | reduced |
-| `dormant` | on | closed | released via GC | low |
+| `dormant` | on | closed (reopen on next focus) | released via GC | low |
 | `closed` | — | — | freed | none (auto-reopens on next MCP call) |
 
 ---
@@ -2405,7 +4334,7 @@ Accepts an optional `path` parameter to release a closed managed project without
 
 ### ide_release_all_projects
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Release every managed project (including closed ones) from lifecycle management at once. Also disables Power Save Mode globally.
 
@@ -2419,7 +4348,7 @@ Release every managed project (including closed ones) from lifecycle management 
 
 ### ide_enroll_all_projects
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Enroll every currently open project in lifecycle management. Projects already managed are skipped.
 
@@ -2446,7 +4375,9 @@ Query recent lifecycle events from the in-memory ring buffer (default 500 entrie
 { "name": "ide_lifecycle_log", "arguments": { "limit": 20, "project": "engine" } }
 ```
 
-**Event fields:** `timestamp`, `project`, `path`, `event`, `from` (mode), `to` (mode), `trigger`.
+**Event fields:** `timestamp`, `project`, `path`, `event`, `from` (mode), `to` (mode), `trigger`, `detail` (optional — e.g. how long the project had no MCP call when the inactivity timer fired, or how many editor tabs a dormant transition closed).
+
+**Event types:** `open`, `closed`, `transition`, `enroll`, `release`, `wake`, `editors_closed`, `editors_restored`.
 
 **Trigger values:**
 
@@ -2467,7 +4398,7 @@ Query recent lifecycle events from the in-memory ring buffer (default 500 entrie
 
 ### ide_set_lifecycle_log_file
 
-> **Default**: Disabled - enable in Settings > Tools > Index MCP Server
+> **Default**: Disabled - enable in Settings > Tools > Index MCP Server → Exposed Tools
 
 Enable or disable writing lifecycle events to the persistent log file on disk (`mcp-lifecycle.log`, written alongside `idea.log`). The in-memory ring buffer queried by `ide_lifecycle_log` is always active regardless of this setting.
 
@@ -2499,72 +4430,22 @@ Lifecycle log file enabled. Events are being written to: /Users/you/Library/Logs
 
 ---
 
-### ide_set_power_save_mode
+### ide_create_module
 
-Toggle Power Save Mode directly.
+Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). For Maven projects, use `ide_import_modules` instead.
+
+**Side effects:** Creates a `<name>.iml` file in the target directory and registers the module in `.idea/modules.xml`. To undo: Project Structure (Cmd+;) → Modules → select → minus button. Indexing of the new content root is async — call `ide_index_status` if subsequent tools hit dumb mode.
 
 **Parameters:**
-- `enabled` (required): `true` or `false`
+- `path` (required): absolute directory path to add as a module content root
+- `name` (optional): module name (defaults to directory name)
+- `excludes` (optional): relative paths to exclude from indexing (e.g., `["node_modules", "dist"]`)
 - `project_path` (optional)
 
 ```json
-{ "name": "ide_set_power_save_mode", "arguments": { "enabled": true } }
-```
-
-Power Save Mode suspends background inspections and code analysis while leaving the index and all MCP operations fully functional.
-
----
-
-### ide_close_project
-
-Close an open project window and free its memory.
-
-**Parameters:** `project_path` (optional — defaults to the active project)
-
-```json
-{ "name": "ide_close_project", "arguments": {} }
-```
-
-The project can be reopened via Recent Projects or `ide_open_project`.
-
----
-
-### ide_open_project
-
-Open a project by filesystem path and block until indexing completes, so subsequent MCP tool calls succeed immediately.
-
-**Parameters:**
-- `path` (required): filesystem path of the project directory
-- `project_path` (optional): routing hint — requires at least one project already open
-
-```json
-{ "name": "ide_open_project", "arguments": { "path": "/Users/dev/myproject" } }
+{ "name": "ide_create_module", "arguments": { "path": "/Users/dev/my-frontend", "excludes": ["node_modules", "dist"] } }
 ```
 
 ---
 
-### ide_install_plugin
-
-Install a plugin zip into the IDE, replacing any existing version. A restart is required to load the updated plugin.
-
-**Parameters:**
-- `path` (optional): explicit path to a `.zip` file. If omitted, auto-detects `build/distributions/*.zip` in the current project — useful when developing the plugin itself.
-- `project_path` (optional)
-
-```json
-{ "name": "ide_install_plugin", "arguments": {} }
-```
-
-Typical workflow: `./gradlew buildPlugin` → `ide_install_plugin` → `ide_restart`.
-
----
-
-### ide_restart
-
-Restart the IDE. Terminates the MCP connection immediately — no further tool calls should be made after calling this.
-
-**Parameters:** `project_path` (optional)
-
-```json
-{ "name": "ide_restart", "arguments": {} }
-```
+**Related window-management tools:** `ide_set_power_save_mode`, `ide_close_project`, and `ide_open_project` are documented under [Project Window Management](#project-window-management); `ide_install_plugin` and `ide_restart` under [Plugin Development](#plugin-development).

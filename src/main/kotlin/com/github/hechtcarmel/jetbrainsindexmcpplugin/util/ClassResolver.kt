@@ -1,10 +1,14 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import java.lang.reflect.InvocationTargetException
+import java.util.concurrent.CancellationException
 
 /**
  * Resolves classes by fully qualified name across multiple languages.
@@ -39,11 +43,27 @@ object ClassResolver {
             return try {
                 findClassByNameWithJavaPlugin(project, qualifiedName)
             } catch (e: Exception) {
+                rethrowControlFlowExceptions(e)
                 null
             }
         }
 
         return null
+    }
+
+    /**
+     * Rethrows control-flow exceptions that must never be mapped to "class not found",
+     * unwrapping the [InvocationTargetException] wrapper reflective calls add.
+     *
+     * [ProcessCanceledException] and [CancellationException] must propagate per the platform
+     * threading contract, and [IndexNotReadyException] must reach the tool layer's dumb-mode
+     * handler so the client gets a "retry after indexing" error instead of a false negative.
+     */
+    private fun rethrowControlFlowExceptions(e: Exception) {
+        val cause = (e as? InvocationTargetException)?.targetException ?: e
+        when (cause) {
+            is ProcessCanceledException, is IndexNotReadyException, is CancellationException -> throw cause
+        }
     }
 
     /**
@@ -118,6 +138,7 @@ object ClassResolver {
             // PHP plugin classes not available
             null
         } catch (e: Exception) {
+            rethrowControlFlowExceptions(e)
             null
         }
     }
@@ -207,5 +228,26 @@ object ClassResolver {
         }
 
         return null
+    }
+
+    /**
+     * Finds a Java package by its fully qualified name using JavaPsiFacade via reflection.
+     *
+     * @param project The project context
+     * @param packageName Fully qualified package name (e.g. "com.example.service")
+     * @return The PsiPackage (as PsiElement), or null if not found
+     */
+    fun findPackageByName(project: Project, packageName: String): PsiElement? {
+        if (!PluginDetectors.java.isAvailable) return null
+        return try {
+            val javaPsiFacadeClass = Class.forName("com.intellij.psi.JavaPsiFacade")
+            val getInstanceMethod = javaPsiFacadeClass.getMethod("getInstance", Project::class.java)
+            val javaPsiFacade = getInstanceMethod.invoke(null, project)
+            val findPackageMethod = javaPsiFacadeClass.getMethod("findPackage", String::class.java)
+            findPackageMethod.invoke(javaPsiFacade, packageName) as? PsiElement
+        } catch (e: Exception) {
+            rethrowControlFlowExceptions(e)
+            null
+        }
     }
 }

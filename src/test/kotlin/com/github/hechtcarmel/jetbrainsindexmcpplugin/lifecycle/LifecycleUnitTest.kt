@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.get
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.LifecycleEventLog
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
@@ -11,6 +13,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseAll
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.ReleaseProjectTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetAllProjectModesTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.lifecycle.SetProjectModeTool
+import com.intellij.util.xmlb.XmlSerializer
 import junit.framework.TestCase
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -18,28 +21,10 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class LifecycleUnitTest : TestCase() {
 
-    fun testProjectModeHasExactlyFourStates() {
-        val values = ProjectMode.entries
-        assertEquals(4, values.size)
-        assertTrue(values.contains(ProjectMode.ACTIVE))
-        assertTrue(values.contains(ProjectMode.BACKGROUND))
-        assertTrue(values.contains(ProjectMode.DORMANT))
-        assertTrue(values.contains(ProjectMode.CLOSED))
-    }
-
     fun testStateDefaultsAreEmpty() {
         val state = ProjectModeService.State()
         assertTrue(state.closedProjectPaths.isEmpty())
         assertTrue(state.managedProjectPaths.isEmpty())
-    }
-
-    fun testStateClosedAndManagedAreIndependentSets() {
-        val state = ProjectModeService.State()
-        state.closedProjectPaths.add("/closed/project")
-        state.managedProjectPaths.add("/managed/project")
-
-        assertFalse(state.closedProjectPaths.contains("/managed/project"))
-        assertFalse(state.managedProjectPaths.contains("/closed/project"))
     }
 
     fun testLifecycleSettingsDefaultValues() {
@@ -97,34 +82,26 @@ class LifecycleUnitTest : TestCase() {
         assertEquals(ToolNames.SET_PROJECT_MODE, SetProjectModeTool().name)
     }
 
-    fun testSetProjectModeToolDescriptionMentionsAllModes() {
-        val desc = SetProjectModeTool().description
-        assertTrue(desc.contains("active"))
-        assertTrue(desc.contains("background"))
-        assertTrue(desc.contains("dormant"))
-        assertTrue(desc.contains("closed"))
-    }
-
     fun testSetProjectModeToolModeIsRequired() {
         val schema = SetProjectModeTool().inputSchema
-        val required = schema["required"]?.jsonArray?.map { it.jsonPrimitive.content }
+        val required = schema.required
         assertNotNull(required)
         assertTrue(required!!.contains("mode"))
     }
 
     fun testSetProjectModeToolModeEnumMatchesProjectMode() {
         val schema = SetProjectModeTool().inputSchema
-        val modeEnum = schema["properties"]?.jsonObject
+        val modeEnum = schema.properties
             ?.get("mode")?.jsonObject
             ?.get("enum")?.jsonArray
             ?.map { it.jsonPrimitive.content }
 
         assertNotNull("mode must declare an enum constraint", modeEnum)
-        assertEquals(4, modeEnum!!.size)
-        assertTrue(modeEnum.contains("active"))
-        assertTrue(modeEnum.contains("background"))
-        assertTrue(modeEnum.contains("dormant"))
-        assertTrue(modeEnum.contains("closed"))
+        assertEquals(
+            "every ProjectMode must be reachable through the schema enum",
+            ProjectMode.entries.map { it.name.lowercase() }.sorted(),
+            modeEnum!!.sorted()
+        )
     }
 
     fun testSetProjectModeToolProjectPathIsOptional() {
@@ -149,17 +126,6 @@ class LifecycleUnitTest : TestCase() {
     fun testReleaseProjectToolHasNoRequiredFields() {
         val required = ReleaseProjectTool().inputSchema["required"]?.jsonArray
         assertTrue(required == null || required.isEmpty())
-    }
-
-    fun testToolNamesAllContainsLifecycleTools() {
-        assertTrue(ToolNames.ALL.contains(ToolNames.ENROLL_ALL_PROJECTS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.GET_PROJECT_MODES))
-        assertTrue(ToolNames.ALL.contains(ToolNames.LIFECYCLE_LOG))
-        assertTrue(ToolNames.ALL.contains(ToolNames.PROJECT_STATUS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.RELEASE_ALL_PROJECTS))
-        assertTrue(ToolNames.ALL.contains(ToolNames.RELEASE_PROJECT))
-        assertTrue(ToolNames.ALL.contains(ToolNames.SET_ALL_PROJECT_MODES))
-        assertTrue(ToolNames.ALL.contains(ToolNames.SET_PROJECT_MODE))
     }
 
     fun testEnrollAllProjectsToolName() {
@@ -212,14 +178,6 @@ class LifecycleUnitTest : TestCase() {
         assertNotNull("schema must include project", props["project"])
     }
 
-    fun testLifecycleLogToolDescriptionDocumentsKeyTriggers() {
-        val desc = LifecycleLogTool().description
-        assertTrue(desc.contains("timer:inactivity"))
-        assertTrue(desc.contains("mcp_call"))
-        assertTrue(desc.contains("auto_open"))
-        assertTrue(desc.contains("log_file"))
-    }
-
     fun testLifecycleToolNameConstants() {
         assertEquals("ide_enroll_all_projects", ToolNames.ENROLL_ALL_PROJECTS)
         assertEquals("ide_get_project_modes", ToolNames.GET_PROJECT_MODES)
@@ -235,12 +193,13 @@ class LifecycleUnitTest : TestCase() {
     fun testLifecycleToolsAreDisabledByDefault() {
         val defaults = McpSettings.State().disabledTools
         listOf(
-            ToolNames.ENROLL_ALL_PROJECTS, ToolNames.GET_PROJECT_MODES, ToolNames.LIFECYCLE_LOG,
+            ToolNames.ENROLL_ALL_PROJECTS, ToolNames.LIFECYCLE_LOG,
             ToolNames.LIFECYCLE_LOG_FILE, ToolNames.RELEASE_ALL_PROJECTS,
             ToolNames.RELEASE_PROJECT, ToolNames.SET_ALL_PROJECT_MODES, ToolNames.SET_PROJECT_MODE
         ).forEach { tool ->
             assertTrue("$tool must be opt-in by default", defaults.contains(tool))
         }
+        assertFalse("ide_get_project_modes is enabled by default", defaults.contains(ToolNames.GET_PROJECT_MODES))
     }
 
     fun testProjectStatusIsEnabledByDefault() {
@@ -256,7 +215,7 @@ class LifecycleUnitTest : TestCase() {
 
     fun testSetAllProjectModesToolExcludesClosedFromEnum() {
         val schema = SetAllProjectModesTool().inputSchema
-        val modeEnum = schema["properties"]?.jsonObject
+        val modeEnum = schema.properties
             ?.get("mode")?.jsonObject
             ?.get("enum")?.jsonArray
             ?.map { it.jsonPrimitive.content }
@@ -267,8 +226,88 @@ class LifecycleUnitTest : TestCase() {
         assertFalse("closed must not be in the enum — CLOSED projects have no Project object", modeEnum.contains("closed"))
     }
 
-    fun testToolNamesAllIsSorted() {
-        assertEquals(ToolNames.ALL.sorted(), ToolNames.ALL)
+    // ── Issue #369: the log must say what happened, not just when ───────────────────────────
+
+    fun testLogLineNamesTheEventWhenThereIsNoModeChange() {
+        // The bare "[mcp_call] kmo3" line was read as "an MCP call reset the timer here" when it
+        // was the one-off enrollment; naming the event removes the ambiguity.
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "enroll", trigger = "mcp_call"
+        )
+        assertEquals("1970-01-01T00:00:00Z [mcp_call] kmo3: enroll  (D:/develop/kmo3)", entry.toLogLine())
     }
 
+    fun testLogLineShowsTheModeChangeAndTheDetail() {
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "transition",
+            from = "background", to = "dormant", trigger = "timer:inactivity", detail = "no MCP call for 2m 1s"
+        )
+        assertEquals(
+            "1970-01-01T00:00:00Z [timer:inactivity] kmo3: background→dormant — no MCP call for 2m 1s  (D:/develop/kmo3)",
+            entry.toLogLine()
+        )
+    }
+
+    fun testLogLineDoesNotRepeatATriggerThatAlreadyNamesTheEvent() {
+        val entry = LifecycleEventLog.Entry(
+            timestampMs = 0L, project = "kmo3", path = "D:/develop/kmo3", event = "focus_lost", trigger = "focus_lost"
+        )
+        assertEquals("1970-01-01T00:00:00Z [focus_lost] kmo3  (D:/develop/kmo3)", entry.toLogLine())
+    }
+
+    fun testJsonCarriesDetailOnlyWhenPresent() {
+        val without = LifecycleEventLog.Entry(project = "p", path = "/p", event = "enroll", trigger = "mcp_call").toJson()
+        assertNull("no detail → no key, so clients can rely on its presence meaning something", without["detail"])
+
+        val with = LifecycleEventLog.Entry(
+            project = "p", path = "/p", event = "enroll", trigger = "mcp_call", detail = "window focused → active"
+        ).toJson()
+        assertEquals("window focused → active", with["detail"]?.jsonPrimitive?.content)
+        assertEquals("enroll", with["event"]?.jsonPrimitive?.content)
+    }
+
+    fun testFormatDurationIsCoarseAndNeverNegative() {
+        assertEquals("0s", LifecycleEventLog.formatDuration(0))
+        assertEquals("45s", LifecycleEventLog.formatDuration(45_999))
+        assertEquals("2m 1s", LifecycleEventLog.formatDuration(121_000))
+        assertEquals("1h 3m", LifecycleEventLog.formatDuration(3_780_000))
+        assertEquals("0s", LifecycleEventLog.formatDuration(-5_000))
+    }
+
+    fun testFormatTimeOfDayIsUtcLikeTheLogTimestamps() {
+        assertEquals("00:00:00Z", LifecycleEventLog.formatTimeOfDay(0L))
+        assertEquals("09:51:08Z", LifecycleEventLog.formatTimeOfDay(9 * 3_600_000L + 51 * 60_000L + 8_000L))
+    }
+
+    fun testDormantEditorsSurviveXmlStatePersistence() {
+        // The component store serializes State through the platform's XML serializer; a shape it
+        // cannot round-trip would silently drop the remembered tabs on every IDE restart.
+        val state = ProjectModeService.State()
+        state.managedProjectPaths.add("/proj")
+        state.dormantEditors["/proj"] = ProjectModeService.DormantEditors(
+            fileUrls = mutableListOf("file:///proj/A.kt", "jar:///lib/x.jar!/B.class"),
+            selectedFileUrl = "file:///proj/A.kt"
+        )
+
+        val restored = XmlSerializer.deserialize(XmlSerializer.serialize(state), ProjectModeService.State::class.java)
+
+        assertEquals(setOf("/proj"), restored.managedProjectPaths)
+        val editors = restored.dormantEditors["/proj"]
+        assertNotNull("dormant editors must survive XML persistence", editors)
+        assertEquals(listOf("file:///proj/A.kt", "jar:///lib/x.jar!/B.class"), editors!!.fileUrls)
+        assertEquals("file:///proj/A.kt", editors.selectedFileUrl)
+    }
+
+    fun testStateWithoutDormantEditorsStillLoads() {
+        // Persisted state written by an older plugin version has no dormantEditors element.
+        val legacy = ProjectModeService.State()
+        legacy.managedProjectPaths.add("/proj")
+        val element = XmlSerializer.serialize(legacy)
+        element.children.removeIf { it.getAttributeValue("name") == "dormantEditors" }
+
+        val restored = XmlSerializer.deserialize(element, ProjectModeService.State::class.java)
+
+        assertEquals(setOf("/proj"), restored.managedProjectPaths)
+        assertTrue(restored.dormantEditors.isEmpty())
+    }
 }

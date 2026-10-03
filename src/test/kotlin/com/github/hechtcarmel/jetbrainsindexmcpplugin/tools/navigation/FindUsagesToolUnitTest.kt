@@ -1,11 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import junit.framework.TestCase
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 class FindUsagesToolUnitTest : TestCase() {
 
@@ -19,39 +15,55 @@ class FindUsagesToolUnitTest : TestCase() {
         assertTrue("Should suggest ide_search_text fallback", message.contains("ide_search_text"))
     }
 
-    fun testBlankCursorShouldUseFreshSearchPath() {
-        val arguments = buildJsonObject { put("cursor", JsonPrimitive("")) }
-
-        val isCursorPath = usesCursorPaginationPath(arguments)
-
-        assertFalse("Blank cursor should be treated as fresh search", isCursorPath)
+    fun testTotalIsExactWhenInitialSearchWasExhausted() {
+        // The fresh search enumerated everything: exact even while more pages remain in the cache.
+        assertTrue(
+            FindUsagesTool.computeTotalIsExact(
+                metadata = mapOf("searchExhausted" to "true"),
+                hasMore = true,
+                totalCollected = 300
+            )
+        )
     }
 
-    fun testWhitespaceCursorShouldUseFreshSearchPath() {
-        val arguments = buildJsonObject { put("cursor", JsonPrimitive("   \t  ")) }
-
-        val isCursorPath = usesCursorPaginationPath(arguments)
-
-        assertFalse("Whitespace cursor should be treated as fresh search", isCursorPath)
+    fun testTotalIsExactWhenExtenderExhaustedBelowCap() {
+        // Initial search hit the collection cap, but a later extender probe found nothing new.
+        assertTrue(
+            FindUsagesTool.computeTotalIsExact(
+                metadata = mapOf("searchExhausted" to "false"),
+                hasMore = false,
+                totalCollected = 1200
+            )
+        )
     }
 
-    fun testMalformedNonEmptyCursorShouldUseCursorPathAndFailValidationLater() {
-        val arguments = buildJsonObject { put("cursor", JsonPrimitive("not-a-valid-cursor")) }
-
-        val isCursorPath = usesCursorPaginationPath(arguments)
-
-        assertTrue("Non-empty malformed cursor must stay on cursor path for invalid-cursor handling", isCursorPath)
+    fun testTotalNotExactWhileMorePagesAndSearchNotExhausted() {
+        assertFalse(
+            FindUsagesTool.computeTotalIsExact(
+                metadata = mapOf("searchExhausted" to "false"),
+                hasMore = true,
+                totalCollected = 500
+            )
+        )
+        // Missing metadata (legacy cursor) must not claim exactness while pages remain.
+        assertFalse(
+            FindUsagesTool.computeTotalIsExact(
+                metadata = emptyMap(),
+                hasMore = true,
+                totalCollected = 500
+            )
+        )
     }
 
-    /**
-     * Mirrors FindUsagesTool cursor-routing gate after normalization:
-     * `val cursor = optionalStringArg(arguments, ParamNames.CURSOR); if (cursor != null) ...`
-     *
-     * Blank/whitespace cursors are normalized to null and use fresh-search path.
-     * Non-empty malformed cursors stay non-null and use cursor path for validation.
-     */
-    private fun usesCursorPaginationPath(arguments: JsonObject): Boolean {
-        val cursor = arguments["cursor"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-        return cursor != null
+    fun testTotalNotExactAtHardCacheCap() {
+        // At MAX_CACHED_RESULTS_PER_CURSOR extension is skipped and hasMore=false is forced,
+        // so exactness cannot be inferred from hasMore there.
+        assertFalse(
+            FindUsagesTool.computeTotalIsExact(
+                metadata = mapOf("searchExhausted" to "false"),
+                hasMore = false,
+                totalCollected = PaginationService.MAX_CACHED_RESULTS_PER_CURSOR
+            )
+        )
     }
 }

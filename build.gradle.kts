@@ -16,12 +16,13 @@ plugins {
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
+val kotlinPluginTests = providers.gradleProperty("kotlinPluginTests").map(String::toBoolean).orElse(false)
+
 // Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(21)
 }
 
-// Configure project's dependencies
 repositories {
     mavenCentral()
 
@@ -32,40 +33,68 @@ repositories {
 }
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
+/**
+ * Artifacts the IntelliJ Platform already puts on the plugin classloader's parent. Bundling a
+ * second copy of any of them is either forbidden (kotlin-stdlib, kotlinx-coroutines — see
+ * https://jb.gg/intellij-platform-kotlin-coroutines) or pure weight.
+ *
+ * Verified present in the 2025.3 distribution:
+ *   kotlin-stdlib, kotlinx-coroutines, slf4j-api  → lib/util-8.jar
+ *   kotlin-reflect                                → lib/module-intellij.libraries.kotlin.reflect.jar
+ *
+ * kotlin-reflect matters beyond weight: Ktor drags in a version built against a newer stdlib
+ * than the platform ships, and reflect/stdlib must move together.
+ *
+ * NOT excluded, deliberately:
+ *   ktor-server        — the platform bundles only the Ktor *client*
+ *   kotlinx-serialization, kotlinx-io, kotlinx-collections-immutable — the platform has them,
+ *       but the SDK's generated serializers are compiled against 1.11.0 and the platform's are
+ *       older; plugin-first classloading keeps ours local to this plugin.
+ */
+fun ExternalModuleDependency.excludePlatformProvided() {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-reflect")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-jdk8")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
+    exclude(group = "org.slf4j")
+}
+
+// Configure project's dependencies
 dependencies {
-    // MCP Kotlin SDK - exclude kotlinx-coroutines to use IntelliJ Platform's bundled version
-    implementation(libs.mcp.kotlin.sdk) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-bom")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-slf4j")
-        exclude(group = "org.slf4j")
-    }
+    // MCP protocol: JSON-RPC envelope, initialize/version negotiation, tools/list, tools/call,
+    // Streamable HTTP + legacy SSE transports, DNS-rebinding protection.
+    implementation(libs.mcp.kotlin.sdk.server) { excludePlatformProvided() }
 
-    // Kotlinx Serialization
-    implementation(libs.kotlinx.serialization.json)
     implementation(libs.jtoon)
+    // Persistent collections let hierarchy continuation snapshots share unchanged storage across
+    // retriable cursor pages. The artifact itself is not platform-provided, so it is bundled; the
+    // exclusion only drops its transitive kotlin-stdlib, which the IDE already ships.
+    implementation(libs.kotlinx.collections.immutable) { excludePlatformProvided() }
 
-    // Ktor Server (for custom MCP server with configurable port)
-    implementation(libs.ktor.server.core) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cio) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
-    implementation(libs.ktor.server.cors) {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-        exclude(group = "org.slf4j")
-    }
+    // Ktor engine. ktor-server-core arrives transitively from the SDK at the version the SDK was
+    // compiled against, which is exactly what we want. CORS is not a dependency: the plugin
+    // reflects loopback origins itself (see LocalOriginGuard) because Ktor's CORS plugin matches
+    // hosts including the port, and this server accepts any loopback port.
+    implementation(libs.ktor.server.cio) { excludePlatformProvided() }
+    // kotlin-sdk 0.10.0 installs the SSE plugin but not ContentNegotiation, and its transports
+    // answer with `call.respond(<serializable>)`. Without a JSON converter registered Ktor turns
+    // every MCP response into an empty 406. Later SDK versions install it themselves; until we
+    // can move to one, McpKtorServer installs it and these two artifacts supply it.
+    implementation(libs.ktor.server.content.negotiation) { excludePlatformProvided() }
+    implementation(libs.ktor.serialization.kotlinx.json) { excludePlatformProvided() }
 
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
+    // Drives the running server with an independent MCP implementation — the strongest available
+    // statement that the wire contract is intact.
+    testImplementation(libs.mcp.kotlin.sdk.client) { excludePlatformProvided() }
+    testImplementation(libs.ktor.client.cio) { excludePlatformProvided() }
     testImplementation(libs.mockk) {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
@@ -88,8 +117,42 @@ dependencies {
         bundledModules(providers.gradleProperty("platformBundledModules").map { it.split(',') })
 
         testFramework(TestFrameworkType.Platform)
+        // Makes LightJavaCodeInsightFixtureTestCase and the JAVA_* project descriptors available.
+        // NOTE: no test currently supplies a descriptor, so fixtures still run without an SDK and
+        // java.lang.* does not resolve. Wiring getProjectDescriptor() is the remaining half — see
+        // the "Known gaps" note in CONTRIBUTING.md.
+        testFramework(TestFrameworkType.Plugin.Java)
 
+        // `ide_list_tests` reads the `com.intellij.testFramework` extension point. The Java plugin
+        // declares that EP but ships no implementations, so without the JUnit plugin the extension
+        // list is empty and the tool can only ever return "No test frameworks are registered" —
+        // i.e. the tool is untestable. Test-scoped so production dependencies are unchanged.
+        testBundledPlugin("JUnit")
+        if (kotlinPluginTests.get()) {
+            testBundledPlugin("org.jetbrains.kotlin")
+        }
     }
+}
+
+if (kotlinPluginTests.get()) {
+    kotlin.sourceSets.named("test") {
+        kotlin.srcDir("src/kotlinPluginTest/kotlin")
+    }
+    // Fixtures use reflection; the bundled plugin's newer metadata is not needed for compilation.
+    tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlin") {
+        libraries.setFrom(files(sourceSets.main.get().output, configurations.testCompileClasspath).filter {
+            !it.invariantSeparatorsPath.contains("/plugins/Kotlin/")
+        })
+    }
+}
+
+// All platform tests need the IDE's matching stdlib, not just opt-in Kotlin plugin tests.
+// PlatformTaskSupport also calls newer Kotlin APIs (e.g. sequenceOf(Object)); Gradle's
+// injected stdlib can shadow the IDE runtime and fail during modal progress/conflict discovery.
+configurations.testRuntimeClasspath {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
 }
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
@@ -168,50 +231,67 @@ changelog {
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
 }
 
-// Configure Gradle Kover Plugin - read more: https://github.com/Kotlin/kotlinx-kover#configuration
-kover {
-    reports {
-        total {
-            xml {
-                onCheck = true
-            }
-        }
-    }
-}
-
 tasks {
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
 
-    publishPlugin {
-        dependsOn(patchChangelog)
+    // The plugin reports its own version to MCP clients in `initialize`. Every platform API that
+    // can read it off the descriptor — PluginManagerCore.getPlugin, PluginManager.getPlugins,
+    // getPluginByClass, findEnabledPlugin — is @ApiStatus.Internal as of 2026.2, and the verifier
+    // fails the build on internal API usage. So the build stamps the version into a resource
+    // instead. Scoped to the one file: `expand` would otherwise choke on `$` in McpBundle.
+    processResources {
+        val pluginVersion = providers.gradleProperty("pluginVersion")
+        inputs.property("pluginVersion", pluginVersion)
+        filesMatching("mcp-server.properties") {
+            expand("pluginVersion" to pluginVersion.get())
+        }
     }
+
+    test {
+        // Skips must be visible. A silently-skipped test is indistinguishable from a
+        // passing one in the console, which is how 16 JS/TS tests went years without
+        // executing.
+        testLogging {
+            events("skipped", "failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+
+        // Gradle's -D lands on the daemon, not the forked test JVM, so it has to be forwarded
+        // explicitly for ToolManifestContractUnitTest's golden-file regeneration to see it.
+        providers.systemProperty("contract.update").orNull?.let {
+            systemProperty("contract.update", it)
+        }
+
+        // Tier selection: `./gradlew test -Ptier=unit` or `-Ptier=platform`.
+        //
+        // Gradle's `--tests` flag has no negation operator and OR-combines repeated
+        // occurrences, so the once-documented
+        //   --tests "*Test" --tests "!*UnitTest*"
+        // silently selected the entire suite. Filters are applied here instead, on the
+        // single Test task the IntelliJ Platform plugin fully configures — a separately
+        // registered Test task resolves to NO-SOURCE because it inherits none of that
+        // platform wiring.
+        when (providers.gradleProperty("tier").orNull) {
+            null, "all" -> Unit
+            "unit" -> filter { includeTestsMatching("*UnitTest") }
+            "platform" -> filter {
+                includeTestsMatching("*Test")
+                excludeTestsMatching("*UnitTest")
+            }
+            else -> throw GradleException("Unknown -Ptier value. Use: unit, platform, or all.")
+        }
+    }
+
+    // NOTE: publishPlugin intentionally does NOT depend on patchChangelog (upstream template
+    // removed it too). At publish time CHANGELOG.md already contains the version section —
+    // either from the version-bump PR or from the Release workflow's explicit patch step —
+    // and re-patching with an empty [Unreleased] would create a duplicate section.
 
 //    runIde {
 //        jvmArgs("-Xmx20g", "-Xms1g")
 //    }
 
 
-}
-
-intellijPlatformTesting {
-    runIde {
-        register("runIdeForUiTests") {
-            task {
-                jvmArgumentProviders += CommandLineArgumentProvider {
-                    listOf(
-                        "-Drobot-server.port=8082",
-                        "-Dide.mac.message.dialogs.as.sheets=false",
-                        "-Djb.privacy.policy.text=<!--999.999-->",
-                        "-Djb.consents.confirmation.enabled=false",
-                    )
-                }
-            }
-
-            plugins {
-                robotServerPlugin()
-            }
-        }
-    }
 }

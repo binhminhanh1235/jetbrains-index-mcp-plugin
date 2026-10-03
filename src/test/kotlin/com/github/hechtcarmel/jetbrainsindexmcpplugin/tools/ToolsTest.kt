@@ -1,12 +1,16 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.isFailure
+
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.GetActiveFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.editor.OpenFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence.GetDiagnosticsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.CallHierarchyTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FileStructureTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindClassTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindFileTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindImplementationsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindSuperMethodsTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation.FindUsagesTool
@@ -31,10 +35,14 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CallHierarchy
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileStructureResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.TypeHierarchyResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.intellij.lang.java.JavaLanguage
+import org.junit.Assume
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.NavigationItem
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiClass
@@ -48,13 +56,14 @@ import com.intellij.psi.impl.light.LightMethodBuilder
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.IndexingTestUtil
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -66,11 +75,13 @@ import kotlinx.serialization.json.put
  * Platform-dependent tests that require IntelliJ Platform indexing.
  * For schema and registration tests that don't need the platform, see ToolsUnitTest.
  */
-class ToolsTest : BasePlatformTestCase() {
+class ToolsTest : McpPlatformTestCase() {
 
     private companion object {
         const val JS_TS_FIXTURE_SOURCE_ROOT = "src/test/testData/javascript/webstormIntegration"
         const val JS_TS_FIXTURE_PROJECT_ROOT = "src/webstormIntegration"
+        const val SCALA_FIXTURE_SOURCE_ROOT = "src/test/testData/scala"
+        const val SCALA_FIXTURE_PROJECT_ROOT = "src/scalaFixtures"
     }
 
     override fun setUp() {
@@ -86,8 +97,8 @@ class ToolsTest : BasePlatformTestCase() {
         }
     }
 
-    private fun errorText(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
-        (result.content.first() as ContentBlock.Text).text
+    private fun errorText(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
+        (result.content.first() as TextContent).text
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -95,29 +106,42 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testGetIndexStatusTool() = runBlocking {
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
         val tool = GetIndexStatusTool()
 
         val result = tool.execute(project, buildJsonObject { })
 
-        assertFalse("get_index_status should succeed", result.isError)
+        assertFalse("get_index_status should succeed", result.isFailure)
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
+        assertTrue("Content should be text", content is TextContent)
 
-        val textContent = (content as ContentBlock.Text).text
+        val textContent = (content as TextContent).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
-        assertNotNull("Result should have isDumbMode", resultJson["isDumbMode"])
-        assertNotNull("Result should have isIndexing", resultJson["isIndexing"])
+        assertEquals(
+            "Indexes are ready, so the IDE must report smart mode",
+            false,
+            resultJson["isDumbMode"]?.jsonPrimitive?.boolean
+        )
+        assertEquals(
+            "isIndexing mirrors isDumbMode",
+            false,
+            resultJson["isIndexing"]?.jsonPrimitive?.boolean
+        )
     }
 
     fun testFindUsagesToolMissingParams() = runBlocking {
         val tool = FindUsagesTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
-        assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
+        assertTrue("Should error with missing params", result.isFailure)
+        assertTrue(
+            "Should mention required params",
+            errorText(result).contains(ErrorMessages.SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED)
+        )
     }
 
     fun testFindUsagesToolInvalidFile() = runBlocking {
@@ -129,7 +153,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals(
+            ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
+            errorText(result)
+        )
     }
 
     fun testFindUsagesToolPartialPosition() = runBlocking {
@@ -140,7 +168,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("line", 1)
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing column", errorText(result).contains("column"))
     }
 
@@ -151,7 +179,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("language", "Java")
         })
 
-        assertTrue("Should error when language provided without symbol", result.isError)
+        assertTrue("Should error when language provided without symbol", result.isFailure)
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
@@ -162,7 +190,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", "com.example.MyClass#method(String)")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -177,7 +205,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -189,7 +217,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", "com.example.MyClass")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
@@ -197,8 +225,11 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = FindDefinitionTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
-        assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
+        assertTrue("Should error with missing params", result.isFailure)
+        assertTrue(
+            "Should mention required params",
+            errorText(result).contains(ErrorMessages.SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED)
+        )
     }
 
     fun testFindDefinitionToolPartialPosition() = runBlocking {
@@ -208,7 +239,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "test.kt")
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing line", errorText(result).contains("line"))
     }
 
@@ -219,7 +250,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("language", "Java")
         })
 
-        assertTrue("Should error when language provided without symbol", result.isError)
+        assertTrue("Should error when language provided without symbol", result.isFailure)
         assertTrue("Should mention missing symbol", errorText(result).contains("symbol"))
     }
 
@@ -234,20 +265,18 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
     fun testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindDefinitionToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
-
         val tool = FindDefinitionTool()
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -259,7 +288,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = TypeHierarchyTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing className", result.isError)
+        assertTrue("Should error with missing className", result.isFailure)
     }
 
     fun testTypeHierarchyToolInvalidClass() = runBlocking {
@@ -269,26 +298,37 @@ class ToolsTest : BasePlatformTestCase() {
             put("className", "com.nonexistent.Class")
         })
 
-        assertTrue("Should error with invalid class", result.isError)
+        assertTrue("Should error with invalid class", result.isFailure)
+        assertTrue(
+            "Error should name the class that could not be resolved: ${errorText(result)}",
+            errorText(result).contains("Class 'com.nonexistent.Class' not found")
+        )
     }
 
     fun testCallHierarchyToolMissingParams() = runBlocking {
         val tool = CallHierarchyTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testCallHierarchyToolInvalidFile() = runBlocking {
         val tool = CallHierarchyTool()
 
+        // 'direction' is validated before the position is resolved; without it the tool would
+        // reject the call for a missing parameter and never exercise file resolution.
         val result = tool.execute(project, buildJsonObject {
             put("file", "nonexistent/file.kt")
             put("line", 1)
             put("column", 1)
+            put("direction", "callers")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals(
+            ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
+            errorText(result)
+        )
     }
 
     fun testCallHierarchyToolSymbolWithoutLanguage() = runBlocking {
@@ -299,7 +339,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -312,13 +352,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
     fun testCallHierarchyToolJavaScriptFixtureRoutesThroughBarrelImports() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptFixtureRoutesThroughBarrelImports")) return@runBlocking
-
         addWebstormIntegrationFixtures(
             "barrels/plugin-config.ts",
             "barrels/named-barrel.ts",
@@ -336,7 +374,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Barrel-import callers should be routed through JS/TS symbol resolution", result.isError)
+        assertFalse("Barrel-import callers should be routed through JS/TS symbol resolution", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         val callersByName = payload.calls.associateBy { it.name }
         val callerNames = callersByName.keys
@@ -356,8 +394,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testCallHierarchyToolTypeScriptOverloadSymbolSeedsImplementationCapableEntry() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadSymbolSeedsImplementationCapableEntry")) return@runBlocking
-
         addWebstormIntegrationFixture("overloads/overloaded-export.ts")
 
         val tool = CallHierarchyTool()
@@ -367,7 +403,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callees")
         })
 
-        assertFalse("TypeScript overload symbols should resolve to an implementation-capable call-hierarchy seed", result.isError)
+        assertFalse("TypeScript overload symbols should resolve to an implementation-capable call-hierarchy seed", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Seed should point at the implementation signature", 10, payload.element.line)
         assertTrue(
@@ -377,8 +413,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallees() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallees")) return@runBlocking
-
         addWebstormIntegrationFixture("overloads/overloaded-export.ts")
 
         val tool = CallHierarchyTool()
@@ -389,17 +423,15 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callees")
         })
 
-        assertFalse("Overload signature position should normalize to the implementation for callees", result.isError)
+        assertFalse("Overload signature position should normalize to the implementation for callees", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Normalized seed should point at implementation line", 10, payload.element.line)
         assertTrue("Normalized position seed should expose readProjectIdFromConfig callee", payload.calls.any { it.name == "readProjectIdFromConfig" })
     }
 
     fun testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallers() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolTypeScriptOverloadPositionSeedNormalizesToImplementationForCallers")) return@runBlocking
-
-        myFixture.addFileToProject(
-            fixtureProjectPath("overloads/overloaded-position-callers.ts"),
+        writeWebstormIntegrationFile(
+            "overloads/overloaded-position-callers.ts",
             """
             export function getProjectId(input: string): string;
             export function getProjectId(input: { workspace: string; project: string }): string;
@@ -408,8 +440,8 @@ class ToolsTest : BasePlatformTestCase() {
             }
             """.trimIndent()
         )
-        myFixture.addFileToProject(
-            fixtureProjectPath("overloads/overloaded-position-callers-consumer.ts"),
+        writeWebstormIntegrationFile(
+            "overloads/overloaded-position-callers-consumer.ts",
             """
             import { getProjectId } from "./overloaded-position-callers";
 
@@ -427,15 +459,13 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Overload signature position should normalize to the implementation for callers", result.isError)
+        assertFalse("Overload signature position should normalize to the implementation for callers", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         assertEquals("Normalized caller seed should point at implementation line", 3, payload.element.line)
         assertTrue("Normalized caller seed should expose consumer call sites", payload.calls.any { it.name == "readProjectId" })
     }
 
     fun testCallHierarchyToolJavaScriptFixturePrioritizesRealisticIndexBarrelImportsBeforeVisibleLimit() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptFixtureRoutesThroughRealisticIndexBarrelImports")) return@runBlocking
-
         addWebstormIntegrationFixtures(
             "barrels/realistic/config/loader.ts",
             "barrels/realistic/config/index.ts",
@@ -453,7 +483,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertFalse("Realistic index barrel callers should be routed through JS/TS symbol resolution", result.isError)
+        assertFalse("Realistic index barrel callers should be routed through JS/TS symbol resolution", result.isFailure)
         val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
         val callersByName = payload.calls.associateBy { it.name }
         val productionCaller = callersByName["bootstrapPluginConfig"]
@@ -462,6 +492,9 @@ class ToolsTest : BasePlatformTestCase() {
             20,
             payload.calls.size
         )
+        assertEquals(20, payload.returnedNodes)
+        assertFalse("Legacy hierarchy response must not expose a pagination cursor", payload.hasMore)
+        assertNull("Legacy hierarchy response must not expose a continuation cursor", payload.cursor)
         assertTrue(
             "Fixture should exercise the >20 direct test callers regression",
             callersByName.keys.any { it.startsWith("loadPluginConfigFromTest") }
@@ -482,7 +515,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = FindImplementationsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testFindImplementationsToolInvalidFile() = runBlocking {
@@ -494,7 +527,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals(
+            ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
+            errorText(result)
+        )
     }
 
     fun testFindImplementationsToolLanguageAndPositionExclusive() = runBlocking {
@@ -508,7 +545,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -520,23 +557,127 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", "com.example.Repository")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
     fun testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindImplementationsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
-
         val tool = FindImplementationsTool()
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
+    }
+
+    fun testTypeHierarchyToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testTypeHierarchyToolScalaFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "BaseService extends Worker")
+
+        val tool = TypeHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala type hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<TypeHierarchyResult>(errorTextless(result))
+        assertEquals("ABSTRACT_CLASS", payload.element.kind)
+        assertEquals("Scala", payload.element.language)
+        assertTrue("Hierarchy element should resolve BaseService", payload.element.name.contains("BaseService"))
+        val subtypes = payload.subtypes.map { it.name }
+        assertTrue("Employee and Contractor extend BaseService: $subtypes",
+            subtypes.any { it.contains("Employee") } && subtypes.any { it.contains("Contractor") })
+    }
+
+    fun testFindImplementationsToolScalaTraitFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFindImplementationsToolScalaTraitFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "Worker extends Named")
+        val tool = FindImplementationsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
+        val implementations = payload.implementations.map { it.name }
+        assertTrue("Employee and Contractor implement Worker: $implementations",
+            implementations.any { it.contains("Employee") } && implementations.any { it.contains("Contractor") })
+    }
+
+    fun testCallHierarchyToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testCallHierarchyToolScalaFixtureCoverageHook")
+        materializeScalaFixture("scala2-models.scala")
+        val usageSource = materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(usageSource, "runAll(worker: Worker)")
+        val tool = CallHierarchyTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-usage.scala"))
+            put("line", line)
+            put("column", column)
+            put("direction", "callees")
+            put("depth", 2)
+        })
+
+        assertFalse("Scala call hierarchy lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<CallHierarchyResult>(errorTextless(result))
+        assertTrue(
+            "Call hierarchy root should resolve runAll",
+            payload.element.name.contains("runAll")
+        )
+        assertTrue(
+            "runAll calls worker.work(...): ${payload.calls.map { it.name }}",
+            payload.calls.any { it.name == "Worker.work" }
+        )
+    }
+
+    fun testFindSuperMethodsToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFindSuperMethodsToolScalaFixtureCoverageHook")
+        val modelsSource = materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+        val (line, column) = findLineColumn(modelsSource, "work(task: String): String = s\"${'$'}name handled ${'$'}task\"")
+        val tool = FindSuperMethodsTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-models.scala"))
+            put("line", line)
+            put("column", column)
+        })
+
+        assertFalse("Scala find super methods lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
+        assertTrue(
+            "Worker trait super method should be included",
+            payload.hierarchy.any { it.containingClass.contains("Worker") && it.isInterface }
+        )
+    }
+
+    fun testFileStructureToolScalaFixtureCoverageHook() = runBlocking {
+        requireScalaToolCapability("testFileStructureToolScalaFixtureCoverageHook")
+        materializeScalaFixture("scala2-models.scala")
+        materializeScalaFixture("scala2-usage.scala")
+
+        val tool = FileStructureTool()
+        val result = tool.execute(project, buildJsonObject {
+            put("file", scalaFixtureProjectPath("scala2-usage.scala"))
+        })
+
+        assertFalse("Scala file structure lookup should succeed: ${errorText(result)}", result.isFailure)
+        val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
+        assertEquals("Scala", payload.language)
+        for (expected in listOf("object ServiceRunner (lines", "val defaultTask (line 4)", "var runCount (line 5)", "def runAll (worker)")) {
+            assertTrue("Structure should contain '$expected':\n${payload.structure}", payload.structure.contains(expected))
+        }
     }
 
     fun testFindClassToolInvalidScopeReturnsStructuredError() = runBlocking {
@@ -547,7 +688,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("scope", "totally_invalid")
         })
 
-        assertTrue("Should error with invalid scope", result.isError)
+        assertTrue("Should error with invalid scope", result.isFailure)
 
         val errorJson = json.parseToJsonElement(errorText(result)).jsonObject
         assertEquals("invalid_scope", errorJson["error"]?.jsonPrimitive?.content)
@@ -569,7 +710,7 @@ class ToolsTest : BasePlatformTestCase() {
             })
         })
 
-        assertTrue("Should error with malformed scope type", result.isError)
+        assertTrue("Should error with malformed scope type", result.isFailure)
 
         val errorJson = json.parseToJsonElement(errorText(result)).jsonObject
         assertEquals("invalid_scope", errorJson["error"]?.jsonPrimitive?.content)
@@ -578,6 +719,74 @@ class ToolsTest : BasePlatformTestCase() {
         assertEquals(
             listOf("project_files", "project_and_libraries", "project_production_files", "project_test_files"),
             errorJson["supportedValues"]?.jsonArray?.map { it.jsonPrimitive.content }
+        )
+    }
+
+    fun testFindClassToolSurfacesDumbModeFromContributorInsteadOfTruncating() = runBlocking {
+        // Dumb mode starting after the smart-mode gate makes contributors throw
+        // IndexNotReadyException mid-enumeration. That must reach AbstractMcpTool's
+        // translation into the standard retry error — not be swallowed into an empty
+        // result set cached as a complete page.
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.CLASS_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { IndexNotReadyException.create() }),
+            testRootDisposable
+        )
+
+        val result = FindClassTool().execute(project, buildJsonObject {
+            put("query", "UserService")
+        })
+
+        assertTrue(
+            "Dumb mode during the contributor loop must surface as an error, not as empty results",
+            result.isFailure
+        )
+        assertTrue(
+            "The standard dumb-mode retry guidance must surface. Got: ${errorText(result)}",
+            errorText(result).contains("ide_index_status")
+        )
+    }
+
+    fun testFindClassToolDoesNotSwallowCancellationIntoEmptyResults() {
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.CLASS_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { ProcessCanceledException() }),
+            testRootDisposable
+        )
+
+        val thrown = runCatching {
+            runBlocking {
+                FindClassTool().execute(project, buildJsonObject {
+                    put("query", "UserService")
+                })
+            }
+        }.exceptionOrNull()
+
+        assertNotNull(
+            "Cancellation must propagate, not turn into a complete-looking empty result",
+            thrown
+        )
+    }
+
+    fun testFindFileToolSurfacesDumbModeFromContributorInsteadOfTruncating() = runBlocking {
+        // Same contract as the FindClassTool test above, for the FILE_EP_NAME loop.
+        ExtensionTestUtil.maskExtensions(
+            ChooseByNameContributor.FILE_EP_NAME,
+            listOf<ChooseByNameContributor>(ThrowingClassContributor { IndexNotReadyException.create() }),
+            testRootDisposable
+        )
+
+        val result = FindFileTool().execute(project, buildJsonObject {
+            put("query", "UserService.java")
+        })
+
+        assertTrue(
+            "Dumb mode during the contributor loop must surface as an error, not as empty results",
+            result.isFailure
+        )
+        assertTrue(
+            "The standard dumb-mode retry guidance must surface. Got: ${errorText(result)}",
+            errorText(result).contains("ide_index_status")
         )
     }
 
@@ -662,8 +871,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("pageSize", 10)
         })
 
-        assertFalse("Search should succeed", result.isError)
-        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertFalse("Search should succeed", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
         assertEquals(listOf("mappers/UserMapper.xml"), files)
@@ -691,11 +900,149 @@ class ToolsTest : BasePlatformTestCase() {
             put("pageSize", 10)
         })
 
-        assertFalse("Regex search should succeed", result.isError)
-        val resultJson = json.parseToJsonElement((result.content.first() as ContentBlock.Text).text).jsonObject
+        assertFalse("Regex search should succeed", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
         val files = resultJson["matches"]!!.jsonArray.map { it.jsonObject["file"]!!.jsonPrimitive.content }
 
         assertEquals(listOf("src/CommandRunner.java"), files)
+    }
+
+    fun testSearchTextToolFindsSubstringOfUnderscoreSeparatedToken() = runBlocking {
+        myFixture.addFileToProject(
+            "infra/alerts.yaml",
+            """
+            rules:
+              - alert: StuckCases
+                expr: 'max(a_word_and_another_word) > 0'
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "a_word")
+        })
+
+        assertFalse("Search should not return an error", result.isFailure)
+        val resultJson = json.parseToJsonElement((result.content.first() as TextContent).text).jsonObject
+        val matches = resultJson["matches"]!!.jsonArray
+        assertTrue(
+            "Should find 'a_word' as a substring of 'a_word_and_another_word' — " +
+                    "matching IDE Find in Files behavior. Got 0 matches.",
+            matches.isNotEmpty()
+        )
+        val files = matches.map { it.jsonObject["file"]!!.jsonPrimitive.content }
+        assertTrue(
+            "Match should be in infra/alerts.yaml, got: $files",
+            files.any { it.endsWith("alerts.yaml") }
+        )
+    }
+
+
+    fun testSearchTextToolContextFilterLimitsToComments() = runBlocking {
+        myFixture.addFileToProject(
+            "src/Example.java",
+            """
+            // needle in a comment
+            class Example {
+                String s = "needle in a string";
+                void needle_in_code() {}
+            }
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "needle")
+            put("context", "comments")
+            put("pageSize", 50)
+        })
+
+        assertFalse("Search should succeed", result.isFailure)
+        val matches = json.parseToJsonElement((result.content.first() as TextContent).text)
+            .jsonObject["matches"]!!.jsonArray
+        val contextTypes = matches.map { it.jsonObject["contextType"]!!.jsonPrimitive.content }
+        assertTrue("Should have at least one comment match", contextTypes.any { it == "COMMENT" })
+        assertTrue("Should not return code or string matches", contextTypes.all { it == "COMMENT" })
+    }
+
+    fun testSearchTextToolContextCodeKeepsNumericLiteralMatches() = runBlocking {
+        myFixture.addFileToProject(
+            "src/PortConfig.java",
+            """
+            class PortConfig {
+                int port = 8080;
+                String portLabel = "8080";
+            }
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val codeResult = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "8080")
+            put("context", "code")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", codeResult.isFailure)
+        val codeLines = json.parseToJsonElement(errorText(codeResult)).jsonObject["matches"]!!.jsonArray
+            .map { it.jsonObject["context"]!!.jsonPrimitive.content }
+        assertTrue(
+            "context=code must keep the match on the numeric literal ('int port = 8080;'). Got: $codeLines",
+            codeLines.any { it.contains("int port") }
+        )
+        assertFalse(
+            "context=code must not return the string literal match. Got: $codeLines",
+            codeLines.any { it.contains("portLabel") }
+        )
+
+        val allResult = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "8080")
+            put("context", "all")
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", allResult.isFailure)
+        val allMatches = json.parseToJsonElement(errorText(allResult)).jsonObject["matches"]!!.jsonArray
+            .map { it.jsonObject }
+        val numericMatch = allMatches.firstOrNull { it["context"]!!.jsonPrimitive.content.contains("int port") }
+        val stringMatch = allMatches.firstOrNull { it["context"]!!.jsonPrimitive.content.contains("portLabel") }
+        assertNotNull("context=all should return the numeric literal match", numericMatch)
+        assertNotNull("context=all should return the string literal match", stringMatch)
+        assertEquals(
+            "A numeric literal is code, not a string literal",
+            "CODE",
+            numericMatch!!["contextType"]!!.jsonPrimitive.content
+        )
+        assertEquals(
+            "A string literal must stay classified as STRING_LITERAL",
+            "STRING_LITERAL",
+            stringMatch!!["contextType"]!!.jsonPrimitive.content
+        )
+    }
+
+    fun testSearchTextToolCaseInsensitivePlainText() = runBlocking {
+        myFixture.addFileToProject(
+            "config/settings.properties",
+            """
+            MaxRetryCount=3
+            max_timeout_seconds=30
+            """.trimIndent()
+        )
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        val result = SearchTextTool().execute(project, buildJsonObject {
+            put("query", "maxretrycount")
+            put("caseSensitive", false)
+            put("pageSize", 10)
+        })
+
+        assertFalse("Search should succeed", result.isFailure)
+        val matches = json.parseToJsonElement((result.content.first() as TextContent).text)
+            .jsonObject["matches"]!!.jsonArray
+        assertTrue(
+            "Case-insensitive search for 'maxretrycount' should match 'MaxRetryCount'",
+            matches.isNotEmpty()
+        )
     }
 
     // Intelligence Tools Tests
@@ -704,7 +1051,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = GetDiagnosticsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing file", result.isError)
+        assertTrue("Should error with missing file", result.isFailure)
     }
 
     fun testGetDiagnosticsToolInvalidFile() = runBlocking {
@@ -714,19 +1061,18 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     fun testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindUsagesToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
-
         val tool = FindUsagesTool()
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
             put("symbol", "invalidSymbolWithoutHash")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -738,7 +1084,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = RenameSymbolTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testRenameSymbolToolInvalidFile() = runBlocking {
@@ -751,7 +1097,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("newName", "newSymbol")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     fun testRenameSymbolToolBlankName() = runBlocking {
@@ -764,7 +1111,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("newName", "   ")
         })
 
-        assertTrue("Should error with blank name", result.isError)
+        assertTrue("Should error with blank name", result.isFailure)
     }
 
     fun testRenameSymbolToolCompiledElementReturnsHelpfulError() = runBlocking {
@@ -804,8 +1151,8 @@ class ToolsTest : BasePlatformTestCase() {
         // The rename must not succeed — either the compiled check fires (error mentions
         // "compiled") or the element didn't resolve (some other error). Either way, no
         // SEVERE "Plugin to blame" assertion must fire, which is the key regression property.
-        assertTrue("Renaming a JDK type reference must not succeed", result.isError)
-        val msg = (result.content.firstOrNull() as? ContentBlock.Text)?.text ?: ""
+        assertTrue("Renaming a JDK type reference must not succeed", result.isFailure)
+        val msg = (result.content.firstOrNull() as? TextContent)?.text ?: ""
         assertFalse(
             "Success response must not be returned for a compiled/unresolved symbol",
             msg.contains("Successfully renamed", ignoreCase = true)
@@ -831,7 +1178,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = SafeDeleteTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testSafeDeleteToolInvalidFile() = runBlocking {
@@ -843,7 +1190,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     // File Structure Tool Tests
@@ -852,7 +1200,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = FileStructureTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testFileStructureToolInvalidFile() = runBlocking {
@@ -862,12 +1210,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "nonexistent/file.java")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.java", errorText(result))
     }
 
     fun testFileStructureToolTypeAliasFixtureCoverageHook() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFileStructureToolTypeAliasFixtureCoverageHook")) return@runBlocking
-
         addWebstormIntegrationFixture("types/type-alias-vs-interface.ts")
 
         val tool = FileStructureTool()
@@ -875,7 +1222,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", fixtureProjectPath("types/type-alias-vs-interface.ts"))
         })
 
-        assertFalse("Type alias fixture should be accepted by file structure tool", result.isError)
+        assertFalse("Type alias fixture should be accepted by file structure tool", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertTrue("Type alias output should remain distinct from classes", payload.structure.contains("typealias FileStructureAlias"))
         assertFalse("Type alias output should not regress back to class formatting", payload.structure.contains("class FileStructureAlias"))
@@ -884,8 +1231,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testFindImplementationsToolInterfaceImplementsFixtureCoverageHook() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindImplementationsToolInterfaceImplementsFixtureCoverageHook")) return@runBlocking
-
         addWebstormIntegrationFixture("interface-implements/thoth-client-interface.ts")
 
         val tool = FindImplementationsTool()
@@ -894,7 +1239,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", fixtureSymbol("interface-implements/thoth-client-interface.ts", "ThothClient"))
         })
 
-        assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isError)
+        assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isFailure)
         val payload = json.decodeFromString<ImplementationResult>(errorTextless(result))
         assertTrue(
             "HttpThothClient should remain the regression implements target",
@@ -907,8 +1252,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testFindSuperMethodsToolInterfaceImplementsMethodFixtureCoverageHook() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindSuperMethodsToolInterfaceImplementsMethodFixtureCoverageHook")) return@runBlocking
-
         addWebstormIntegrationFixture("interface-implements/thoth-client-interface.ts")
 
         val tool = FindSuperMethodsTool()
@@ -918,7 +1261,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 3)
         })
 
-        assertFalse("Class implements method fixture should be accepted by find super methods", result.isError)
+        assertFalse("Class implements method fixture should be accepted by find super methods", result.isFailure)
         val payload = json.decodeFromString<SuperMethodsResult>(errorTextless(result))
         assertEquals("fetch", payload.method.name)
         assertTrue(
@@ -928,8 +1271,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testFileStructureToolTypeImportAliasFixtureCoverageHook() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFileStructureToolTypeImportAliasFixtureCoverageHook")) return@runBlocking
-
         addWebstormIntegrationFixtures(
             "aliases/alias-source.ts",
             "aliases/import-type-alias.ts"
@@ -940,7 +1281,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", fixtureProjectPath("aliases/import-type-alias.ts"))
         })
 
-        assertFalse("Type import alias fixture should be accepted by file structure tool", result.isError)
+        assertFalse("Type import alias fixture should be accepted by file structure tool", result.isFailure)
         val structure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
         assertTrue("Type import alias coverage should mention ImportedPluginNameAlias", structure.contains("typealias ImportedPluginNameAlias"))
         assertTrue("Type import alias coverage should keep importedPluginName visible", structure.contains("var importedPluginName"))
@@ -948,8 +1289,6 @@ class ToolsTest : BasePlatformTestCase() {
     }
 
     fun testFileStructureToolAsConstDerivedTypeFixtureCoverageHook() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFileStructureToolAsConstDerivedTypeFixtureCoverageHook")) return@runBlocking
-
         addWebstormIntegrationFixtures(
             "derived/const-derived-types.ts"
         )
@@ -959,12 +1298,12 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", fixtureProjectPath("derived/const-derived-types.ts"))
         })
 
-        assertFalse("as const derived fixture should be accepted by file structure tool", result.isError)
+        assertFalse("as const derived fixture should be accepted by file structure tool", result.isFailure)
         val derivedStructure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
         assertTrue("as const coverage should mention THOTH_STATUS", derivedStructure.contains("var THOTH_STATUS"))
-        assertTrue("Derived type coverage should mention ThothStatus", derivedStructure.contains("ThothStatus"))
+        assertTrue("Derived type coverage should mention ThothStatus", derivedStructure.contains("typealias ThothStatus"))
         assertTrue("Derived type coverage should mention DEFAULT_THOTH_STATUS", derivedStructure.contains("var DEFAULT_THOTH_STATUS"))
-        assertTrue("Derived type coverage should mention formatThothStatus", derivedStructure.contains("formatThothStatus"))
+        assertTrue("Derived type coverage should mention formatThothStatus", derivedStructure.contains("function formatThothStatus"))
     }
 
     fun testJavaStructureHandlerBuildsPhysicalSourceStructure() {
@@ -1080,23 +1419,29 @@ class ToolsTest : BasePlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject { })
 
-        assertFalse("get_active_file should succeed", result.isError)
+        assertFalse("get_active_file should succeed", result.isFailure)
         assertTrue("Should have content", result.content.isNotEmpty())
 
         val content = result.content.first()
-        assertTrue("Content should be text", content is ContentBlock.Text)
+        assertTrue("Content should be text", content is TextContent)
 
-        val textContent = (content as ContentBlock.Text).text
+        val textContent = (content as TextContent).text
         val resultJson = json.parseToJsonElement(textContent).jsonObject
 
-        assertNotNull("Result should have activeFiles", resultJson["activeFiles"])
+        val activeFiles = resultJson["activeFiles"]?.jsonArray
+        assertNotNull("Result should have activeFiles", activeFiles)
+        assertEquals(
+            "No editor was opened by this test, so the tool must report an empty list: $activeFiles",
+            0,
+            activeFiles!!.size
+        )
     }
 
     fun testOpenFileToolMissingParams() = runBlocking {
         val tool = OpenFileTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testOpenFileToolInvalidFile() = runBlocking {
@@ -1106,7 +1451,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     fun testOpenFileToolColumnWithoutLine() = runBlocking {
@@ -1117,7 +1463,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 5)
         })
 
-        assertTrue("Should error with column without line", result.isError)
+        assertTrue("Should error with column without line", result.isFailure)
     }
 
     fun testOpenFileToolInvalidLine() = runBlocking {
@@ -1128,7 +1474,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("line", 0)
         })
 
-        assertTrue("Should error with line < 1", result.isError)
+        assertTrue("Should error with line < 1", result.isFailure)
     }
 
     // Reformat Code Tool Tests
@@ -1137,7 +1483,7 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = ReformatCodeTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
+        assertTrue("Should error with missing params", result.isFailure)
     }
 
     fun testReformatCodeToolInvalidFile() = runBlocking {
@@ -1147,7 +1493,8 @@ class ToolsTest : BasePlatformTestCase() {
             put("file", "nonexistent/file.kt")
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals("File not found: nonexistent/file.kt", errorText(result))
     }
 
     fun testReformatCodeToolStartLineWithoutEndLine() = runBlocking {
@@ -1158,7 +1505,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("startLine", 1)
         })
 
-        assertTrue("Should error when startLine provided without endLine", result.isError)
+        assertTrue("Should error when startLine provided without endLine", result.isFailure)
     }
 
     fun testReformatCodeToolEndLineWithoutStartLine() = runBlocking {
@@ -1169,7 +1516,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("endLine", 10)
         })
 
-        assertTrue("Should error when endLine provided without startLine", result.isError)
+        assertTrue("Should error when endLine provided without startLine", result.isFailure)
     }
 
     fun testReformatCodeToolInvalidLineRange() = runBlocking {
@@ -1181,7 +1528,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("endLine", 5)
         })
 
-        assertTrue("Should error when endLine < startLine", result.isError)
+        assertTrue("Should error when endLine < startLine", result.isFailure)
     }
 
     fun testReformatCodeToolStartLineLessThanOne() = runBlocking {
@@ -1193,7 +1540,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("endLine", 5)
         })
 
-        assertTrue("Should error when startLine < 1", result.isError)
+        assertTrue("Should error when startLine < 1", result.isFailure)
     }
 
     // FindSuperMethods Tool Tests (language+symbol)
@@ -1202,8 +1549,11 @@ class ToolsTest : BasePlatformTestCase() {
         val tool = FindSuperMethodsTool()
 
         val result = tool.execute(project, buildJsonObject { })
-        assertTrue("Should error with missing params", result.isError)
-        assertTrue("Should mention required params", errorText(result).contains(ErrorMessages.SYMBOL_OR_POSITION_REQUIRED))
+        assertTrue("Should error with missing params", result.isFailure)
+        assertTrue(
+            "Should mention required params",
+            errorText(result).contains(ErrorMessages.SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED)
+        )
     }
 
     fun testFindSuperMethodsToolInvalidFile() = runBlocking {
@@ -1215,7 +1565,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with invalid file", result.isError)
+        assertTrue("Should error with invalid file", result.isFailure)
+        assertEquals(
+            ErrorMessages.noElementAtPosition("nonexistent/file.kt", 1, 1),
+            errorText(result)
+        )
     }
 
     fun testFindSuperMethodsToolPartialPosition() = runBlocking {
@@ -1226,7 +1580,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error with partial position params", result.isError)
+        assertTrue("Should error with partial position params", result.isFailure)
         assertTrue("Should mention missing file", errorText(result).contains("file"))
     }
 
@@ -1237,7 +1591,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", "com.example.UserServiceImpl#getUser(String)")
         })
 
-        assertTrue("Should error when symbol provided without language", result.isError)
+        assertTrue("Should error when symbol provided without language", result.isFailure)
         assertTrue("Should mention missing language", errorText(result).contains("language"))
     }
 
@@ -1252,7 +1606,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("column", 1)
         })
 
-        assertTrue("Should error when both language+symbol and file+line+column provided", result.isError)
+        assertTrue("Should error when both language+symbol and file+line+column provided", result.isFailure)
         assertTrue("Should mention mutual exclusivity", errorText(result).contains("Cannot specify both"))
     }
 
@@ -1264,13 +1618,11 @@ class ToolsTest : BasePlatformTestCase() {
             put("symbol", "com.example.UserServiceImpl#getUser(String)")
         })
 
-        assertTrue("Should error with unsupported language", result.isError)
+        assertTrue("Should error with unsupported language", result.isFailure)
         assertTrue("Should mention unsupported language", errorText(result).contains("Cobol"))
     }
 
     fun testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testFindSuperMethodsToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
-
         val tool = FindSuperMethodsTool()
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
@@ -1279,15 +1631,13 @@ class ToolsTest : BasePlatformTestCase() {
 
         // Representative routing check only: JS super-method semantics may not be meaningful in minimal fixtures,
         // but malformed symbol grammar must still be rejected by the JS/TS symbol handler path.
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
     }
 
     fun testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath() = runBlocking {
-        if (!requireJsTsToolRoutingCapability("testCallHierarchyToolJavaScriptLanguageSymbolUsesHandlerResolutionPath")) return@runBlocking
-
         val tool = CallHierarchyTool()
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
@@ -1295,7 +1645,7 @@ class ToolsTest : BasePlatformTestCase() {
             put("direction", "callers")
         })
 
-        assertTrue("Malformed JS symbol should fail deterministically", result.isError)
+        assertTrue("Malformed JS symbol should fail deterministically", result.isFailure)
         val message = errorText(result)
         assertTrue("Should go through JS/TS symbol handler", message.contains("unsupported_grammar:"))
         assertFalse("Should not fail early with unsupported language", message.contains("Unsupported language for symbol references"))
@@ -1309,15 +1659,17 @@ class ToolsTest : BasePlatformTestCase() {
 
         val definitions = registry.getToolDefinitions()
 
+        assertTrue("Registry should expose built-in tools, otherwise this loop asserts nothing", definitions.isNotEmpty())
+
         for (definition in definitions) {
             assertNotNull("Definition should have name", definition.name)
             assertTrue("Name should not be empty", definition.name.isNotEmpty())
 
             assertNotNull("Definition should have description", definition.description)
-            assertTrue("Description should not be empty", definition.description.isNotEmpty())
+            assertTrue("Description should not be empty", definition.description!!.isNotEmpty())
 
             assertNotNull("Definition should have inputSchema", definition.inputSchema)
-            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema[SchemaConstants.TYPE]?.jsonPrimitive?.content)
+            assertEquals(SchemaConstants.TYPE_OBJECT, definition.inputSchema.type)
         }
     }
 
@@ -1352,12 +1704,58 @@ class ToolsTest : BasePlatformTestCase() {
         relativePaths.forEach(::addWebstormIntegrationFixture)
     }
 
+    private var jsTsFixtureRootRegistered = false
+
     private fun addWebstormIntegrationFixture(relativePath: String) {
         val sourcePath = Path.of(JS_TS_FIXTURE_SOURCE_ROOT).resolve(relativePath)
-        myFixture.addFileToProject(fixtureProjectPath(relativePath), Files.readString(sourcePath))
+        writeWebstormIntegrationFile(relativePath, Files.readString(sourcePath))
+    }
+
+    /**
+     * Materializes JS/TS fixture content on the real filesystem, under a registered source root.
+     *
+     * Not `myFixture.addFileToProject`: that writes to the in-memory `temp://` VFS, which
+     * `LocalFileSystem` — the only filesystem the production resolvers consult — cannot see.
+     * See [com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase].
+     */
+    private fun writeWebstormIntegrationFile(relativePath: String, content: String) {
+        if (!jsTsFixtureRootRegistered) {
+            registerSourceRoot(JS_TS_FIXTURE_PROJECT_ROOT)
+            jsTsFixtureRootRegistered = true
+        }
+        writeProjectFile(fixtureProjectPath(relativePath), content)
+    }
+
+    private var scalaFixtureRootRegistered = false
+
+    /**
+     * Materializes Scala fixture content on the real filesystem and waits for indexing to
+     * finish, like [writeProjectFile] — without this, a tool call issued right after writing
+     * the file can race the background reindex and fail with [IndexNotReadyException].
+     */
+    private fun materializeScalaFixture(relativePath: String): String {
+        // Index-backed searches (inheritors, callees in scope) only see files under a source root.
+        if (!scalaFixtureRootRegistered) {
+            registerSourceRoot(SCALA_FIXTURE_PROJECT_ROOT)
+            scalaFixtureRootRegistered = true
+        }
+        val sourcePath = Path.of(SCALA_FIXTURE_SOURCE_ROOT).resolve(relativePath)
+        val source = Files.readString(sourcePath)
+        writeProjectFile(scalaFixtureProjectPath(relativePath), source)
+        return source
     }
 
     private fun fixtureProjectPath(relativePath: String): String = "$JS_TS_FIXTURE_PROJECT_ROOT/$relativePath"
+    private fun scalaFixtureProjectPath(relativePath: String): String = "$SCALA_FIXTURE_PROJECT_ROOT/$relativePath"
+
+    private fun findLineColumn(source: String, marker: String): Pair<Int, Int> {
+        val offset = source.indexOf(marker)
+        check(offset >= 0) { "Could not find marker '$marker'" }
+        val line = source.substring(0, offset).count { it == '\n' } + 1
+        val lineStart = source.lastIndexOf('\n', offset - 1).let { if (it == -1) 0 else it + 1 }
+        val column = offset - lineStart + 1
+        return line to column
+    }
 
     private fun fixtureSymbol(relativePath: String, exportName: String): String {
         return "$JS_TS_FIXTURE_PROJECT_ROOT/${relativePath.removeJsTsExtension()}#$exportName"
@@ -1373,8 +1771,26 @@ class ToolsTest : BasePlatformTestCase() {
             .removeSuffix(".cjs")
     }
 
-    private fun errorTextless(result: com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult): String =
-        (result.content.first() as ContentBlock.Text).text
+    private fun errorTextless(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
+        (result.content.first() as TextContent).text
+
+    /**
+     * Simulates a contributor hitting mid-search cancellation or a dumb-mode transition:
+     * both throw from inside the contributor loop after the smart-mode entry gate passed.
+     */
+    class ThrowingClassContributor(
+        private val failure: () -> RuntimeException
+    ) : ChooseByNameContributor {
+        override fun getNames(project: com.intellij.openapi.project.Project, includeNonProjectItems: Boolean): Array<String> =
+            throw failure()
+
+        override fun getItemsByName(
+            name: String,
+            pattern: String,
+            project: com.intellij.openapi.project.Project,
+            includeNonProjectItems: Boolean
+        ): Array<NavigationItem> = emptyArray()
+    }
 
     class LegacyContributor(
         private val itemsByName: Map<String, Array<NavigationItem>>
@@ -1390,22 +1806,18 @@ class ToolsTest : BasePlatformTestCase() {
         ): Array<NavigationItem> = itemsByName[name] ?: emptyArray()
     }
 
-    private fun requireJsTsToolRoutingCapability(testName: String): Boolean {
-        if (!PluginDetectors.javaScript.isAvailable) {
-            System.err.println("$testName: skipped - JavaScript plugin not available")
-            return false
-        }
-        return try {
-            Class.forName("com.intellij.lang.javascript.psi.JSNamedElement")
-            if (LanguageHandlerRegistry.getSymbolReferenceHandlerByLanguageName("JavaScript") == null) {
-                System.err.println("$testName: skipped - JavaScript symbol reference handler not registered")
-                false
-            } else {
-                true
-            }
+    private fun requireScalaToolCapability(testName: String) {
+        Assume.assumeTrue("$testName: skipped - Scala plugin not available", PluginDetectors.scala.isAvailable)
+
+        val scalaPsiAvailable = try {
+            Class.forName("org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.ScTypeDefinition")
+            true
         } catch (_: ClassNotFoundException) {
-            System.err.println("$testName: skipped - JavaScript PSI classes unavailable")
             false
         }
+        Assume.assumeTrue("$testName: skipped - Scala PSI classes unavailable", scalaPsiAvailable)
+
+        val hasScalaTypeHierarchy = LanguageHandlerRegistry.getSupportedLanguagesForTypeHierarchy().contains("Scala")
+        Assume.assumeTrue("$testName: skipped - Scala handlers not registered", hasScalaTypeHierarchy)
     }
 }

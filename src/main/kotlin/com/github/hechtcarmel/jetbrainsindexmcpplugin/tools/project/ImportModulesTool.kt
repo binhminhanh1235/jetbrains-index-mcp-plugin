@@ -1,13 +1,13 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.MavenImportResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
-import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -42,7 +42,7 @@ class ImportModulesTool : AbstractMcpTool() {
         Example: { "paths": ["/Users/dev/casehub/drafthouse", "/Users/dev/casehub/worker"] }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .property("paths", kotlinx.serialization.json.buildJsonObject {
             put("type", kotlinx.serialization.json.JsonPrimitive("array"))
             put("description", kotlinx.serialization.json.JsonPrimitive(
@@ -55,7 +55,7 @@ class ImportModulesTool : AbstractMcpTool() {
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val pathsJson = arguments["paths"]?.jsonArray
             ?: return createErrorResult("Missing required parameter: paths (array of directory paths)")
 
@@ -91,16 +91,12 @@ class ImportModulesTool : AbstractMcpTool() {
                 failed.add("$path: could not resolve directory in VFS")
                 continue
             }
-            try {
-                val modules = linkMavenProject(project, dirVf)
-                if (modules != null) {
-                    imported.add(path)
-                } else {
+            when (val result = ProjectUtils.importMavenModule(project, dirVf)) {
+                is MavenImportResult.Success -> imported.add(path)
+                is MavenImportResult.MavenUnavailable ->
                     failed.add("$path: Maven plugin not available — is it enabled?")
-                }
-            } catch (e: Exception) {
-                val cause = if (e is java.lang.reflect.InvocationTargetException) e.cause ?: e else e
-                failed.add("$path: ${cause.message}")
+                is MavenImportResult.Failed ->
+                    failed.add("$path: ${result.error}")
             }
         }
 
@@ -125,25 +121,5 @@ class ImportModulesTool : AbstractMcpTool() {
         } else {
             createSuccessResult(lines.joinToString("\n"))
         }
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun linkMavenProject(project: Project, directoryVf: VirtualFile): List<Module>? {
-        val builderClass = try {
-            Class.forName("org.jetbrains.idea.maven.wizards.MavenProjectAsyncBuilder")
-        } catch (_: ClassNotFoundException) {
-            return null
-        }
-        val providerClass = Class.forName(
-            "com.intellij.openapi.externalSystem.service.project.IdeModifiableModelsProvider"
-        )
-        val builder = builderClass.getDeclaredConstructor().newInstance()
-        val commitSync = builderClass.getMethod(
-            "commitSync",
-            Project::class.java,
-            VirtualFile::class.java,
-            providerClass
-        )
-        return commitSync.invoke(builder, project, directoryVf, null) as List<Module>
     }
 }

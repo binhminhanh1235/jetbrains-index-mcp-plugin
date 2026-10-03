@@ -13,6 +13,7 @@ jobs:
   release:
     name: Publish Plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -20,7 +21,7 @@ jobs:
 
       # Free GitHub Actions Environment Disk Space
       - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: false
           large-packages: false
@@ -44,12 +45,25 @@ jobs:
         with:
           cache-read-only: true
 
-      # Update the Unreleased section with the current release note
+      # Move the Unreleased section under the released version. Skipped when CHANGELOG.md
+      # already contains this version's section (entries moved manually in the version-bump PR).
+      # Runs even when the release body is empty so [Unreleased] entries still get moved.
       - name: Patch Changelog
-        if: ${{ github.event.release.body != '' }}
         env:
           CHANGELOG: ${{ github.event.release.body }}
         run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          if grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "CHANGELOG.md already contains a [$VERSION] section — skipping patch."
+            exit 0
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            echo "Release body is empty — patching changelog from [Unreleased] entries."
+            ./gradlew patchChangelog
+            exit 0
+          fi
+
           RELEASE_NOTE="./build/tmp/release_note.txt"
           mkdir -p "$(dirname "$RELEASE_NOTE")"
           echo "$CHANGELOG" > $RELEASE_NOTE
@@ -71,12 +85,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload ${{ github.event.release.tag_name }} ./build/distributions/*
 
-      # Create a pull request
+      # Open a PR with the patched CHANGELOG.md (no-op when Patch Changelog was skipped)
       - name: Create Pull Request
-        if: ${{ steps.properties.outputs.changelog != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged — skipping pull request."
+            exit 0
+          fi
+
           VERSION="${{ github.event.release.tag_name }}"
           BRANCH="changelog-update-$VERSION"
           LABEL="release changelog"

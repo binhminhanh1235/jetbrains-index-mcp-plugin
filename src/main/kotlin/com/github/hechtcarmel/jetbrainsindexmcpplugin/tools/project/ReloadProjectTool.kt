@@ -1,8 +1,9 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
@@ -39,11 +40,11 @@ class ReloadProjectTool : AbstractMcpTool() {
         Example: { }
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val dataManager = ProjectDataManager.getInstance()
         val lines = mutableListOf<String>()
         var anyScheduled = false
@@ -62,7 +63,7 @@ class ReloadProjectTool : AbstractMcpTool() {
                 if (hasBuildFile) {
                     lines.add(
                         "$label: skipped — build file found on disk but project is not linked in IntelliJ. " +
-                        "Open the ${label} tool window and click 'Import' or 'Link' to register it first."
+                        "Use ide_link_build_system to link it, or use ide_open_project with autoLink: true."
                     )
                 }
                 // if no build file and not linked, simply don't mention it

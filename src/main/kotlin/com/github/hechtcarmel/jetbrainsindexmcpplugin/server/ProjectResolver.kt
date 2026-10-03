@@ -4,10 +4,13 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectMode
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
 import com.intellij.ide.impl.OpenProjectTask
+import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
@@ -59,13 +62,13 @@ internal fun buildAvailableProjectsJson(
 internal fun buildStructuredErrorResult(
     payload: JsonObject,
     format: McpSettings.ResponseFormat = McpSettings.ResponseFormat.JSON
-): ToolCallResult {
+): CallToolResult {
     val json = Json { encodeDefaults = true; prettyPrint = false }
     return try {
         val jsonText = json.encodeToString(payload)
-        ToolCallResult(
+        CallToolResult(
             content = listOf(
-                ContentBlock.Text(
+                TextContent(
                     text = ResponseFormatter.formatStructuredPayload(jsonText, format)
                 )
             ),
@@ -73,8 +76,8 @@ internal fun buildStructuredErrorResult(
         )
     } catch (e: Exception) {
         val message = e.message?.takeIf { it.isNotBlank() } ?: "unknown error"
-        ToolCallResult(
-            content = listOf(ContentBlock.Text(text = "Response formatting failed: $message")),
+        CallToolResult(
+            content = listOf(TextContent(text = "Response formatting failed: $message")),
             isError = true
         )
     }
@@ -111,7 +114,7 @@ object ProjectResolver {
 
     data class Result(
         val project: Project? = null,
-        val errorResult: ToolCallResult? = null,
+        val errorResult: CallToolResult? = null,
         val isError: Boolean = false
     )
 
@@ -177,6 +180,16 @@ object ProjectResolver {
                 return Result(project = parentMatch)
             }
 
+            // 4. Match if the given path is inside a module content root. Workspace
+            // sub-projects need this: an ide_open_workspace aggregator's basePath is a
+            // generated directory that shares no prefix with the real module roots, so a
+            // sub-path of a sub-project fails all of the passes above. Runs last so it
+            // cannot reroute any path the earlier passes already resolve.
+            val contentRootParentMatch = findProjectByContentRootPrefix(openProjects, normalizedPath)
+            if (contentRootParentMatch != null) {
+                return Result(project = contentRootParentMatch)
+            }
+
             return Result(
                 isError = true,
                 errorResult = buildStructuredErrorResult(
@@ -232,6 +245,34 @@ object ProjectResolver {
             }
         }
         return null
+    }
+
+    /**
+     * Finds the project owning a module content root that contains the given path,
+     * preferring the longest (most specific) matching root — mirroring
+     * [ProjectUtils.getRelativePath]'s content-root matching for file paths.
+     */
+    private fun findProjectByContentRootPrefix(projects: List<Project>, normalizedPath: String): Project? {
+        var bestProject: Project? = null
+        var bestRootLength = -1
+        for (project in projects) {
+            try {
+                for (module in ModuleManager.getInstance(project).modules) {
+                    for (root in ModuleRootManager.getInstance(module).contentRoots) {
+                        val rootPath = normalizePath(root.path)
+                        val matches = normalizedPath == rootPath ||
+                            normalizedPath.startsWith("$rootPath/")
+                        if (matches && rootPath.length > bestRootLength) {
+                            bestProject = project
+                            bestRootLength = rootPath.length
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                LOG.debug("Failed to check module content roots for project ${project.name}", e)
+            }
+        }
+        return bestProject
     }
 
     /**
@@ -332,7 +373,7 @@ object ProjectResolver {
                         return buildErrorResult("Failed to reopen managed project: $normalizedPath", projectPath)
                     }
                 modeService.markReopened(normalizedPath)
-                modeService.resetInactivityTimer(project)
+                modeService.resetInactivityTimer(project, "auto-open")
                 return Result(project = project)
             }
 
@@ -377,7 +418,7 @@ object ProjectResolver {
             val project = reopenAndAwaitSmartMode(fallbackPath)
             if (project != null) {
                 modeService?.markReopened(fallbackPath)
-                modeService?.resetInactivityTimer(project)
+                modeService?.resetInactivityTimer(project, "auto-open")
                 return Result(project = project)
             }
             LOG.warn("reopenAndAwaitSmartMode returned null for null-path fallback: $fallbackPath — ProjectManagerEx.openProjectAsync failed or was cancelled")
@@ -405,7 +446,8 @@ object ProjectResolver {
                 .find { normalizePath(it.basePath ?: "") == normalizePath(path) }
                 ?: withContext(NonCancellable) {
                     try {
-                        ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), openTask())
+                        TrustedProjects.setProjectTrusted(Path.of(path), true)
+                        ProjectManagerEx.getInstanceEx().openProjectAsync(Path.of(path), ProjectUtils.openTask())
                     } catch (e: Throwable) {
                         if (e.message?.contains("already opened") == true) {
                             ProjectManager.getInstance().openProjects
@@ -445,9 +487,6 @@ object ProjectResolver {
 
         return project
     }
-
-    private fun openTask(): OpenProjectTask =
-        OpenProjectTask.build().withForceOpenInNewFrame(true)
 
     private fun buildErrorResult(message: String, projectPath: String): Result {
         val openProjects = ProjectManager.getInstance().openProjects.filter { !it.isDefault }

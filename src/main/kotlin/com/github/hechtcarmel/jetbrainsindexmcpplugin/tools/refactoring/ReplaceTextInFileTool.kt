@@ -1,0 +1,169 @@
+package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiDocumentManager
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+class ReplaceTextInFileTool : AbstractMcpTool() {
+
+    override val name = ToolNames.REPLACE_TEXT_IN_FILE
+
+    override val description = """
+        Find and replace text in a file using IntelliJ's Document API.
+
+        Performs plain text or regex replacement through IntelliJ's document model,
+        so changes are immediately visible to the index, PSI, and all other IDE tools
+        without needing ide_sync_files.
+
+        Use this for mechanical text substitutions across a file — e.g., replacing a
+        method call wrapper, updating import paths, or renaming a local pattern. For
+        structural refactoring (renaming symbols across the project), use
+        ide_refactor_rename instead.
+
+        Returns the number of replacements made and affected line numbers.
+
+        Examples:
+        - {"file": "src/Service.java", "searchText": "OldHelper.wrap(", "replaceText": "("}
+        - {"file": "src/config.ts", "searchText": "localhost:3000", "replaceText": "localhost:8080"}
+        - {"file": "src/Utils.java", "searchText": "LOG\\.debug\\((.*)\\)", "replaceText": "LOG.trace($1)", "regex": true}
+    """.trimIndent()
+
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
+        .projectPath()
+        .file()
+        .stringProperty("searchText", "Text to find. Treated as literal unless regex is true.", required = true)
+        .stringProperty("replaceText", "Replacement text. Passed through as-is (no escape processing). Supports regex group references (\$1, \$2) when regex is true.", required = true)
+        .booleanProperty(ParamNames.REGEX, "Treat searchText as a regular expression. Default: false.")
+        .booleanProperty(ParamNames.CASE_SENSITIVE, "Case-sensitive matching. Default: true.")
+        .build()
+
+    @Serializable
+    data class ReplaceTextResult(
+        val success: Boolean,
+        val file: String,
+        val replacements: Int,
+        val message: String,
+        val affectedLines: List<Int>? = null
+    )
+
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val filePath = arguments[ParamNames.FILE]?.jsonPrimitive?.content
+            ?: return createErrorResult("Missing required parameter: file")
+        val searchText = arguments["searchText"]?.jsonPrimitive?.content
+            ?: return createErrorResult("Missing required parameter: searchText")
+        val replaceText = arguments["replaceText"]?.jsonPrimitive?.content
+            ?: return createErrorResult("Missing required parameter: replaceText")
+        val isRegex = arguments[ParamNames.REGEX]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
+        val caseSensitive = arguments[ParamNames.CASE_SENSITIVE]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
+
+        if (searchText.isEmpty()) {
+            return createErrorResult("searchText must not be empty.")
+        }
+
+        if (searchText == replaceText) {
+            return createErrorResult("searchText and replaceText are identical — nothing to replace.")
+        }
+
+        val virtualFile = resolveFile(project, filePath)
+            ?: return createErrorResult("File not found: $filePath")
+        ensureWritable(virtualFile)?.let { return it }
+
+        val regex = if (isRegex) {
+            try {
+                val flags = if (caseSensitive) setOf<RegexOption>() else setOf(RegexOption.IGNORE_CASE)
+                Regex(searchText, flags)
+            } catch (e: Exception) {
+                return createErrorResult("Invalid regex: ${e.message}")
+            }
+        } else null
+
+        syncFileForEdit(project, virtualFile)?.let { return it }
+        val document = suspendingReadAction { FileDocumentManager.getInstance().getDocument(virtualFile) }
+            ?: return createErrorResult("Cannot get document for $filePath")
+
+        var replacements = 0
+        var relativePath = filePath
+        var affectedLines: List<Int>? = null
+
+        val saveError = suspendingWriteActionAndSave(project, "Replace text in $filePath", document) {
+            val text = document.text
+            // Start offsets of each replacement, expressed in the NEW text's coordinates,
+            // so they can be mapped to line numbers after setText.
+            val replacementOffsets = mutableListOf<Int>()
+
+            val newText = if (regex != null) {
+                var offsetDelta = 0
+                regex.replace(text) { matchResult ->
+                    replacements++
+                    val replacement = replaceText.replace(Regex("\\$(\\d+)")) { groupRef ->
+                        val groupIndex = groupRef.groupValues[1].toIntOrNull() ?: 0
+                        matchResult.groupValues.getOrElse(groupIndex) { groupRef.value }
+                    }
+                    replacementOffsets.add(matchResult.range.first + offsetDelta)
+                    offsetDelta += replacement.length - matchResult.value.length
+                    replacement
+                }
+            } else {
+                val sb = StringBuilder()
+                var pos = 0
+                val searchLen = searchText.length
+                while (pos < text.length) {
+                    val idx = text.indexOf(searchText, pos, ignoreCase = !caseSensitive)
+                    if (idx == -1) break
+                    sb.append(text, pos, idx)
+                    replacementOffsets.add(sb.length)
+                    sb.append(replaceText)
+                    replacements++
+                    pos = idx + searchLen
+                }
+                sb.append(text, pos, text.length)
+                sb.toString()
+            }
+
+            if (replacements > 0) {
+                document.setText(newText)
+                affectedLines = replacementOffsets.asSequence()
+                    .map { document.getLineNumber(it) + 1 }
+                    .distinct()
+                    .take(MAX_AFFECTED_LINES)
+                    .toList()
+                PsiDocumentManager.getInstance(project).commitDocument(document)
+            }
+
+            relativePath = ProjectUtils.getToolFilePath(project, virtualFile)
+        }
+        saveError?.let { return it }
+
+        if (replacements == 0) {
+            return createJsonResult(ReplaceTextResult(
+                success = true,
+                file = relativePath,
+                replacements = 0,
+                message = "No matches found for '${searchText.take(80)}' in $relativePath"
+            ))
+        }
+
+        return createJsonResult(ReplaceTextResult(
+            success = true,
+            file = relativePath,
+            replacements = replacements,
+            message = "Replaced $replacements occurrence(s) in $relativePath",
+            affectedLines = affectedLines
+        ))
+    }
+
+    private companion object {
+        const val MAX_AFFECTED_LINES = 100
+    }
+
+}

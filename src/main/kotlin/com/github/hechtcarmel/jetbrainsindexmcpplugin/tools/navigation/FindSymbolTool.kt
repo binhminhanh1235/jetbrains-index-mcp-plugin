@@ -7,14 +7,16 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.SymbolData
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindSymbolResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.psi.SmartPointerManager
 import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
@@ -22,6 +24,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -55,33 +58,48 @@ class FindSymbolTool : AbstractMcpTool() {
         Example: {"query": "UserService"} or {"query": "find_user", "scope": "project_and_libraries"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.QUERY, "Search pattern. Matching follows IntelliJ's Go to Symbol popup, including qualified queries. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty(ParamNames.LANGUAGE, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include symbols defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
+        .booleanProperty("compact", "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.", required = false)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                FindSymbolResult(
-                    symbols = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                    CompactSymbolResult(
+                        symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore
+                    )
+                }
+            } else {
+                buildPaginatedResult<SymbolMatch, FindSymbolResult>(pageResult) { items, page ->
+                    FindSymbolResult(
+                        symbols = items,
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale
+                    )
+                }
             }
         }
 
@@ -116,7 +134,6 @@ class FindSymbolTool : AbstractMcpTool() {
                 limit = collectLimit,
                 languageFilter = nativeLanguageFilter
             )
-
             val matches = symbols.map { it.toSymbolMatch() }
 
             val searchExtender: suspend (Set<String>, Int) -> List<PaginationService.SerializedResult> = { seenKeys, limit ->
@@ -128,7 +145,10 @@ class FindSymbolTool : AbstractMcpTool() {
             val serializedResults = matches.map { sym ->
                 PaginationService.SerializedResult(
                     key = sym.paginationKey(),
-                    data = json.encodeToJsonElement(sym)
+                    data = json.encodeToJsonElement(sym),
+                    symbolPointer = sym.pointerTarget?.let {
+                        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(it)
+                    }
                 )
             }
 
@@ -139,23 +159,36 @@ class FindSymbolTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = searchExtender,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+                project = project,
                 metadata = mapOf("query" to query)
             )
         }
 
-        return buildPaginatedResult<SymbolMatch, FindSymbolResult>(getPageFromCache(token, pageSize, project)) { items, page ->
-            FindSymbolResult(
-                symbols = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(token, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                CompactSymbolResult(
+                    symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<SymbolMatch, FindSymbolResult>(pageResult) { items, page ->
+                FindSymbolResult(
+                    symbols = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
     }
 
@@ -190,7 +223,10 @@ class FindSymbolTool : AbstractMcpTool() {
             .map { sym ->
                 PaginationService.SerializedResult(
                     key = sym.paginationKey(),
-                    data = json.encodeToJsonElement(sym)
+                    data = json.encodeToJsonElement(sym),
+                    symbolPointer = sym.pointerTarget?.let {
+                        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(it)
+                    }
                 )
             }
             .toList()
@@ -204,7 +240,9 @@ class FindSymbolTool : AbstractMcpTool() {
         line = line,
         column = column,
         containerName = containerName,
-        language = language
+        language = language,
+        symbolId = PaginationService.UNMATERIALIZED_SYMBOL_ID,
+        pointerTarget = pointerTarget
     )
 
     private fun SymbolMatch.paginationKey(): String = "$file:$line:$column:$name"

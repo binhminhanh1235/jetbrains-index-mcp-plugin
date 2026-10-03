@@ -1,31 +1,30 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ProblemInfo
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.cancellableBlockingAction
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.cancellableEdtAction
 import com.intellij.codeInsight.CodeSmellInfo
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.ProblemHighlightFilter
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
+import com.intellij.ide.PowerSaveMode
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
-import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.progress.util.ProgressIndicatorBase
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vcs.CodeSmellDetector
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.annotations.TestOnly
 import kotlin.math.max
@@ -34,6 +33,10 @@ import kotlin.math.max
 class DiagnosticsAnalysisService(private val project: Project) {
 
     companion object {
+        /** Wire values for [FileAnalysisResult.analysisMode] — which provider produced the result. */
+        const val MODE_OPEN_DAEMON = "open_daemon"
+        const val MODE_CLOSED_BATCH = "closed_batch"
+
         private const val DEFAULT_ANALYSIS_TIMEOUT_MS = 30_000L
         private const val HIGHLIGHT_POLL_INTERVAL_MS = 50L
         private const val HIGHLIGHT_RESTART_GRACE_MS = 150L
@@ -98,9 +101,44 @@ class DiagnosticsAnalysisService(private val project: Project) {
         severity: String,
         startLine: Int?,
         endLine: Int?,
-        maxProblems: Int
+        maxProblems: Int,
+        timeoutMs: Long? = null
     ): FileAnalysisResult {
+        val effectiveTimeoutMs = (timeoutMs ?: configuredAnalysisTimeoutMs()).coerceAtLeast(1L)
+        return withTimeoutOrNull(effectiveTimeoutMs) {
+            analyzeFileWithinBudget(
+                virtualFile = virtualFile,
+                filePath = filePath,
+                severity = severity,
+                startLine = startLine,
+                endLine = endLine,
+                maxProblems = maxProblems,
+                timeoutMs = effectiveTimeoutMs
+            )
+        } ?: timeoutResult(effectiveTimeoutMs)
+    }
+
+    /**
+     * The complete analysis budget, including disk refresh, PSI setup, and waiting for the
+     * application-wide main-pass lock. Callers analyzing several files can pass the remaining
+     * part of one shared budget through [analyzeFile]'s `timeoutMs` parameter.
+     */
+    internal fun configuredAnalysisTimeoutMs(): Long =
+        (analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS).coerceAtLeast(1L)
+
+    private suspend fun analyzeFileWithinBudget(
+        virtualFile: VirtualFile,
+        filePath: String,
+        severity: String,
+        startLine: Int?,
+        endLine: Int?,
+        maxProblems: Int,
+        timeoutMs: Long
+    ): FileAnalysisResult {
+        refreshFromDisk(virtualFile)
+
         val openTextEditor = currentTextEditor(virtualFile)
+        val powerSaveMode = PowerSaveMode.isEnabled()
         val fileContext = ReadAction.compute<FileContext?, Throwable> {
             if (!virtualFile.isValid) {
                 return@compute null
@@ -109,6 +147,9 @@ class DiagnosticsAnalysisService(private val project: Project) {
             val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return@compute null
             val document = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: return@compute null
             val codeAnalyzer = DaemonCodeAnalyzer.getInstance(project)
+            // The daemon never runs while Power Save Mode is on, so an open editor cannot
+            // produce fresh highlights; route such files to batch analysis instead.
+            val daemonAvailable = openTextEditor != null && codeAnalyzer.isHighlightingAvailable(psiFile)
 
             FileContext(
                 virtualFile = virtualFile,
@@ -116,38 +157,49 @@ class DiagnosticsAnalysisService(private val project: Project) {
                 filePath = filePath,
                 document = document,
                 textEditor = openTextEditor,
-                openEditorEligible = openTextEditor != null && codeAnalyzer.isHighlightingAvailable(psiFile),
+                openEditorEligible = daemonAvailable && !powerSaveMode,
+                powerSaveBlocked = daemonAvailable && powerSaveMode,
                 batchEligible = ProblemHighlightFilter.shouldProcessFileInBatch(psiFile)
             )
         }
 
         if (fileContext == null || (!fileContext.openEditorEligible && !fileContext.batchEligible)) {
+            val ineligibleMessage = when {
+                fileContext?.powerSaveBlocked == true ->
+                    "Power Save Mode is on, so the editor highlighting daemon is inactive, and the file is not eligible for batch analysis."
+                !virtualFile.isValid -> "File no longer exists on disk."
+                else -> "File is not eligible for IDE diagnostics analysis."
+            }
             return FileAnalysisResult(
                 problems = emptyList(),
                 highlights = emptyList(),
                 analysisFresh = false,
                 analysisTimedOut = false,
-                analysisMessage = "File is not eligible for IDE diagnostics analysis."
+                analysisMessage = ineligibleMessage
             )
         }
 
-        val timeoutMs = analysisTimeoutMsOverride ?: DEFAULT_ANALYSIS_TIMEOUT_MS
         val minSeverity = minimumSeverityFor(severity)
 
         return DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
             if (fileContext.openEditorEligible) {
-                val openEditorResult = analyzeOpenEditorFile(
+                val outcome = analyzeOpenEditorFile(
                     fileContext = fileContext,
                     severity = severity,
                     minSeverity = minSeverity,
                     startLine = startLine,
                     endLine = endLine,
-                    maxProblems = maxProblems,
-                    timeoutMs = timeoutMs
+                    maxProblems = maxProblems
                 )
-                if (openEditorResult != null) {
-                    return@withMainPassLock openEditorResult
+                if (outcome is OpenEditorAnalysisOutcome.Success) {
+                    return@withMainPassLock outcome.result
                 }
+
+                // A slow daemon consumes the outer complete-operation timeout and cannot reach
+                // this branch. Batch fallback is reserved for a daemon that demonstrably did not
+                // run and returned before the shared budget expired; do not restart that budget.
+                val fallbackReason =
+                    "Editor highlighting daemon did not run; returned public batch diagnostics instead, so weak warnings and quick-fix intentions may be incomplete."
 
                 if (fileContext.batchEligible) {
                     val batchFallback = analyzeClosedFile(
@@ -160,18 +212,22 @@ class DiagnosticsAnalysisService(private val project: Project) {
                     )
                     if (batchFallback != null) {
                         return@withMainPassLock batchFallback.copy(
-                            analysisMessage = appendAnalysisMessage(
-                                batchFallback.analysisMessage,
-                                "Open-editor highlighting refresh timed out; returned public batch diagnostics instead, so weak warnings and quick-fix intentions may be incomplete."
-                            )
+                            analysisMessage = appendAnalysisMessage(batchFallback.analysisMessage, fallbackReason)
                         )
                     }
+                    return@withMainPassLock timeoutResult(timeoutMs)
                 }
 
-                return@withMainPassLock timeoutResult(timeoutMs)
+                return@withMainPassLock FileAnalysisResult(
+                    problems = emptyList(),
+                    highlights = emptyList(),
+                    analysisFresh = false,
+                    analysisTimedOut = false,
+                    analysisMessage = "Editor highlighting daemon did not run and the file is not eligible for batch analysis, so no diagnostics could be produced."
+                )
             }
 
-            analyzeClosedFile(
+            val batchResult = analyzeClosedFile(
                 fileContext = fileContext,
                 severity = severity,
                 startLine = startLine,
@@ -179,6 +235,17 @@ class DiagnosticsAnalysisService(private val project: Project) {
                 maxProblems = maxProblems,
                 timeoutMs = timeoutMs
             ) ?: timeoutResult(timeoutMs)
+
+            if (fileContext.powerSaveBlocked) {
+                batchResult.copy(
+                    analysisMessage = appendAnalysisMessage(
+                        batchResult.analysisMessage,
+                        "Power Save Mode is on, so the editor highlighting daemon is inactive; used public batch analysis instead, so weak warnings and quick-fix intentions may be incomplete."
+                    )
+                )
+            } else {
+                batchResult
+            }
         }
     }
 
@@ -188,13 +255,12 @@ class DiagnosticsAnalysisService(private val project: Project) {
         minSeverity: HighlightSeverity,
         startLine: Int?,
         endLine: Int?,
-        maxProblems: Int,
-        timeoutMs: Long
-    ): FileAnalysisResult? {
-        val highlights = withTimeoutOrNull(timeoutMs) {
-            val overrideRunner = openFileAnalysisOverride
-            if (overrideRunner != null) {
-                overrideRunner(
+        maxProblems: Int
+    ): OpenEditorAnalysisOutcome {
+        val overrideRunner = openFileAnalysisOverride
+        val waitOutcome = if (overrideRunner != null) {
+            HighlightWaitOutcome(
+                highlights = overrideRunner(
                     OpenFileAnalysisRequest(
                         filePath = fileContext.filePath,
                         psiFile = fileContext.psiFile,
@@ -202,13 +268,22 @@ class DiagnosticsAnalysisService(private val project: Project) {
                         textEditor = requireNotNull(fileContext.textEditor),
                         minSeverity = minSeverity
                     )
-                )
-            } else {
-                refreshOpenEditorHighlights(fileContext, minSeverity)
-            }
-        } ?: return null
+                ),
+                provenRan = true
+            )
+        } else {
+            refreshOpenEditorHighlights(fileContext, minSeverity)
+        }
 
-        return FileAnalysisResult(
+        // An empty highlight list is ambiguous: it means either "the daemon ran and the file is
+        // clean" or "the daemon never ran" (suspended, essential-only mode, headless). Only trust
+        // it as a clean bill when the wait saw actual proof that passes ran.
+        if (!waitOutcome.provenRan && waitOutcome.highlights.isEmpty()) {
+            return OpenEditorAnalysisOutcome.DaemonDidNotRun
+        }
+
+        val highlights = waitOutcome.highlights
+        return OpenEditorAnalysisOutcome.Success(FileAnalysisResult(
             problems = toProblemInfoList(
                 spans = highlights.map { highlight ->
                     ProblemSpan(
@@ -228,8 +303,9 @@ class DiagnosticsAnalysisService(private val project: Project) {
             highlights = highlights,
             analysisFresh = true,
             analysisTimedOut = false,
-            analysisMessage = null
-        )
+            analysisMessage = null,
+            analysisMode = MODE_OPEN_DAEMON
+        ))
     }
 
     private suspend fun analyzeClosedFile(
@@ -252,13 +328,8 @@ class DiagnosticsAnalysisService(private val project: Project) {
                     )
                 )
             } else {
-                withContext(Dispatchers.Default) {
-                    ProgressManager.getInstance().runProcess(
-                        Computable {
-                            CodeSmellDetector.getInstance(project).findCodeSmells(listOf(fileContext.virtualFile))
-                        },
-                        ProgressIndicatorBase()
-                    )
+                cancellableBlockingAction {
+                    CodeSmellDetector.getInstance(project).findCodeSmells(listOf(fileContext.virtualFile))
                 }
             }
         } ?: return null
@@ -290,14 +361,15 @@ class DiagnosticsAnalysisService(private val project: Project) {
             highlights = emptyList(),
             analysisFresh = true,
             analysisTimedOut = false,
-            analysisMessage = closedFileMessage
+            analysisMessage = closedFileMessage,
+            analysisMode = MODE_CLOSED_BATCH
         )
     }
 
     private suspend fun refreshOpenEditorHighlights(
         fileContext: FileContext,
         minSeverity: HighlightSeverity
-    ): List<HighlightInfo> {
+    ): HighlightWaitOutcome {
         val textEditor = requireNotNull(fileContext.textEditor)
         val activityTracker = DaemonActivityTracker(project, textEditor)
 
@@ -314,7 +386,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
         textEditor: TextEditor,
         minSeverity: HighlightSeverity,
         activityTracker: DaemonActivityTracker
-    ): List<HighlightInfo> {
+    ): HighlightWaitOutcome {
         var sawIncompleteState = false
         var previousSnapshot: List<HighlightSnapshot>? = null
         var stableSnapshotCount = 0
@@ -345,7 +417,12 @@ class DiagnosticsAnalysisService(private val project: Project) {
                     elapsedMs = elapsedMs
                 )
             ) {
-                return latestHighlights
+                // completed=true after our restart means the FileStatusMap was cleaned, i.e.
+                // highlighting passes actually ran; a terminal daemon event is likewise proof.
+                return HighlightWaitOutcome(
+                    highlights = latestHighlights,
+                    provenRan = completed || activityTracker.sawRelevantTerminalEvent
+                )
             }
 
             delay(HIGHLIGHT_POLL_INTERVAL_MS)
@@ -384,6 +461,44 @@ class DiagnosticsAnalysisService(private val project: Project) {
         }
     }
 
+    /**
+     * Pulls [virtualFile] back from disk before it is analyzed.
+     *
+     * Tools resolve paths through `LocalFileSystem.findFileByPath`, which hands back the cached
+     * `VirtualFile` without re-reading it. A file an agent rewrote out of band is therefore
+     * analyzed as its pre-edit self, so diagnostics report problems that were already fixed — or,
+     * far more often, none at all for a file that does not compile (issue #333).
+     *
+     * The project-wide "sync external file changes" setting also cures this, but it refreshes
+     * every content root recursively and is off by default for that reason. Refreshing the one
+     * file about to be analyzed costs a stat, so it needs no setting of its own.
+     */
+    private suspend fun refreshFromDisk(virtualFile: VirtualFile) {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+
+        // An unsaved editor document is the newer copy, and it is what the daemon analyzes anyway.
+        // Pulling disk content over it only triggers IntelliJ's memory-vs-disk conflict handling —
+        // a reload prompt in the IDE, a hard IllegalStateException under the test framework.
+        if (fileDocumentManager.isFileModified(virtualFile)) {
+            return
+        }
+
+        VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile)
+
+        // The refresh can discover the file was deleted, which invalidates it.
+        if (!virtualFile.isValid) {
+            return
+        }
+
+        // The refresh reloads the Document, but PSI — which the highlighting passes actually read —
+        // stays on the pre-reload tree until the Document is committed. Only a Document that was
+        // already loaded can be stale; when there is none, PSI is built from the refreshed content.
+        val document = fileDocumentManager.getCachedDocument(virtualFile) ?: return
+        invokeOnEdt {
+            PsiDocumentManager.getInstance(project).commitDocument(document)
+        }
+    }
+
     private suspend fun currentTextEditor(virtualFile: VirtualFile): TextEditor? {
         return invokeOnEdt {
             FileEditorManager.getInstance(project)
@@ -394,17 +509,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
     }
 
     private suspend fun <T> invokeOnEdt(action: () -> T): T {
-        return if (ApplicationManager.getApplication().isDispatchThread) {
-            action()
-        } else {
-            withContext(Dispatchers.Default) {
-                var result: Result<T>? = null
-                ApplicationManager.getApplication().invokeAndWait {
-                    result = runCatching(action)
-                }
-                result!!.getOrThrow()
-            }
-        }
+        return cancellableEdtAction(action)
     }
 
     private fun timeoutResult(timeoutMs: Long): FileAnalysisResult {
@@ -531,7 +636,9 @@ class DiagnosticsAnalysisService(private val project: Project) {
         val highlights: List<HighlightInfo>,
         val analysisFresh: Boolean,
         val analysisTimedOut: Boolean,
-        val analysisMessage: String?
+        val analysisMessage: String?,
+        /** [MODE_OPEN_DAEMON] or [MODE_CLOSED_BATCH]; null when no analysis actually ran. */
+        val analysisMode: String? = null
     )
 
     private data class FileContext(
@@ -541,7 +648,18 @@ class DiagnosticsAnalysisService(private val project: Project) {
         val document: com.intellij.openapi.editor.Document,
         val textEditor: TextEditor?,
         val openEditorEligible: Boolean,
+        val powerSaveBlocked: Boolean,
         val batchEligible: Boolean
+    )
+
+    private sealed interface OpenEditorAnalysisOutcome {
+        data class Success(val result: FileAnalysisResult) : OpenEditorAnalysisOutcome
+        data object DaemonDidNotRun : OpenEditorAnalysisOutcome
+    }
+
+    private data class HighlightWaitOutcome(
+        val highlights: List<HighlightInfo>,
+        val provenRan: Boolean
     )
 
     private data class ProblemSpan(

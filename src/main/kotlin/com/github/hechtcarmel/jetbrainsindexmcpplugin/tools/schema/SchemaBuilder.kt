@@ -4,6 +4,8 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.UnifiedTargetArguments
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.*
 
 class SchemaBuilder private constructor() {
@@ -67,6 +69,73 @@ class SchemaBuilder private constructor() {
         }
     }
 
+    fun symbolId() = apply {
+        properties[ParamNames.SYMBOL_ID] = buildJsonObject {
+            put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+            put(
+                SchemaConstants.DESCRIPTION,
+                "Reusable across edits/rename; expires with session, project, inactivity or eviction. " +
+                    "Non-canonical: unequal handles may identify the same symbol."
+            )
+        }
+    }
+
+    /**
+     * Additive nested selector contract. `oneOf` is intentionally expressed in prose and checked
+     * at runtime because some MCP clients reject top-level combinator schemas.
+     */
+    fun target() = apply {
+        properties[UnifiedTargetArguments.TARGET] = buildJsonObject {
+            put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
+            put(
+                SchemaConstants.DESCRIPTION,
+                "Choose symbolId, position, or qualifiedName+language. Mutually exclusive with flat selector parameters."
+            )
+            putJsonObject(SchemaConstants.PROPERTIES) {
+                putJsonObject(ParamNames.SYMBOL_ID) {
+                    put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                    put(
+                        SchemaConstants.DESCRIPTION,
+                        "Same lifetime and non-canonical identity as top-level symbolId."
+                    )
+                }
+                putJsonObject(UnifiedTargetArguments.POSITION) {
+                    put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
+                    putJsonObject(SchemaConstants.PROPERTIES) {
+                        putJsonObject(ParamNames.FILE) {
+                            put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                            put(
+                                SchemaConstants.DESCRIPTION,
+                                "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin."
+                            )
+                        }
+                        putJsonObject(ParamNames.LINE) {
+                            put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                            put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_LINE)
+                        }
+                        putJsonObject(ParamNames.COLUMN) {
+                            put(SchemaConstants.TYPE, SchemaConstants.TYPE_INTEGER)
+                            put(SchemaConstants.DESCRIPTION, SchemaConstants.DESC_COLUMN)
+                        }
+                    }
+                    putJsonArray(SchemaConstants.REQUIRED) {
+                        add(ParamNames.FILE)
+                        add(ParamNames.LINE)
+                        add(ParamNames.COLUMN)
+                    }
+                }
+                putJsonObject(UnifiedTargetArguments.QUALIFIED_NAME) {
+                    put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                    put(SchemaConstants.DESCRIPTION, "Language-qualified symbol reference, for example com.example.Foo#bar.")
+                }
+                putJsonObject(ParamNames.LANGUAGE) {
+                    put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
+                    put(SchemaConstants.DESCRIPTION, "Language used to resolve qualifiedName.")
+                }
+            }
+        }
+    }
+
     fun stringProperty(name: String, description: String, required: Boolean = false) = apply {
         properties[name] = buildJsonObject {
             put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING)
@@ -87,6 +156,16 @@ class SchemaBuilder private constructor() {
         properties[name] = buildJsonObject {
             put(SchemaConstants.TYPE, SchemaConstants.TYPE_BOOLEAN)
             put(SchemaConstants.DESCRIPTION, description)
+        }
+        if (required) requiredFields.add(name)
+    }
+
+    fun stringArrayProperty(name: String, description: String, required: Boolean = false) = apply {
+        properties[name] = buildJsonObject {
+            put(SchemaConstants.TYPE, SchemaConstants.TYPE_ARRAY)
+            put(SchemaConstants.DESCRIPTION, description)
+            put(SchemaConstants.ITEMS, buildJsonObject { put(SchemaConstants.TYPE, SchemaConstants.TYPE_STRING) })
+            put("minItems", 1)
         }
         if (required) requiredFields.add(name)
     }
@@ -114,21 +193,17 @@ class SchemaBuilder private constructor() {
         if (required) requiredFields.add(name)
     }
 
-    fun build(): JsonObject = buildJsonObject {
-        put(SchemaConstants.TYPE, SchemaConstants.TYPE_OBJECT)
-        putJsonObject(SchemaConstants.PROPERTIES) {
-            for ((name, schema) in properties) {
-                put(name, schema)
-            }
-        }
-        if (requiredFields.isNotEmpty()) {
-            putJsonArray(SchemaConstants.REQUIRED) {
-                for (field in requiredFields) {
-                    add(JsonPrimitive(field))
-                }
-            }
-        }
-    }
+    /**
+     * Builds the MCP tool input schema.
+     *
+     * [ToolSchema] hard-codes `"type": "object"` and omits `required` when null, which is exactly
+     * the shape this builder emitted as a raw [JsonObject] before the SDK migration — the
+     * serialized bytes are unchanged, and `ToolSchemaFidelityUnitTest` keeps them that way.
+     */
+    fun build(): ToolSchema = ToolSchema(
+        properties = JsonObject(properties),
+        required = requiredFields.takeIf { it.isNotEmpty() }
+    )
 
     companion object {
         fun tool() = SchemaBuilder()

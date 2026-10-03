@@ -5,18 +5,19 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FileMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindFileResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -66,7 +67,7 @@ class FindFileTool : AbstractMcpTool() {
         Example: {"query": "UserService.java"} or {"query": "build.gradle"} or {"query": "BG"} (matches build.gradle)
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.QUERY, "File name pattern. Supports substring and fuzzy matching. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
@@ -76,7 +77,7 @@ class FindFileTool : AbstractMcpTool() {
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
@@ -144,7 +145,7 @@ class FindFileTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = searchExtender,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+                project = project,
                 metadata = mapOf("query" to query)
             )
         }
@@ -217,6 +218,15 @@ class FindFileTool : AbstractMcpTool() {
 
             try {
                 processContributor(contributor, project, pattern, searchScope, scope, limit, matcher, results, seen)
+            } catch (e: ProcessCanceledException) {
+                // Swallowing cancellation would silently truncate the result set mid-enumeration
+                // while still reporting it as complete.
+                throw e
+            } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+                // Dumb mode started mid-search. Propagate so AbstractMcpTool.execute translates
+                // this into the standard retryable "IDE is indexing" error instead of caching a
+                // truncated result set as a complete page.
+                throw e
             } catch (e: Exception) {
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
@@ -240,16 +250,25 @@ class FindFileTool : AbstractMcpTool() {
             // Modern API with Processor pattern
             val matchingNames = mutableListOf<String>()
 
+            // The name enumeration must not be capped: the underlying index streams keys for a
+            // scope-blind superset (project content + all libraries + SDK) in stable hash order,
+            // ignoring searchScope. Any cap here fills with out-of-scope names and silently drops
+            // in-scope matches. The only legitimate limiter is the result cap in phase 2 below —
+            // the same approach as the IDE's own Goto File (DefaultChooseByNameItemProvider).
             contributor.processNames(
                 { name ->
                     if (matcher.matches(name)) {
                         matchingNames.add(name)
                     }
-                    matchingNames.size < limit * 3
+                    true
                 },
                 searchScope,
                 null
             )
+
+            // Resolve best-matching names first so that when more than `limit` in-scope files
+            // match, the results kept are the best matches instead of hash-order-arbitrary ones.
+            matchingNames.sortByDescending { matcher.matchingDegree(it) }
 
             for (name in matchingNames) {
                 if (results.size >= limit) break

@@ -31,6 +31,7 @@ import org.jetbrains.annotations.VisibleForTesting
 import java.awt.FlowLayout
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
+import java.net.IDN
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -42,7 +43,11 @@ import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
 import javax.swing.event.DocumentEvent
 
-class McpSettingsConfigurable : Configurable {
+class McpSettingsConfigurable internal constructor(
+    private val restartServer: (String, Int) -> Unit
+) : Configurable {
+
+    constructor() : this(::restartServerAsync)
 
     private var panel: JPanel? = null
     private var serverHostField: JBTextField? = null
@@ -51,7 +56,6 @@ class McpSettingsConfigurable : Configurable {
     private var syncExternalChangesCheckBox: JBCheckBox? = null
     private var availableProjectsModeComboBox: ComboBox<McpSettings.AvailableProjectsMode>? = null
     private var responseFormatComboBox: ComboBox<McpSettings.ResponseFormat>? = null
-    private val toolCheckBoxes = mutableMapOf<String, JBCheckBox>()
     private var uiDisposable: Disposable? = null
 
     // Lifecycle UI fields
@@ -139,7 +143,6 @@ class McpSettingsConfigurable : Configurable {
             add(warningRow)
         }
 
-        val availableToolsPanel = createToolsPanel()
         val lifecyclePanel = createLifecyclePanel()
 
         panel = FormBuilder.createFormBuilder()
@@ -153,9 +156,6 @@ class McpSettingsConfigurable : Configurable {
             .addSeparator(10)
             .addComponent(JBLabel(McpBundle.message("lifecycle.section.title")), 5)
             .addComponent(lifecyclePanel, 1)
-            .addSeparator(10)
-            .addComponent(JBLabel(McpBundle.message("settings.tools.title")), 5)
-            .addComponent(availableToolsPanel, 5)
             .addComponentFillVertically(JPanel(), 0)
             .panel
 
@@ -313,38 +313,11 @@ class McpSettingsConfigurable : Configurable {
         content.repaint()
     }
 
-    private fun createToolsPanel(): JComponent {
-        val toolsContainer = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-        }
-
-        val mcpService = McpServerService.getInstance()
-        if (!mcpService.isInitialized) {
-            toolsContainer.add(JBLabel("Server is initializing...").apply {
-                foreground = JBColor(0xD9A343, 0xD9A343)
-            })
-            return toolsContainer
-        }
-
-        val toolRegistry = mcpService.getToolRegistry()
-        val allTools = toolRegistry.getAllToolDefinitions().sortedBy { it.name }
-        val settings = McpSettings.getInstance()
-
-        for (tool in allTools) {
-            val checkbox = JBCheckBox(tool.name, settings.isToolEnabled(tool.name)).apply {
-                toolTipText = tool.description
-            }
-            toolCheckBoxes[tool.name] = checkbox
-            toolsContainer.add(checkbox)
-        }
-
-        return toolsContainer
-    }
-
     override fun isModified(): Boolean {
         val settings = McpSettings.getInstance()
+        val normalizedHost = serverHostField?.text?.let { normalizeBindHostForSettings(it, settings.serverHost) }
 
-        if (serverHostField?.text?.trim() != settings.serverHost ||
+        if (normalizedHost != settings.serverHost ||
             serverPortSpinner?.value != settings.serverPort ||
             maxHistorySizeSpinner?.value != settings.maxHistorySize ||
             syncExternalChangesCheckBox?.isSelected != settings.syncExternalChanges ||
@@ -360,46 +333,72 @@ class McpSettingsConfigurable : Configurable {
             return true
         }
 
-        for ((toolName, checkbox) in toolCheckBoxes) {
-            if (checkbox.isSelected != settings.isToolEnabled(toolName)) {
-                return true
-            }
-        }
-
         return false
     }
 
     @Throws(ConfigurationException::class)
     override fun apply() {
-        if (isHostValidationPending) {
-            throw ConfigurationException(
-                McpBundle.message("settings.serverHost.validating"),
-                McpBundle.message("settings.validation.pending.title")
-            )
-        }
-
         val settings = McpSettings.getInstance()
         val oldHost = settings.serverHost
         val oldPort = settings.serverPort
-        val newHost = serverHostField?.text?.trim() ?: McpConstants.DEFAULT_SERVER_HOST
+        val hostInput = serverHostField?.text?.trim() ?: McpConstants.DEFAULT_SERVER_HOST
         val newPort = serverPortSpinner?.value as? Int ?: McpConstants.getDefaultServerPort()
 
-        if (newHost.isEmpty()) {
+        if (hostInput.isEmpty()) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverHost.empty"),
                 McpBundle.message("settings.validation.host.title")
             )
         }
+        // Persist and bind the same representation that DNS validation resolves. In
+        // particular, JVM socket APIs do not perform IDN conversion on Unicode hostnames.
+        val newHost = normalizeBindHostForSettings(hostInput, oldHost) ?: throw ConfigurationException(
+            McpBundle.message("settings.serverHost.invalid", hostInput),
+            McpBundle.message("settings.validation.host.title")
+        )
 
-        if (lastHostValidation != null) {
+        val hostChanged = newHost != oldHost
+
+        if (!hostChanged) {
+            // Applying an equivalent spelling, or an unchanged legacy value, completes the
+            // current edit without re-validating it. Do not leave stale async UI state behind.
+            isHostValidationPending = false
+            lastHostValidation = null
+            hostValidationErrorLabel?.isVisible = false
+            hostValidationIcon?.isVisible = false
+            hostValidIcon?.isVisible = false
+            serverHostField?.let { field ->
+                ComponentValidator.getInstance(field).ifPresent { it.updateInfo(null) }
+            }
+        }
+
+        // The async validation only runs on focus loss, which never happens when the user
+        // confirms the dialog from the keyboard while the host field still has focus. Instead
+        // of rejecting the apply until focus moves, validate a changed host synchronously.
+        // Unchanged legacy values are grandfathered: tightening validation must not make the
+        // Settings page impossible to apply for an unrelated change.
+        if (hostChanged && isHostValidationPending) {
+            if (!isValidHost(newHost)) {
+                throw ConfigurationException(
+                    McpBundle.message("settings.serverHost.invalid", hostInput),
+                    McpBundle.message("settings.validation.host.title")
+                )
+            }
+            isHostValidationPending = false
+            lastHostValidation = null
+        }
+
+        if (hostChanged && lastHostValidation != null) {
             throw ConfigurationException(
-                McpBundle.message("settings.serverHost.invalid", newHost),
+                McpBundle.message("settings.serverHost.invalid", hostInput),
                 McpBundle.message("settings.validation.host.title")
             )
         }
 
-        // Validate address availability before applying
-        if (!isServerAddressAvailable(newHost, newPort)) {
+        // Bind-test the address only when it actually changed. When it is unchanged, an
+        // externally occupied port (the exact error state whose notification points here)
+        // must not block applying unrelated settings such as tool toggles.
+        if ((newHost != oldHost || newPort != oldPort) && !isServerAddressAvailable(newHost, newPort)) {
             throw ConfigurationException(
                 McpBundle.message("settings.serverAddress.unavailable", "$newHost:$newPort"),
                 McpBundle.message("settings.validation.serverAddress.title")
@@ -425,47 +424,8 @@ class McpSettingsConfigurable : Configurable {
         settings.lifecycleLogToFile = lifecycleLogToFileCheckBox?.isSelected ?: false
         settings.minimumOpenProjects = minimumOpenProjectsSpinner?.value as? Int ?: 4
 
-        settings.updateToolEnabledStates(toolCheckBoxes.mapValues { (_, checkbox) -> checkbox.isSelected })
-
-        // Auto-restart server if host/port changed
         if (newHost != oldHost || newPort != oldPort) {
-            ApplicationManager.getApplication().invokeLater({
-                val mcpService = McpServerService.getInstance()
-                if (!mcpService.isInitialized) return@invokeLater
-                val result = mcpService.restartServer(newHost, newPort)
-                when (result) {
-                    is KtorMcpServer.StartResult.Success -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverRestarted.title"),
-                                McpBundle.message("notification.serverRestarted", "$newHost:$newPort"),
-                                NotificationType.INFORMATION
-                            )
-                            .notify(null)
-                    }
-                    is KtorMcpServer.StartResult.PortInUse -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverStartFailed.title"),
-                                McpBundle.message("notification.serverPortInUse.content", result.port, newHost),
-                                NotificationType.ERROR
-                            )
-                            .notify(null)
-                    }
-                    is KtorMcpServer.StartResult.Error -> {
-                        NotificationGroupManager.getInstance()
-                            .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
-                            .createNotification(
-                                McpBundle.message("notification.serverStartFailed.title"),
-                                McpBundle.message("notification.serverStartFailed.content", result.message),
-                                NotificationType.ERROR
-                            )
-                            .notify(null)
-                    }
-                }
-            }, ModalityState.any())
+            restartServer(newHost, newPort)
         }
     }
 
@@ -479,8 +439,8 @@ class McpSettingsConfigurable : Configurable {
 
         // If the port matches our current server's port and it's running, we consider it available.
         // We skip the bind check here because our own server is already occupying the port,
-        // which would cause a false "address in use" error (especially when switching 
-        // between 0.0.0.0 and 127.0.0.1). We trust that we will stop our server 
+        // which would cause a false "address in use" error (especially when switching
+        // between 0.0.0.0 and 127.0.0.1). We trust that we will stop our server
         // before binding to the new address during restart.
         if (port == currentPort && mcpService.isInitialized && mcpService.isServerRunning()) {
             return true
@@ -505,7 +465,7 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox?.isSelected = settings.syncExternalChanges
         availableProjectsModeComboBox?.selectedItem = settings.availableProjectsMode
         responseFormatComboBox?.selectedItem = settings.responseFormat
-        
+
         hostValidationErrorLabel?.isVisible = false
         hostValidationIcon?.isVisible = false
         hostValidIcon?.isVisible = false
@@ -520,10 +480,6 @@ class McpSettingsConfigurable : Configurable {
         lifecycleLogBufferSizeSpinner?.value = settings.lifecycleLogBufferSize
         lifecycleLogToFileCheckBox?.isSelected = settings.lifecycleLogToFile
         minimumOpenProjectsSpinner?.value = settings.minimumOpenProjects
-
-        for ((toolName, checkbox) in toolCheckBoxes) {
-            checkbox.isSelected = settings.isToolEnabled(toolName)
-        }
     }
 
     private fun updateHostWarning(host: String) {
@@ -566,11 +522,11 @@ class McpSettingsConfigurable : Configurable {
 
                 ApplicationManager.getApplication().executeOnPooledThread {
                     val isValid = isValidHost(host)
-                    val labelMessage = if (host.isEmpty()) 
-                        McpBundle.message("settings.serverHost.empty") 
-                    else 
+                    val labelMessage = if (host.isEmpty())
+                        McpBundle.message("settings.serverHost.empty")
+                    else
                         McpBundle.message("settings.serverHost.invalidShort")
-                    
+
                     // Use empty message for ComponentValidator to show red border but avoid tooltip popup
                     // as we are showing the error message in the label next to the input
                     val info = if (isValid) null else ValidationInfo("", field)
@@ -610,7 +566,6 @@ class McpSettingsConfigurable : Configurable {
         syncExternalChangesCheckBox = null
         availableProjectsModeComboBox = null
         responseFormatComboBox = null
-        toolCheckBoxes.clear()
         lifecycleEnabledCheckBox = null
         focusToBackgroundSpinner = null
         backgroundToDormantSpinner = null
@@ -636,7 +591,55 @@ class McpSettingsConfigurable : Configurable {
         }
 
     companion object {
+        private fun restartServerAsync(newHost: String, newPort: Int) {
+            // EmbeddedServer.stop() blocks while in-flight MCP calls drain — calls that may
+            // themselves be waiting for the EDT — and the CIO bind is blocking too. Keep
+            // the restart on a pooled thread; only the result notification goes to the EDT.
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val mcpService = McpServerService.getInstance()
+                if (!mcpService.isInitialized) return@executeOnPooledThread
+                val result = mcpService.restartServer(newHost, newPort)
+                ApplicationManager.getApplication().invokeLater({
+                    when (result) {
+                        is KtorMcpServer.StartResult.Success -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverRestarted.title"),
+                                    McpBundle.message("notification.serverRestarted", "$newHost:$newPort"),
+                                    NotificationType.INFORMATION
+                                )
+                                .notify(null)
+                        }
+                        is KtorMcpServer.StartResult.PortInUse -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverStartFailed.title"),
+                                    McpBundle.message("notification.serverPortInUse.content", result.port, newHost),
+                                    NotificationType.ERROR
+                                )
+                                .notify(null)
+                        }
+                        is KtorMcpServer.StartResult.Error -> {
+                            NotificationGroupManager.getInstance()
+                                .getNotificationGroup(McpConstants.NOTIFICATION_GROUP_ID)
+                                .createNotification(
+                                    McpBundle.message("notification.serverStartFailed.title"),
+                                    McpBundle.message("notification.serverStartFailed.content", result.message),
+                                    NotificationType.ERROR
+                                )
+                                .notify(null)
+                        }
+                    }
+                }, ModalityState.any())
+            }
+        }
+
         private val IPV4_PATTERN = Regex("^[0-9.]+\$")
+        private val HOSTNAME_LABEL_PATTERN = Regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\$")
+        private val IPV6_HEXTET_PATTERN = Regex("^[0-9A-Fa-f]{1,4}\$")
+        private val IPV6_ZONE_PATTERN = Regex("^[A-Za-z0-9._~-]+\$")
 
         @VisibleForTesting
         fun isValidIpv4(host: String): Boolean {
@@ -649,17 +652,105 @@ class McpSettingsConfigurable : Configurable {
         }
 
         @VisibleForTesting
-        fun isValidHost(host: String): Boolean {
+        fun isValidHost(host: String): Boolean = isValidHost(host, InetAddress::getByName)
+
+        internal fun isValidHost(host: String, resolveHost: (String) -> InetAddress): Boolean {
+            val bindHost = normalizeBindHost(host) ?: return false
+            if (IPV4_PATTERN.matches(bindHost)) return true
+            return runCatching { resolveHost(bindHost) }.isSuccess
+        }
+
+        /**
+         * Preserve an unchanged IPv6 literal when its named interface is temporarily absent.
+         * Parsing a named scope asks the JVM for a live network interface, which can fail after
+         * a VPN disconnect. Hostnames still need IDN normalization, even when already persisted.
+         */
+        private fun normalizeBindHostForSettings(host: String, savedHost: String): String? {
             val trimmedHost = host.trim()
-            if (trimmedHost.isEmpty()) return false
+            return normalizeBindHost(trimmedHost)
+                ?: trimmedHost.takeIf { it == savedHost }
+        }
+
+        /** Validates host syntax and returns the representation used by JVM socket APIs. */
+        private fun normalizeBindHost(host: String): String? {
+            val trimmedHost = host.trim()
+            if (trimmedHost.isEmpty()) return null
 
             // Check if input consists only of numbers and dots (potential IPv4)
             if (IPV4_PATTERN.matches(trimmedHost)) {
-                return isValidIpv4(trimmedHost)
+                return trimmedHost.takeIf(::isValidIpv4)
             }
 
-            // Fallback for hostnames
-            return runCatching { InetAddress.getByName(trimmedHost) }.isSuccess
+            // InetAddress delegates to the system resolver, which may be configured with a
+            // wildcard DNS suffix and report even syntactically invalid input as resolvable.
+            // Validate IPv6/hostname syntax first so resolution cannot turn values containing
+            // underscores or URI punctuation into accepted bind addresses.
+            if (trimmedHost.contains(':') || trimmedHost.startsWith('[') || trimmedHost.endsWith(']')) {
+                return trimmedHost.takeIf(::isValidIpv6Literal)
+            }
+            val asciiHost = runCatching { IDN.toASCII(trimmedHost.removeSuffix("."), IDN.USE_STD3_ASCII_RULES) }
+                .getOrNull()
+                ?: return null
+            if (asciiHost.isEmpty() || asciiHost.length > 253 ||
+                asciiHost.split('.').any { !HOSTNAME_LABEL_PATTERN.matches(it) }
+            ) {
+                return null
+            }
+
+            val absoluteSuffix = if (trimmedHost.endsWith('.')) "." else ""
+            val bindHost = asciiHost + absoluteSuffix
+            // IDN also maps fullwidth digits and dots; keep strict IPv4 rules after that
+            // conversion instead of accepting JVM shorthand such as 127.1.
+            if (IPV4_PATTERN.matches(bindHost) && !isValidIpv4(bindHost)) return null
+            return bindHost
+        }
+
+        /**
+         * Validates an IPv6 literal without consulting DNS. Resolution is deliberately kept in
+         * [isValidHost], after this syntax gate, so values such as `localhost:29170` cannot turn
+         * `isModified()` into an arbitrary resolver call.
+         */
+        private fun isValidIpv6Literal(host: String): Boolean {
+            val literal = when {
+                host.startsWith('[') && host.endsWith(']') -> host.substring(1, host.length - 1)
+                host.startsWith('[') || host.endsWith(']') -> return false
+                else -> host
+            }
+
+            val percentIndex = literal.indexOf('%')
+            val address = if (percentIndex >= 0) {
+                if (literal.indexOf('%', percentIndex + 1) >= 0) return false
+                val zone = literal.substring(percentIndex + 1)
+                if (!IPV6_ZONE_PATTERN.matches(zone)) return false
+                literal.substring(0, percentIndex)
+            } else {
+                literal
+            }
+            if (address.isEmpty()) return false
+
+            val compressionIndex = address.indexOf("::")
+            if (compressionIndex >= 0 && address.indexOf("::", compressionIndex + 2) >= 0) return false
+
+            val left = if (compressionIndex >= 0) address.substring(0, compressionIndex) else address
+            val right = if (compressionIndex >= 0) address.substring(compressionIndex + 2) else ""
+            val parts = buildList {
+                if (left.isNotEmpty()) addAll(left.split(':'))
+                if (right.isNotEmpty()) addAll(right.split(':'))
+            }
+            if (parts.any { it.isEmpty() }) return false
+
+            var groupCount = 0
+            for ((index, part) in parts.withIndex()) {
+                if (part.contains('.')) {
+                    if (index != parts.lastIndex || !isValidIpv4(part)) return false
+                    groupCount += 2
+                } else {
+                    if (!IPV6_HEXTET_PATTERN.matches(part)) return false
+                    groupCount++
+                }
+            }
+
+            return if (compressionIndex >= 0) groupCount < 8 else groupCount == 8
         }
     }
 }

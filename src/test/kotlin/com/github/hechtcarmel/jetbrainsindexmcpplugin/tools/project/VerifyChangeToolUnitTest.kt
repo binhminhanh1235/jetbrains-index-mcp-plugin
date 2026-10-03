@@ -7,6 +7,6 @@ class VerifyChangeToolUnitTest : TestCase() {
     fun testNameAndSchema() {
         val tool = VerifyChangeTool()
         assertEquals(ToolNames.VERIFY_CHANGE, tool.name)
-        assertTrue(tool.inputSchema.containsKey("properties"))
+        assertNotNull(tool.inputSchema.properties)
     }
 }

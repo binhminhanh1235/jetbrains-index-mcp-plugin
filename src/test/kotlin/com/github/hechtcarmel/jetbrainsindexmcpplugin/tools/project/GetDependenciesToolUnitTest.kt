@@ -7,6 +7,6 @@ class GetDependenciesToolUnitTest : TestCase() {
     fun testNameAndSchema() {
         val tool = GetDependenciesTool()
         assertEquals(ToolNames.GET_DEPENDENCIES, tool.name)
-        assertTrue(tool.inputSchema.containsKey("properties"))
+        assertNotNull(tool.inputSchema.properties)
     }
 }

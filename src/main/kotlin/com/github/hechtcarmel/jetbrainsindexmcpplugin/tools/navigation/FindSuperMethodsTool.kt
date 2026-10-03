@@ -4,19 +4,20 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.MethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodInfo
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SuperMethodsResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.JsonObject
 
 /**
  * Tool for finding super methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -27,34 +28,44 @@ class FindSuperMethodsTool : AbstractMcpTool() {
     override val description = """
         Find parent methods that a method overrides or implements. Use to navigate up the inheritance chain—from implementation to interface, or from override to original declaration.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Scala.
 
         NOT supported for Rust: Rust uses trait implementations rather than classical inheritance, so there are no "super methods" in the traditional sense. Use ide_find_definition or ide_type_hierarchy instead.
 
         Returns: full hierarchy chain from immediate parent (depth=1) to root, with file locations (line/column) and containing class info.
 
         Target (mutually exclusive):
-        - file + line + column: position-based lookup (position can be anywhere within the method body)
-        - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()})
+        - target: nested selector containing exactly one of symbolId, position {file, line, column}, or qualifiedName + language
+        - top-level symbolId: opaque handle returned by a previous semantic call
+        - top-level file + line + column: position-based lookup (position can be anywhere within the method body)
+        - top-level language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()})
 
         Example: {"file": "src/UserServiceImpl.java", "line": 25, "column": 10}
+        Example: {"target": {"symbolId": "<opaque-id>"}}
         Example: {"language": "Java", "symbol": "com.example.UserServiceImpl#getUser(String)"}
         Example: {"language": "TypeScript", "symbol": "src/service#UserService.getUser"}
         Example: {"language": "PHP", "symbol": "\\App\\Service\\UserService::find()"}
         """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
+        .target()
+        .symbolId()
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         requireSmartMode(project)
 
         return suspendingReadAction {
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            val element = resolveElementFromArguments(
+                project,
+                arguments,
+                allowLibraryFilesForPosition = true,
+                allowSymbolId = true
+            ).getOrElse {
                 return@suspendingReadAction createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
@@ -76,7 +87,12 @@ class FindSuperMethodsTool : AbstractMcpTool() {
                 )
             }
 
-            // Convert handler result to tool result
+            val methodTarget = superMethodsData.method.pointerTarget ?: element
+            val requestedId = optionalStringArg(arguments, ParamNames.SYMBOL_ID)?.takeIf {
+                element === methodTarget
+            }
+            // Handlers may lift a parameter or local variable to its enclosing method. A read
+            // must issue a different method handle instead of changing the input handle's target.
             createJsonResult(SuperMethodsResult(
                 method = MethodInfo(
                     name = superMethodsData.method.name,
@@ -85,7 +101,12 @@ class FindSuperMethodsTool : AbstractMcpTool() {
                     file = superMethodsData.method.file,
                     line = superMethodsData.method.line,
                     column = superMethodsData.method.column,
-                    language = superMethodsData.method.language
+                    language = superMethodsData.method.language,
+                    symbolId = bindExactSymbolId(
+                        project,
+                        methodTarget,
+                        requestedId
+                    )
                 ),
                 hierarchy = superMethodsData.hierarchy.map { superMethod ->
                     SuperMethodInfo(
@@ -98,7 +119,8 @@ class FindSuperMethodsTool : AbstractMcpTool() {
                         column = superMethod.column,
                         isInterface = superMethod.isInterface,
                         depth = superMethod.depth,
-                        language = superMethod.language
+                        language = superMethod.language,
+                        symbolId = superMethod.pointerTarget?.let { bindExactSymbolId(project, it) }
                     )
                 },
                 totalCount = superMethodsData.hierarchy.size

@@ -17,9 +17,9 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 ### Technology Stack
 - **Language**: Kotlin (JVM 21)
 - **Build System**: Gradle 9.0 with Kotlin DSL
-- **IDE Platform**: IntelliJ IDEA 2025.1+ (platformType = IC)
-- **HTTP Server**: Ktor CIO 2.3.12 (embedded, configurable port)
-- **Protocol**: Model Context Protocol (MCP) 2025-03-26
+- **IDE Platform**: IntelliJ Platform 2025.3+ (`pluginSinceBuild = 253`; builds against IntelliJ IDEA Ultimate (IU) — IC is not published for 2025.3+)
+- **HTTP Server**: Ktor CIO 3.2.3 (embedded, configurable port)
+- **Protocol**: Model Context Protocol via the official [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk) (`io.modelcontextprotocol:kotlin-sdk-server`). Negotiates 2024-11-05 … 2025-11-25.
 
 ## Key Documentation
 
@@ -45,7 +45,10 @@ Create an MCP server within an IntelliJ plugin that allows AI coding assistants 
 src/
 ├── main/
 │   ├── kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/
-│   │   ├── MyBundle.kt                 # Resource bundle accessor
+│   │   ├── McpBundle.kt                # Resource bundle accessor
+│   │   ├── actions/                    # IDE actions
+│   │   ├── constants/ToolNames.kt      # All tool name constants + ALL list
+│   │   ├── exceptions/                 # Plugin exception types
 │   │   ├── handlers/                   # Language-specific handlers
 │   │   │   ├── LanguageHandler.kt      # Handler interfaces & data classes
 │   │   │   ├── LanguageHandlerRegistry.kt # Data-driven handler registry
@@ -55,15 +58,24 @@ src/
 │   │   │   ├── javascript/JavaScriptHandlers.kt # JS/TS handlers (reflection)
 │   │   │   ├── go/GoHandlers.kt        # Go handlers (reflection)
 │   │   │   ├── php/PhpHandlers.kt      # PHP handlers (reflection)
-│   │   │   └── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   ├── rust/RustHandlers.kt    # Rust handlers (reflection)
+│   │   │   └── markdown/MarkdownHandlers.kt # Markdown handlers
+│   │   ├── history/                    # Per-project command history (bounded ring buffer)
+│   │   ├── icons/                      # Plugin icons
+│   │   ├── lifecycle/                  # ProjectModeService, LifecycleEventLog, focus tracking
 │   │   ├── server/                     # MCP server infrastructure
 │   │   │   ├── McpServerService.kt     # App-level service managing server lifecycle
-│   │   │   ├── JsonRpcHandler.kt       # JSON-RPC 2.0 request routing
 │   │   │   ├── ProjectResolver.kt      # Multi-project resolution with workspace support
-│   │   │   ├── models/                 # Protocol models (JsonRpc, MCP)
-│   │   │   └── transport/              # HTTP+SSE transport layer
-│   │   │       ├── KtorMcpServer.kt    # Embedded Ktor CIO server
-│   │   │       ├── KtorSseSessionManager.kt # SSE session management
+│   │   │   ├── PaginationService.kt    # Cursor cache for paginated search tools
+│   │   │   ├── BuildDiagnosticsCacheService.kt # Cached build output for ide_diagnostics
+│   │   │   ├── mcp/                    # Bridge from the tool registry to the MCP SDK
+│   │   │   │   ├── McpServerFactory.kt # Builds an SDK `Server` per connection
+│   │   │   │   └── McpToolDispatcher.kt # Settings gate, project resolution, history, modality
+│   │   │   └── transport/              # HTTP transport layer
+│   │   │       ├── KtorMcpServer.kt    # Embedded Ktor CIO server + SDK route wiring
+│   │   │       ├── LegacySseRoutes.kt  # 2024-11-05 HTTP+SSE endpoints
+│   │   │       ├── LocalOriginGuard.kt # Loopback Origin/Host validation + CORS
+│   │   ├── settings/                   # McpSettings (app-level persisted state) + settings UI
 │   │   ├── startup/                    # Startup activities
 │   │   ├── tools/                      # MCP tool implementations
 │   │   │   ├── McpTool.kt             # Tool interface
@@ -74,6 +86,8 @@ src/
 │   │   │   ├── editor/                # Editor interaction tools
 │   │   │   ├── navigation/            # Navigation tools (multi-language)
 │   │   │   ├── intelligence/          # Code analysis tools
+│   │   │   ├── lifecycle/             # Lifecycle management tools
+│   │   │   ├── models/                # Shared result models
 │   │   │   ├── project/               # Project status tools
 │   │   │   └── refactoring/           # Refactoring tools
 │   │   ├── util/                      # Utilities
@@ -82,13 +96,16 @@ src/
 │   │   │   ├── ClassResolver.kt       # Class lookup by FQN (Java, PHP)
 │   │   │   ├── ProjectUtils.kt        # Project/workspace helpers
 │   │   │   ├── PsiUtils.kt            # PSI navigation helpers
+│   │   │   ├── SymbolSignature.kt     # Signature resolution strategy + result holder
+│   │   │   ├── JavaSignatureExtractor.kt # FQN-resolved signatures from Java PSI
+│   │   │   ├── SymbolDocumentation.kt # Quick-doc / doc-comment text as plain text
 │   │   │   └── ThreadingUtils.kt      # Threading utilities
 │   │   └── ui/                        # Tool window UI
 │   └── resources/
 │       ├── META-INF/
 │       │   ├── plugin.xml              # Plugin configuration
 │       │   └── *-features.xml          # Optional language-specific extensions
-│       └── messages/MyBundle.properties # i18n messages
+│       └── messages/McpBundle.properties # i18n messages
 └── test/
     ├── kotlin/                         # Test sources
     └── testData/                       # Test fixtures
@@ -122,8 +139,8 @@ src/
 The plugin supports workspace projects where a single IDE window contains multiple sub-projects
 represented as modules with separate content roots:
 
-- **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → module content roots → subdirectory match
-- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath, then module content roots
+- **Project resolution** (`ProjectResolver.resolve`): Checks exact basePath → exact module content root → basePath subdirectory → module content-root subdirectory (longest root wins)
+- **File resolution** (`AbstractMcpTool.resolveFile`): Tries basePath first (wins unconditionally), then module content roots (fails with `AmbiguousFileException` if multiple roots match)
 - **Relative path computation** (`ProjectUtils.getRelativePath`): Strips the matching content root prefix
 - **VFS/PSI sync** (`AbstractMcpTool.ensurePsiUpToDate`): Refreshes all content roots, not just basePath
 - **Error responses**: `available_projects` detail is configurable. Expanded mode includes workspace sub-projects with their `workspace` parent name; compact mode returns only top-level project roots.
@@ -138,18 +155,37 @@ MCP servers expose:
 
 **Server Infrastructure:**
 - Custom embedded **Ktor CIO** HTTP server (not IntelliJ's built-in server)
-- Configurable port with IDE-specific defaults (e.g., IntelliJ: 29170, PyCharm: 29172) via Settings → Index MCP Server → Server Port
+- Configurable port with IDE-specific defaults (e.g., IntelliJ: 29170, PyCharm: 29172) via Settings → Tools → Index MCP Server → Server Port
 - Binds to `127.0.0.1` only (localhost) for security
 - Single server instance across all open projects
 - Auto-restart on port change
 
 **Key Server Classes:**
 - `McpServerService` - Application-level service managing server lifecycle
-- `KtorMcpServer` - Embedded Ktor CIO server with CORS support
-- `KtorSseSessionManager` - SSE session management using Kotlin channels
-- `JsonRpcHandler` - JSON-RPC 2.0 request processing
+- `KtorMcpServer` - Embedded Ktor CIO engine; installs ContentNegotiation, the origin guard, and
+  the SDK's route helpers. Owns no protocol logic.
+- `McpServerFactory` - Turns `ToolRegistry` into an SDK `Server`. A **fresh server per
+  connection**, so toggling a tool in Settings takes effect on the next `tools/list` — and so the
+  per-request session does not accumulate. Stateless Streamable HTTP never closes what it
+  creates, so `KtorMcpServer` closes each server when the HTTP call completes
+  (`StatelessServerLifecycleTest` guards this).
+- `McpToolDispatcher` - Everything between "client asked for tool X" and the tool running:
+  enabled/disabled gate, `project_path` resolution, command history, and the IDE modality
+  context that `commitAllDocuments` requires.
+- `LocalOriginGuard` - Loopback Origin/Host validation and CORS. Deliberately *not* the SDK's
+  `DnsRebindingProtection`: that implementation compares `Host` including the port and rejects
+  requests with no `Origin` header at all, which would break curl and several clients.
 
-**Transport**: This plugin supports two transports with JSON-RPC 2.0:
+**What the SDK owns:** JSON-RPC framing and error codes, `initialize` and protocol-version
+negotiation, `ping`, `tools/list`, `tools/call` dispatch, SSE framing, session ids, batching.
+
+**Version pinning:** `mcpKotlinSdk` and `ktor` in `gradle/libs.versions.toml` must stay within
+the Kotlin generation the target IDE ships (2.2.x for 2025.3). kotlin-sdk 0.11.0+ is built
+against Kotlin 2.3 and fails to compile against this platform. See the comment in the catalog.
+
+**Transport**: This plugin supports two transports with JSON-RPC 2.0. Both require
+`Accept: application/json, text/event-stream` and `Content-Type: application/json` on POSTs, as
+the Streamable HTTP spec mandates:
 
 *Streamable HTTP (Primary, MCP 2025-03-26):*
 - `POST /index-mcp/streamable-http` → Stateless JSON-RPC requests/responses
@@ -189,7 +225,6 @@ Note: Server name and port are IDE-specific. Use the "Install on Coding Agents" 
 | DataGrip | `datagrip-index` | 29179 |
 | Aqua | `aqua-index` | 29180 |
 | DataSpell | `dataspell-index` | 29181 |
-| Rider | `rider-index` | 29182 |
 
 ## Development Guidelines
 
@@ -211,20 +246,70 @@ The IntelliJ Platform maintains separate Document (text) and PSI (parsed structu
 When files are modified externally (e.g., by AI coding tools), PSI may not immediately reflect
 the changes. This can cause search APIs to miss references in newly created files.
 
-**Solution**: `AbstractMcpTool` automatically refreshes the VFS and commits documents
-before executing any tool. This ensures PSI is synchronized with external file changes.
+**Solution**: When the "Sync external file changes" setting is enabled, `AbstractMcpTool`
+refreshes the VFS and commits documents before executing any PSI-dependent tool, so PSI is
+synchronized with external file changes. The setting is disabled by default.
 
-**User Setting**: "Sync external file changes before operations" (Settings → MCP Server)
+**User Setting**: "Sync external file changes before operations" (Settings → Tools → Index MCP Server)
 - **Disabled** (default): Best performance, suitable for most use cases
-- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when rename/find-usages misses references in files just created externally. Each operation will take seconds instead of milliseconds on large repos.
+- **Enabled**: **WARNING - SIGNIFICANT PERFORMANCE IMPACT.** Use only when read-only tools (find-usages, search, navigation) miss references in files just changed externally. Each operation will take seconds instead of milliseconds on large repos.
+
+Write tools do not depend on this setting: single-file edits reload their target file, and refactorings load external changes across the project before they run (see below).
 
 **For tool developers**:
 - Extend `AbstractMcpTool` and implement `doExecute()` (not `execute()`)
-- PSI synchronization happens automatically before `doExecute()` is called
+- PSI synchronization happens automatically before `doExecute()` is called when the setting
+  is enabled and the tool has `requiresPsiSync = true`
 - To opt-out (for tools that don't use PSI), override:
   ```kotlin
   override val requiresPsiSync: Boolean = false
   ```
+- For per-call opt-out (e.g. long-poll attach calls that touch no PSI), override
+  `needsPsiSync(arguments)` instead.
+- A tool that edits one file's Document must call `syncFileForEdit(project, file)` before it
+  resolves PSI or computes offsets in that file, and apply the edit with
+  `suspendingWriteActionAndSave(project, name, document) { ... }`. Without the first, the edit
+  lands on a stale Document whenever another program changed the file since the IDE's last VFS
+  refresh. Without the second, `FileDocumentManager` then declines the save as a memory/disk
+  conflict without reporting it, and the tool claims success for a file that never changed
+  (issue #430).
+- A multi-file refactoring must call `syncProjectForRefactoring(project)` before it resolves its
+  target (apply paths only; a dry run must not save documents). Capture
+  `FileDocumentManager.unsavedDocuments` just before the processor runs, then save with
+  `saveChangedDocuments(project, unsavedBefore)` in place of `saveAllDocuments()`, and turn a
+  non-empty result into an error with `changesNotSavedMessage`.
+
+### Long-Running Tools (Long-Poll Pattern)
+
+MCP clients enforce their own request timeout (60s by default in Claude Code / the MCP
+TypeScript SDK), and the stateless Streamable HTTP transport cannot send keep-alive progress
+notifications (kotlin-sdk 0.10.0 drops them in JSON response mode). **No tool call may ever
+block past ~45–55s** — a longer operation must long-poll (issue #277).
+
+`McpToolDispatcher` gives ordinary tool execution a 55-second coroutine deadline and reports
+expiry as an actionable tool error. The three long-poll tools retain their own budgets so their
+operation IDs are not lost. Cancellation remains cooperative: use cancellable EDT dispatch and
+`cancellableBlockingAction` for interruptible blocking analysis with a platform progress indicator.
+An already-running write is not rolled back on timeout; callers must inspect it before retrying.
+
+Shared infrastructure (used by `ide_run_tests`, `ide_build_project`, and `ide_project_diagnostics`):
+- `tools/LongPoll.kt` — the per-call wait-budget policy: `waitSeconds` parameter, default 45,
+  ceiling 55.
+- `tools/project/LongPollRegistry.kt` — `LongPollOperation` + `LongPollRegistry`: watchdog that
+  enforces the operation deadline even when nobody polls, retention-based eviction (30 min),
+  exactly-once cleanup, and `awaitWithinBudget` (completed result beats a stale timeout verdict,
+  which beats waiting).
+
+A new long-running tool plugs in with four pieces:
+1. An operation class extending `LongPollOperation` — payload plus `deadlineMs` / `onDeadline`
+   (kill, or nothing) / `onCleanup` (disconnect, dispose) hooks.
+2. A project-level `@Service` registry extending `LongPollRegistry<YourOp>` (a few lines; see
+   `ActiveTestRunRegistry` / `ActiveBuildRegistry`).
+3. A poll parameter (`runId` / `buildId` / …): the start path registers the operation and both
+   paths call `awaitWithinBudget`, returning either the tool's normal result (then
+   `registry.remove(id)`) or an in-progress model (`status: "running"` + the id + an actionable
+   poll instruction). Override `needsPsiSync(arguments)` to skip PSI sync on attach calls.
+4. Add the tool to `McpToolDispatcher.LONG_POLL_TOOLS` so the dispatcher does not impose the ordinary 55-second deadline.
 
 ### Code Style
 - Follow Kotlin coding conventions
@@ -261,11 +346,11 @@ override val inputSchema = SchemaBuilder.tool()
 # Run IDE with plugin installed
 ./gradlew runIde
 
-# Run tests
+# Run tests (see the Testing section for the -Ptier split)
 ./gradlew test
 
 # Run plugin verification
-./gradlew runPluginVerifier
+./gradlew verifyPlugin
 ```
 
 ### Run Configurations (in `.run/`)
@@ -294,68 +379,140 @@ Register in `plugin.xml`:
 
 ## Testing
 
-### Test Architecture
-
-Tests are split into two categories to optimize execution time:
-
-1. **Unit Tests (`*UnitTest.kt`)** - Extend `junit.framework.TestCase`
-   - Fast, no IntelliJ Platform initialization required
-   - Use for: serialization, schema validation, data classes, registries, pure logic
-   - Run with: `./gradlew test --tests "*UnitTest*"`
-
-2. **Platform Tests (`*Test.kt`)** - Extend `BasePlatformTestCase`
-   - Slower, requires full IntelliJ Platform with indexing
-   - Use for: tests needing `project`, PSI operations, tool execution, resource reads
-   - Run with: `./gradlew test --tests "*Test" --tests "!*UnitTest*"`
-
-### Test File Conventions
-
-| Test Class | Base Class | Purpose |
-|------------|------------|---------|
-| `McpPluginUnitTest` | `TestCase` | JSON-RPC serialization, error codes, registry |
-| `McpPluginTest` | `BasePlatformTestCase` | Platform availability |
-| `ToolsUnitTest` | `TestCase` | Tool schemas, registry, definitions |
-| `ToolsTest` | `BasePlatformTestCase` | Tool execution with project |
-| `JsonRpcHandlerUnitTest` | `TestCase` | JSON-RPC protocol, error handling |
-| `JsonRpcHandlerTest` | `BasePlatformTestCase` | Tool calls requiring project |
-| `CommandHistoryUnitTest` | `TestCase` | Data classes, filters |
-| `CommandHistoryServiceTest` | `BasePlatformTestCase` | Service with project |
-
-### When to Use Each Base Class
-
-**Use `TestCase` (unit test) when:**
-- Testing serialization/deserialization
-- Validating schemas and definitions
-- Testing data classes and their properties
-- Testing registries without executing tools
-- No `project` instance is needed
-
-**Use `BasePlatformTestCase` (platform test) when:**
-- Test needs `project` instance
-- Test executes tools against a project
-- Test uses project-level services (e.g., `CommandHistoryService`)
-- Test needs PSI or index access
-
 ### Running Tests
 
 ```bash
-# Run all tests
+# Everything (~40s locally). Safe to run — see "On running platform tests" below.
 ./gradlew test
 
-# Run only fast unit tests — use this locally (< 30s, no IDE needed)
-./gradlew test --tests "*UnitTest*"
+# Fast tier only: headless, no IntelliJ Platform (~20s)
+./gradlew test -Ptier=unit
 
-# Platform tests — DO NOT run locally; they require full IntelliJ Platform
-# initialization and hang on headless machines. Let CI run these.
-# ./gradlew test --tests "*Test" --tests "!*UnitTest*"
+# Platform tier only: BasePlatformTestCase fixtures with real indexing
+./gradlew test -Ptier=platform
 
-# Run specific test class
-./gradlew test --tests "McpPluginUnitTest"
+# One class
+./gradlew test --tests "ToolManifestContractUnitTest"
 ```
 
+`-Ptier` exists because Gradle's `--tests` flag has **no negation operator** and OR-combines
+repeated occurrences. The command this file used to document —
+`--tests "*Test" --tests "!*UnitTest*"` — silently selected the entire suite: `*Test` already
+matches every `*UnitTest` class, and `!*UnitTest*` is a literal pattern matching nothing. Do not
+reintroduce it.
+
+**On running platform tests locally:** you can. Earlier revisions of this file claimed they
+"hang on headless machines"; that was never substantiated. The full suite, platform tests
+included, runs locally in about 40 seconds, and CI runs `./gradlew check` on `ubuntu-latest`
+with no xvfb and no `DISPLAY`.
+
+### Test Architecture
+
+Three tiers, selected by class-name suffix:
+
+1. **Contract tests** (`contract/*UnitTest.kt`) — extend `junit.framework.TestCase`
+   - `ToolManifestContractUnitTest` snapshots each tool's name, description and complete input
+     schema into `src/test/resources/contract/tool-manifest.json`. This is the regression net
+     for large refactors: one assertion covers every registered tool × every schema property, so
+     a dropped `register(...)` call or a mutated parameter type fails here instead of shipping.
+     Scope: 55 of the 58 tools in `ToolNames.ALL` (the three needing the Kotlin or Maven plugin
+     are covered by set-equality instead), and **inputs only**.
+   - `ResultShapeContractUnitTest` snapshots the other half of the client contract — the response
+     side — into `src/test/resources/contract/result-shapes.txt`: the wire key set, JSON value
+     kind, nullability and optionality of all 66 serializable result models, every enum's wire
+     values, and the `UsageTypes` literals. Result models use plain Kotlin property names as their
+     wire keys, so renaming `UsageLocation.file` to `.path` is a source-compatible refactor that
+     breaks every MCP client; this is what turns red.
+   - `TestTierConventionUnitTest` enforces that no `*UnitTest` extends `BasePlatformTestCase`.
+   - `PluginDetectorLeakUnitTest` enforces that no test-tree class impersonates a language
+     plugin via `PluginDetector`'s `Class.forName` fallback.
+
+2. **Unit tests** (`*UnitTest.kt`) — extend `junit.framework.TestCase`
+   - Headless. Serialization decisions, schema semantics, pure logic, registries.
+
+3. **Platform tests** (`*Test.kt`, `*BehaviorTest.kt`, `*IntegrationTest.kt`)
+   - Anything needing `project`, PSI, indexes, or end-to-end tool execution.
+   - New ones should extend `McpPlatformTestCase`; older ones still extend `BasePlatformTestCase`
+     directly and are migrated as they are touched.
+
+**Changing a golden file is sometimes correct, but must always be deliberate:**
+
+```bash
+./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
+./gradlew test -Ptier=unit --tests "*ResultShapeContractUnitTest" -Dcontract.update=true
+```
+
+Review the resulting diff as part of the change — for the result shapes it is the list of
+breaking changes the release notes owe clients.
+
+Both commands intentionally **exit non-zero** after writing the golden file, so `BUILD FAILED`
+there is expected. Re-run without the flag to confirm green.
+
+### Test-only platform dependencies
+
+`build.gradle.kts` declares two things purely so tests can run; neither affects the shipped
+plugin:
+
+- `testFramework(TestFrameworkType.Plugin.Java)` — Java test-framework classes.
+- `testBundledPlugin("JUnit")` — without it `TestFramework.EXTENSION_NAME.extensionList` is empty
+  (the Java plugin declares that extension point but ships no implementations), so
+  `ide_list_tests` could only ever answer "No test frameworks are registered" and would be
+  untestable.
+
+`-PkotlinPluginTests=true` additionally loads the bundled Kotlin plugin and the sources under
+`src/kotlinPluginTest/kotlin`, including `KotlinReplaceMemberFormattingBehaviorTest`,
+`KotlinRenameBaseBehaviorTest`,
+`KotlinChangeSignatureBehaviorTest`, and the safe-delete parameter, qualified-target, and
+synthetic-target behavior tests. The plugin's newer metadata is excluded from test compilation;
+the test runtime uses the IDE's matching stdlib.
+
+`gradle.properties` also adds `JavaScript` to `platformBundledPlugins`. That one is *not*
+test-only in form — it is a compile/test classpath entry — but it does not change what the plugin
+requires at runtime: `plugin.xml` already declared `<depends optional="true">JavaScript</depends>`.
+Without it, 30 JS/TS tests silently pass while executing nothing.
+
+### Writing platform tests
+
+Extend `McpPlatformTestCase` (`src/test/kotlin/.../testutil/McpPlatformTestCase.kt`). It provides
+`writeProjectFile`, `readProjectFileVfs`, `registerSourceRoot`, `assertToolSucceeded`,
+`assertRenamedInFile`, and friends.
+
+**Never use `myFixture.addFileToProject` for a fixture a tool must resolve from a path
+argument.** It writes into IntelliJ's in-memory `TempFileSystem` (`temp:///src/...`), but every
+production entry point that turns a tool argument into a `VirtualFile` —
+`AbstractMcpTool.resolveFile`, `PsiUtils`, the JS/TS symbol resolver — goes through
+`LocalFileSystem`, which cannot see `temp://` files. The tool then returns "file not found" and
+any assertion looser than an exact-error check passes for the wrong reason. Use
+`writeProjectFile`.
+
+`addFileToProject` is still fine — and still used in ~45 places — where the test hands PSI to the
+code under test directly rather than routing a path through `resolveFile` (e.g. a
+`LanguageHandlerRegistry` handler, a Find-in-Files search, a `ChooseByNameContributor`).
+
+**Call `registerSourceRoot` whenever the assertion depends on index-backed search** —
+`ReferencesSearch`, inheritor search, `ChangeSignatureProcessor.findUsages`, JS/TS import
+resolution. The default `project_files` scope only covers content roots, so without it a
+refactoring silently updates the declaration and no call sites, and the tool still reports
+success. That is how `ChangeSignatureBehaviorTest` came to certify non-compiling output.
+
+### Assertion rules
+
+These are enforced by review, and violating them is how this suite previously accumulated ~1,000
+tests that could not fail:
+
+- **A test must fail if the production code it covers is deleted or inverted.** If it would still
+  pass, delete it.
+- **Assert both directions on refactorings.** A rename test that only checks the new name is
+  present passes when call-site updating is completely broken. Use `assertRenamedInFile`.
+- **Never simulate the system under test with a private helper and assert on the helper.**
+- **Conditional skips use `org.junit.Assume.assumeTrue`, never a bare `return`.** A bare return
+  reports the test as passed. Gradle is configured to log skipped tests so they stay visible.
+- **No asserting on production source text.** Reading a `.kt` file off disk and checking for
+  substrings passes on comments and breaks on behavior-preserving refactors.
+
 ### Test Data
-- Place test fixtures in `src/test/testData/`
-- Test both smart mode and dumb mode scenarios for platform tests
+- Fixtures live in `src/test/testData/`; golden files in `src/test/resources/`
+- Cover dumb mode with `DumbModeTestUtils` for any index-backed tool
 
 ## MCP Implementation Notes
 
@@ -364,46 +521,76 @@ Tests are split into two categories to optimize execution time:
 Tools are organized by IDE availability.
 
 **Universal Tools (All Supported JetBrains IDEs):**
-- `ide_find_references` - Find all usages of a symbol. Supports `language`+`symbol` as alternative to `file`+`line`+`column`. Includes generated sources by default (`includeGenerated: true`) so valid runtime references (Dagger/MapStruct/gRPC/serializers) aren't missed; set `includeGenerated: false` to drop generated DI factories/mappers/stubs when they dominate results.
-- `ide_find_definition` - Find symbol definition location. Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_references` - Find all usages of a symbol. Supports `language`+`symbol` as alternative to `file`+`line`+`column`. Includes generated sources by default (`includeGenerated: true`) so valid runtime references (Dagger/MapStruct/gRPC/serializers) aren't missed; set `includeGenerated: false` to drop generated DI factories/mappers/stubs when they dominate results. Optional `paths` restricts results to project-relative globs (`!` prefix excludes).
+- `ide_find_definition` - Find symbol definition location. Accepts top-level `symbolId`, `language`+`symbol`, or `file`+`line`+`column`, plus an equivalent nested `target`, and returns a reusable `symbolId` for exact lookup after edits or rename.
+- `ide_symbol_info` - Resolved signature and documentation for a symbol, without reading the file. Java parameter/return types are expanded to fully qualified names with structured `parameters`; other languages fall back to the signature their own Quick Documentation renders. `signatureSource` reports which (`java_psi` / `quick_navigation` / `element_text`). Accepts the same flat or nested targets as `ide_find_definition` and returns a reusable `symbolId`.
+- `ide_get_signature` - Get the signature (parameters, return type, modifiers, containing class) of a method, function, or class at a position without reading the whole file.
 - `ide_find_class` - Search for classes/interfaces by name with camelCase/substring/wildcard matching
 - `ide_find_file` - Search for files by name using IDE's file index
-- `ide_find_symbol` - Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching (disabled by default)
-- `ide_search_text` - Text search using IDE's pre-built word index with context filtering
-- `ide_read_file` - Read file content by path or qualified name, including library/jar sources (disabled by default)
-- `ide_diagnostics` - Unified diagnostics tool: per-file code analysis (errors, warnings, intentions), build output from last build, and test results from open test run tabs. Supports `includeBuildErrors`, `includeTestResults`, `severity` filter, `testResultFilter`, `maxBuildErrors`, `maxTestResults`. The `file` parameter is now optional.
+- `ide_find_symbol` - Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching
+- `ide_search_text` - Text search using IntelliJ Find in Files with context filtering (substring matching for plain text, regex matching when enabled). Optional `paths` restricts the search to project-relative globs (`!` prefix excludes)
+- `ide_read_file` - Read file content by path or qualified name, including library/jar sources
+- `ide_diagnostics` - Unified diagnostics tool: per-file code analysis (errors, warnings, intentions), build output from last build, and test results from open test run tabs. Supports one `file` or up to 100 supplied `files` (relative or in-project absolute, aliases deduplicated) under a shared timeout budget, plus `maxProblems`, `includeBuildErrors`, `includeTestResults`, `severity`, `testResultFilter`, `maxBuildErrors`, and `maxTestResults`. The result's `analysisMode` reports which path produced single-file problems (`open_daemon` or `closed_batch`); multi-file `fileAnalyses` use `analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed` plus `not_found`. The timeout includes path resolution, disk refresh, PSI setup, and analysis-lock waits; a daemon that consumes it does not receive a second batch-fallback budget.
+- `ide_batch_diagnostics` - Run diagnostics on multiple files in a single MCP call with configurable severity (`errors`, `warnings`, `all`) and compiler error/test result inclusion.
+- `ide_apply_quick_fix` - Apply an available quick fix or intention action at a specific position in an open file. Use `ide_diagnostics` first to discover available quick fixes, then apply by `fixIndex` or `fixName`.
+- `ide_project_diagnostics` - Batch/project-scope diagnostics for many files including unopened ones, with fail-closed coverage metadata (issue #246): every file in scope gets exactly one state (`analyzed`/`timed_out`/`failed`/`skipped`/`not_analyzed`) and `complete` is true only when every considered file was analyzed, so an empty problems list can never be mistaken for a clean project. Reuses the per-file analysis engine (open files get daemon highlights, closed files the public batch pass). Long analyses long-poll via `analysisId` (same pattern as `ide_build_project`); one analysis per project at a time.
 - `ide_index_status` - Check indexing status (dumb/smart mode)
-- `ide_sync_files` - Force sync IDE's virtual file system and PSI cache with external file changes
-- `ide_reload_project` - Force-reload the project build model (Maven, Gradle, or both) after modifying build files. Equivalent to "Reload All Maven Projects" / "Reload Gradle Project" in the IDE. Async — returns immediately, resolution happens in background. (disabled by default)
-- `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds and BuildProgressListener for Gradle/Maven builds. Supports workspace sub-project targeting via `project_path`. (disabled by default)
-- `ide_run_tests` - Execute tests programmatically with structured pass/fail output. Target a specific file/line/column, or a fully qualified class name. (disabled by default)
-- `ide_verify_change` - Safely execute build and test suite inside a revert block, returning results before rollback
-- `ide_get_dependencies` - Get project dependencies from the IDE's module model with module/library scopes
-- `ide_get_project_overview` - Get a high-level summary of the project structure including modules and SDKs
-- `ide_get_signature` - Get the signature (parameters, return type) of a method, function, or class at a position
-- `ide_refactor_rename` - Rename a symbol or file across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages. Two modes: **symbol rename** (file + line + column + newName) and **file rename** (file + newName, omit line/column). File rename mode works for all file types including binary files (images, etc.) and is especially useful for Android resource files where it updates all XML references. Supports `relatedRenamingStrategy` parameter to control automatic related renames: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"`.
-- `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference update toggle.
+- `ide_sync_files` - Force sync IDE's virtual file system and PSI cache with external file changes. Absolute targets may match any project/content root. Relative targets try the project base then module content roots when `project_path` is omitted or selects the project base; selecting a specific content root confines relative resolution there. The complete batch is validated before refresh; invalid entries fail together, known deleted targets refresh their nearest existing parent, and `refreshedRoots`/`deletedPaths` disclose what was refreshed. Calls fail explicitly when no safe project/content root is available.
+- `ide_verify_change` - Fast verification of a file change by syncing VFS, checking compiler/syntax diagnostics, and optionally executing nearby test files in a single call.
+- `ide_get_project_overview` - Structured overview of project architecture: modules, source roots, detected languages, frameworks, build systems, top-level packages, and entry points.
+- `ide_get_dependencies` - Get module and library dependencies from the IDE module model with scope filtering (`all`, `compile`, `test`, `runtime`) and optional transitive inclusion.
+- `ide_reload_project` - Force-reload the project build model (Maven, Gradle, or both) after modifying build files. Equivalent to "Reload All Maven Projects" / "Reload Gradle Project" in the IDE. Async — returns immediately, resolution happens in background.
+- `ide_link_build_system` - Link an unlinked Maven or Gradle project so the IDE resolves its dependencies. Use when `ide_reload_project` reports "not linked". Detects build system automatically from build files. Uses the platform's `ExternalSystemUnlinkedProjectAware` EP. (disabled by default)
+- `ide_import_modules` - Import external Maven project directories as modules into the current IntelliJ window for cross-project code intelligence and refactoring. Already imported module roots are skipped. Requires Maven plugin.
+- `ide_open_workspace` - Scan a root directory for Maven projects and open them all in one IntelliJ window with full cross-project code intelligence, or provide an explicit list of Maven project paths via `modules`. `path` and `modules` are mutually exclusive; `modules` uses SHA-based caching. Creates a temporary aggregator POM with relative module paths. Requires Maven plugin.
+- `ide_build_project` - Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)). Returns structured errors/warnings with file locations when available (null counts = no messages captured, not 0). Uses CompilationStatusListener for JPS builds, BuildProgressListener (BuildViewManager) for Gradle/Maven builds, and for CLion — whose CMake builds bypass both — the cidr build-finished topic plus the build log from the Messages tool window, parsed for MSVC/Clang/CMake diagnostics. Supports workspace sub-project targeting via `project_path`. Each call blocks at most `waitSeconds` (default 45): a still-running call returns `{"status": "running", "buildId": ...}` and the agent polls with `buildId` while the build continues in the IDE.
+- `ide_change_signature` - Change method signature (name, return type, visibility, parameters) with automatic caller updates using IntelliJ's Change Signature refactoring. Java methods and Kotlin JVM functions; Kotlin position/handle targets resolve to the base declaration for override changes. (disabled by default)
+- `ide_create_file` - Create a new source file with content, immediately indexed by IntelliJ. Created through IntelliJ's VFS, instantly available for all IDE tools without needing `ide_sync_files`. Use instead of Write for `.java`, `.kt`, `.ts`, `.tsx`, `.py` files. File must not already exist.
+- `ide_replace_text_in_file` - Find and replace text in a file using IntelliJ's Document API. Plain text or regex replacement through IntelliJ's document model, so changes are immediately visible to index, PSI, and all other IDE tools without needing `ide_sync_files`.
+- `ide_run_tests` - Run tests via the IDE's run configuration infrastructure. Test scope is specified with exactly one selector: `target` (existing run config name for any language, or Java/Kotlin class/method FQN `com.example.MyTest` / `com.example.MyTest#testFoo`), batch `targets` array (up to 50 class/method FQNs, Java/Kotlin-only), `package` FQN (Java/Kotlin), `directory` path (cross-language), `module` name, or `runId` to attach to a running execution. Results are read directly from the IDE's test runner (any Service-Message-based framework: JUnit, TestNG, pytest, Jest, Go test, PHPUnit), returning structured pass/fail/error counts, exit code, per-test results, and console output. By default console output is omitted for passed tests to save tokens (`includeSuccessOutput: false`) and only attached to failed/errored tests; pass `includeSuccessOutput: true` to include output for passed tests too. Each call blocks at most `waitSeconds` (default 45) so the MCP client's request timeout is never hit: a still-running call — including one whose pre-test build is still compiling, in which case the test process has not started yet — returns `{"status": "running", "runId": ...}` and the agent polls with `runId` while the run (bounded by `timeoutSeconds` counted from process start, enforced by a registry watchdog) continues in the IDE. A running response also reports the tests finished so far, read off the live test tree: `passed`/`failed`/`errors` counts and the first 50 `failures` with message and stack trace (issue #426). By default the run does not activate (pop open) the Run tool window; pass `activateToolWindow: true` to open it.
+- `ide_refactor_rename` - Preview a symbol or file rename with `dryRun`, or apply it across the project with automatic related element renaming (getters/setters, overriding methods). Fully headless, works for ALL languages, and accepts legacy selectors, `symbolId`, or a nested `target`. Two modes: **symbol rename** (file + line + column + newName) and **file rename** (file + newName, omit line/column). File rename mode works for all file types including binary files (images, etc.) and is especially useful for Android resource files where it updates all XML references. Supports `relatedRenamingStrategy` parameter to control automatic related renames: `"all"` (default), `"none"`, `"accessors_and_tests"`, or `"ask"`.
+- `ide_move_file` - Move a file to a new directory using the IDE's refactoring engine. Automatically updates all references, imports, and package declarations across the project. Supports automatic directory creation and optional reference update toggle. Move conflicts come back as `warnings`. On a same-package move between modules/source roots (issue #360), imports naming the unchanged package that the IDE's usage rewrite removed from consuming Java files are restored (`JavaOnDemandImportGuard`, plugged into the headless processor via `MoveUsageGuard`) and reported in `warnings`; a destination outside every source root is also warned about.
 - `ide_reformat_code` - Reformat code using project code style (.editorconfig, IDE settings). Supports optional import optimization and code rearrangement. (disabled by default)
-- `ide_optimize_imports` - Optimize imports (remove unused, organize) without reformatting code. Equivalent to IDE's Ctrl+Alt+O. (disabled by default)
-- `ide_get_active_file` - Get the currently active file(s) in the editor (disabled by default)
-- `ide_open_file` - Open a file in the editor with optional line/column navigation (disabled by default)
+- `ide_optimize_imports` - Optimize imports (remove unused, organize) without reformatting code. Equivalent to IDE's Ctrl+Alt+O.
+- `ide_batch_optimize_imports` - Optimize imports across multiple files in a single call, removing unused imports and organizing per code style.
+- `ide_structural_search_replace` - Pattern-based code search and transformation using IntelliJ's Structural Search and Replace engine. Search-only when `replacePattern` is omitted. Optional `paths` restricts matching (and rewriting) to project-relative globs (`!` prefix excludes). Java, Kotlin.
+- `ide_get_active_file` - Get the currently active file(s) in the editor
+- `ide_open_file` - Open a file in the editor with optional line/column navigation
 - `ide_set_power_save_mode` - Enable/disable IDE Power Save Mode (IDE-wide). Suspends background inspections and code analysis while keeping the index and code intelligence operational (disabled by default)
 - `ide_close_project` - Close an open project window and free its memory. Non-blocking; refuses to close the last open project so the MCP server keeps a JSON-RPC context (disabled by default)
-- `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects (disabled by default)
+- `ide_create_module` - Add a directory as an IntelliJ module with a content root, enabling code intelligence for non-Maven projects (TypeScript, plain directories, etc.). Supports optional directory exclusions. For Maven projects, use `ide_import_modules` instead.
+- `ide_open_project` - Open a project by absolute path and wait until indexing completes (`timeoutSeconds`, default 600). Idempotent for already-open projects. Pass `autoLink: true` to automatically link an unlinked Maven/Gradle build system after opening. Pass `excludeDirectories: ["dir1", "dir2"]` to exclude directories from indexing and refactoring scope (applied after autoLink).
 - `ide_install_plugin` - Install a plugin zip into the IDE, replacing any existing version; auto-detects `build/distributions/*.zip` when no path is given (disabled by default)
-- `ide_restart` - Restart the IDE; terminates the MCP connection. Call after `ide_install_plugin` (disabled by default)
+- `ide_restart` - Restart the IDE. The MCP server shuts down during restart; poll `ide_index_status` after ~30s to confirm it is back, then continue. Typical use: `ide_install_plugin` → `ide_restart` → poll → verify.
+
+**Lifecycle Management Tools (All Supported JetBrains IDEs):**
+
+Manage which open projects the MCP server keeps active, in the background, dormant, or closed (behavior gated on the `lifecycleEnabled` setting). Every tool call with `participatesInLifecycle` restarts the project's background→dormant countdown (`ProjectModeService.wakeForMcp`); the countdown only runs while the window is unfocused. A dormant transition closes the editor tabs but records them in the service's persisted state and reopens them on the next transition to `active` (window focus) or on release — never on an MCP wake (issue #369):
+- `ide_project_status` - Report the status of all known projects (open + lifecycle-managed) in one table
+- `ide_enroll_all_projects` - Enroll all currently open projects in MCP lifecycle management (disabled by default)
+- `ide_get_project_modes` - List all MCP-managed projects and their current lifecycle mode
+- `ide_lifecycle_log` - Return recent lifecycle events (state transitions, open/close, focus changes, timer firings) from the in-memory ring buffer (disabled by default)
+- `ide_release_all_projects` - Release every managed project from MCP lifecycle management at once (disabled by default)
+- `ide_release_project` - Release a project from MCP lifecycle management, returning full control to the user (disabled by default)
+- `ide_set_all_project_modes` - Set the lifecycle mode for every currently managed open project at once (disabled by default)
+- `ide_set_lifecycle_log_file` - Enable or disable writing lifecycle events to a log file on disk (disabled by default)
+- `ide_set_project_mode` - Set the lifecycle mode (active/background/dormant/closed) for a specific managed project (disabled by default)
 
 **Extended Navigation Tools (Language-Aware):**
 
-These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Markdown):
-- `ide_type_hierarchy` - Get type hierarchy for a class (Java, Kotlin, Python, JS/TS, Go, PHP, Rust)
-- `ide_call_hierarchy` - Get call hierarchy for a method (Java, Kotlin, Python, JS/TS, Go, PHP, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
-- `ide_file_structure` - Get hierarchical file structure similar to IDE's Structure view (Java, Kotlin, Python, JS/TS, Markdown) (disabled by default)
+These activate based on available language plugins (Java, Python, JavaScript/TypeScript, Go, PHP, Rust, Scala, Markdown):
+- `ide_type_hierarchy` - Get type hierarchy for a class with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala)
+- `ide_call_hierarchy` - Get call hierarchy for a method with bounded BFS pages and cursors (Java, Kotlin, Python, JS/TS, Go, PHP, Rust, Scala). Supports `language`+`symbol` as an alternative to `file`+`line`+`column`.
+- `ide_find_implementations` - Find implementations of interface/method (Java, Kotlin, Python, JS/TS, PHP, Rust, Scala — not Go). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_find_super_methods` - Find methods that a given method overrides/implements (Java, Kotlin, Python, JS/TS, PHP, Scala — not Go, Rust). Supports `language`+`symbol` as alternative to `file`+`line`+`column`.
+- `ide_file_structure` - Get legacy file structure text; opt into structured nodes and exact handles with `includeNodes`/`includeSymbolIds`
 
-**Java/Kotlin-Only Refactoring Tools:**
-- `ide_refactor_safe_delete` - Safely delete element (requires Java plugin)
+**Java/Kotlin-Only Tools:**
+- `ide_list_tests` - List all test methods/classes discovered by the IDE's test framework extension points (JUnit, TestNG, etc.). Supports filtering by `file`, `package`, `directory`, `module`, `classPattern` (glob), and `framework`, with pagination (`maxResults`, `offset`). Returns entries with className, methodName, framework, file path, and line number along with `count`, `total`, `offset`, and `truncated`. Requires Java plugin — the `com.intellij.testFramework` extension point is declared by the Java plugin.
+- `ide_edit_member` - Replace an entire member declaration (signature + body) with new content
+- `ide_insert_member` - Insert a new member at a structural position in a class or file (disabled by default)
+- `ide_refactor_safe_delete` - Preview or safely delete a symbol/file after usage discovery; accepts legacy selectors, `symbolId`, or a nested `target` (requires Java plugin)
+- `ide_replace_member` - Replace method body or field initializer only, preserving the signature (disabled by default)
 
 **Kotlin Conversion Tools:**
 - `ide_convert_java_to_kotlin` - Convert Java files to Kotlin using IntelliJ's built-in J2K converter. Supports full file conversion with automatic formatting and import optimization. Handles classes, interfaces, methods, generics, Java 8+ features (lambdas, streams). Returns list of created .kt files and conversion warnings. Requires both Java and Kotlin plugins. (disabled by default)
@@ -424,6 +611,7 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `handlers/go/GoHandlers.kt` - Reflection-based Go PSI access
 - `handlers/php/PhpHandlers.kt` - Reflection-based PHP PSI access
 - `handlers/rust/RustHandlers.kt` - Reflection-based Rust PSI access
+- `handlers/scala/ScalaHandlers.kt` - Direct Scala PSI access (compiled against the Scala plugin's API; not reflection-based)
 
 **Handler Types:**
 - `TypeHierarchyHandler` - Type hierarchy lookup
@@ -431,14 +619,15 @@ The plugin uses a language handler pattern for multi-IDE support:
 - `CallHierarchyHandler` - Call hierarchy analysis
 - `SymbolReferenceHandler` - Resolve fully qualified symbol references (e.g., `com.example.MyClass#method(String)`) to PSI elements
 - `SuperMethodsHandler` - Method override hierarchy
+- `StructureHandler` - Hierarchical file structure (Structure view)
 
 **Registration Flow:**
 1. `LanguageHandlerRegistry.registerHandlers()` - Registers handlers for available language plugins
 2. `ToolRegistry.registerUniversalTools()` - Registers universal tools including `ide_refactor_rename`, `ide_sync_files`
 3. `ToolRegistry.registerLanguageNavigationTools()` - Registers tools if any language handlers available
-4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` if Java plugin available
+4. `ToolRegistry.registerJavaRefactoringTools()` - Registers `ide_refactor_safe_delete` and `ide_list_tests` if Java plugin available
 
-**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins.
+**Reflection Pattern:** Python, JavaScript, Go, PHP, and Rust handlers use reflection to avoid compile-time dependencies on language-specific plugins. This prevents `NoClassDefFoundError` in IDEs without those plugins. Scala handlers instead compile directly against the Scala plugin's PSI API; [`PluginDetectors.scala`](src/main/kotlin/com/github/hechtcarmel/jetbrainsindexmcpplugin/util/PluginDetectors.kt) still gates registration so the classes are never loaded when the Scala plugin is absent. `BaseScalaHandler.safeScalaCall` rethrows control-flow exceptions (cancellation, `IndexNotReadyException`) like every other handler, and each handler entry point runs inside `scalaApiBoundary`, which turns a `LinkageError` from Scala-plugin API drift into an explicit tool error (`ScalaPluginApiMismatchException`) instead of an empty result. The pinned `org.intellij.scala` version in `gradle.properties` must move with `platformVersion`.
 
 ### Optimized Symbol Search
 
@@ -456,13 +645,16 @@ The plugin supports cursor-based pagination for search tools that return flat re
 - `PaginationService` (`server/PaginationService.kt`): Application-level light service managing cursor cache
 - Cursor tokens are opaque, immutable, base64url-encoded strings containing `{entryId}:{offset}:{pageSize}`
 - Same cursor token always returns the same page (idempotent, safe for retries)
-- Each response includes `nextCursor` for the next page
+- Responses include `nextCursor` only while the cached snapshot can safely serve another page;
+  `hasMore: true` with no cursor means the search may have more results but must be restarted with
+  narrower parameters (for example, after staleness or the hard cache cap)
 
 **Cache lifecycle:**
 - Over-collection: tools collect 500 results internally, serve in configurable page sizes (default varies per tool)
 - Inactivity-based TTL: 10 minutes of idle time before cursor expires
 - LRU eviction: max 20 active cursors
-- Max 5,000 cached results per cursor; beyond this, `hasMore` returns false
+- Max 5,000 cached results per cursor; at the cap, `hasMore` remains true but `nextCursor` is absent,
+  so callers must start a narrower fresh search
 - Staleness detection via `PsiModificationTracker` — `stale: true` in response if PSI changed
 
 **Tool integration pattern:**
@@ -474,6 +666,69 @@ The plugin supports cursor-based pagination for search tools that return flat re
 **Schema:** All parameters are optional in the schema (no `required` array) because the Anthropic API does not support `anyOf`/`oneOf` at the top level. Validation is done at runtime — if `cursor` is absent, the tool checks for its required search params and returns an error if missing.
 
 **Backward compatibility:** Old `limit`/`maxResults` parameters work as aliases for `pageSize`. Legacy cursors (without embedded pageSize) are still decodable but require an explicit `pageSize` parameter.
+
+### Bounded hierarchy pages with legacy tree compatibility
+
+Without `maxNodes` or `cursor`, call/type hierarchies keep nested trees and legacy limits.
+Explicit pagination returns bounded breadth-first pages with traversal-local `nodeId`,
+`parentId`, and `depth`. Continuations are scoped to the project, tool, and server session.
+A continuation budget limit preserves the computed page and reports `truncationReason`;
+narrow the query when `hasMore=true` has no cursor. Cancellation and indexing transitions
+propagate through reflective handlers instead of completing an empty hierarchy.
+
+### Symbol handles across navigation and member editing
+
+Class, symbol, reference, implementation, and super-method queries expose opaque handles for
+their exact declarations. Reference and implementation queries plus `ide_edit_member` and
+`ide_replace_member` accept the shared target selectors. Cached search pages remain marked
+`stale=true` after PSI edits and rebind handles from their exact smart pointers when returned;
+deleted declarations and handles from another project or server session are rejected. Successful
+member edits return current declaration metadata. Kotlin abstract/sealed declarations retain
+`ABSTRACT_CLASS`, while anonymous implementations report a useful source location without an
+invented qualified name.
+
+`ide_file_structure` keeps the legacy `structure` response by default and avoids returning a
+structured-node payload or allocating handles. Use `includeNodes=true`
+for structured declarations, and `includeSymbolIds=true` when exact handles are needed (it implies
+`includeNodes`). Handle allocation is opt-in and capped at 100 per response; lower it with
+`maxSymbolIds` (1–100). Large responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
+
+### Structured Lookup Targets
+
+Definition, symbol-info, reference, implementation, and member-edit tools accept an additive
+nested `target` with exactly one
+variant: `{ "symbolId": "sym_..." }`, `{ "position": { "file": "src/Foo.java", "line": 3,
+"column": 8 } }`, or `{ "qualifiedName": "com.example.Foo#bar", "language": "Java" }`.
+Do not mix `target` with top-level selectors. Existing top-level requests remain valid.
+Validation runs before PSI synchronization, and `target.symbolId` routes to its owning project.
+
+### Rename Preview
+
+`ide_refactor_rename` accepts `dryRun: true` with legacy selectors, `symbolId`, or a nested
+`target`. It returns `canApply`, current target metadata, `plannedChange`, `affectedFiles`, usage
+and conflict counts, `warnings`, and `elapsedMs` without entering the source-write phase, saving
+documents, or creating an undo command. Preview and apply share conflict discovery and automatic
+rename selection.
+
+### Safe-delete Preview
+
+`ide_refactor_safe_delete` accepts the same `dryRun: true` preview contract with legacy selectors,
+`symbolId`, or a nested `target`. It reports the planned symbol/file deletion, usage blockers, and
+current applicability without deleting or saving anything or invalidating a handle. Successful
+symbol deletion selected by an incoming handle returns it as `invalidatedSymbolId`. Files with no
+discovered top-level declarations retain the existing apply eligibility but carry an
+incomplete-discovery warning; `force` can explicitly override usages or a failed usage search.
+
+### Change-signature Preview
+
+`ide_change_signature` accepts the same exact/nested targets and `dryRun: true` preview contract.
+Preview reports the current and requested signatures, affected declarations/callers, conflicts,
+read-only scope, missing required caller/delegate arguments, and interactive overrider decisions
+without running the processor. Apply runs the same conflict and safety checks before editing.
+Successful apply returns current `updatedSymbol` metadata. Return-type changes with overriders
+are conservatively refused, even where narrower overriding return types could be retained.
+Unlike Kotlin targets, Java override targets do not redirect to the base; select the Java base
+explicitly for hierarchy-wide changes.
 
 ### Search Collection Pattern (Processor)
 
@@ -527,9 +782,9 @@ VirtualFileManager   // Virtual file system
 3. **Must be called from EDT** - UI operations on background thread
    - Solution: Use `ApplicationManager.getApplication().invokeLater { ... }`
 
-4. **Search misses newly created files** - PSI not synchronized with document
+4. **Search misses newly created files** - PSI not synchronized with document (read-only tools; write tools sync themselves)
    - Cause: External tools modified files but PSI tree hasn't been updated
-   - Solution: Enable "Sync external file changes" in Settings → MCP Server (WARNING: significant performance impact)
+   - Solution: Enable "Sync external file changes" in Settings → Tools → Index MCP Server (WARNING: significant performance impact)
    - For custom code: `PsiDocumentManager.getInstance(project).commitAllDocuments()`
 
 ## Contributing / PR Checklist
@@ -544,14 +799,16 @@ Before pushing, run the pre-push validation script to catch common mistakes auto
 ```
 
 Quick summary of the non-negotiables:
-1. `CHANGELOG.md` — empty `[Unreleased]` section (maintainer adds the release entry)
+1. `CHANGELOG.md` — user-visible changes go under `[Unreleased]`; never add `## [x.y.z]` version sections (created at release time)
 2. No `.idea/gradle.xml`, no `scripts/build-install.sh`, no `docs/pr-*.md`
 3. New tools: registered in `ToolNames`, `ToolRegistry`, and all six doc locations (`README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`, `tools-reference.md`, `ToolNames.ALL` sorted)
 4. New opt-in tools: add to `McpSettings.DEFAULT_DISABLED_TOOLS`, bump the settings schema, and add a migration so existing users also get the tool disabled by default
 5. No `@Internal` API, no `ModalityState.NON_MODAL` (deprecated)
-6. Unit tests pass: `./gradlew test --tests "*UnitTest*"` (never run full `./gradlew test` locally)
+6. Tests pass: `./gradlew test` — the whole suite, platform tier included. It takes ~40s. Use
+   `-Ptier=unit` for a faster inner loop, but do not push on the fast tier alone: 46% of the tests
+   live in the platform tier, and that is where tool behavior is actually verified.
+7. New tools: regenerate the golden manifest and review its diff (see the Testing section)
 
 ---
 
 **Template Source**: [JetBrains IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
-- Never run platform tests on your own

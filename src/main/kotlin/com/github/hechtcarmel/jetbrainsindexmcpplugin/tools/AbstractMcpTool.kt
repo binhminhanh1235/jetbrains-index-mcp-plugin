@@ -3,45 +3,54 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.AmbiguousFileException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.IndexNotReadyException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.OptimizedSymbolSearch
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.PathGlobMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ContentBlock
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.SymbolIdRegistry
+import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.lifecycle.ProjectModeService
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassResolver
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.cancellableEdtAction
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ResponseFormatter
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ResolvedSymbolInfo
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
-import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.application.readAction as platformReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.File
+import java.io.IOException
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiModificationTracker
+import com.intellij.usageView.UsageViewUtil
+import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.concurrency.annotations.RequiresReadLock
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -75,7 +84,7 @@ import kotlinx.serialization.json.put
  *     override val description = "My tool description"
  *     override val inputSchema = buildJsonObject { /* schema */ }
  *
- *     override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+ *     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
  *         requireSmartMode(project)  // If index access is needed
  *         return readAction {
  *             // PSI operations here
@@ -87,12 +96,12 @@ import kotlinx.serialization.json.put
  *
  * ## PSI Synchronization
  *
- * By default, all tools automatically synchronize PSI with document changes before
- * execution. This ensures that recently created or modified files (e.g., by external
- * tools like Claude Code's write tool) are visible to PSI-based searches.
+ * Tools whose [requiresPsiSync] flag is enabled can synchronize PSI with document changes before
+ * execution. When the user opts in, this ensures that recently created or modified files (e.g.,
+ * by external tools like Claude Code's write tool) are visible to PSI-based searches.
  *
  * This behavior is controlled by:
- * - **User setting**: "Sync external file changes" in Settings (enabled by default)
+ * - **User setting**: "Sync external file changes" in Settings (disabled by default)
  * - **Per-tool opt-out**: Override [requiresPsiSync] to `false` for tools that don't use PSI
  *
  * ```kotlin
@@ -159,11 +168,7 @@ abstract class AbstractMcpTool : McpTool {
      * or other scenarios where the EDT is already the current thread.
      */
     protected suspend fun <T> edtAction(action: () -> T): T {
-        return if (ApplicationManager.getApplication().isDispatchThread) {
-            action()
-        } else {
-withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { action() }
-        }
+        return cancellableEdtAction(action)
     }
 
     /**
@@ -175,12 +180,8 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * submission inherited from the caller.
      */
     protected suspend fun commitDocuments(project: Project) {
-        if (ApplicationManager.getApplication().isDispatchThread) {
+        edtAction {
             PsiDocumentManager.getInstance(project).commitAllDocuments()
-        } else {
-            withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
-                PsiDocumentManager.getInstance(project).commitAllDocuments()
-            }
         }
     }
 
@@ -229,9 +230,9 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      *
      * @param project The IntelliJ project context
      * @param arguments The tool arguments as a JSON object
-     * @return A [ToolCallResult] containing the operation result or error
+     * @return A [CallToolResult] containing the operation result or error
      */
-    final override suspend fun execute(project: Project, arguments: JsonObject): ToolCallResult {
+    final override suspend fun execute(project: Project, arguments: JsonObject): CallToolResult {
         val modeService = ProjectModeService.getInstance()
         if (participatesInLifecycle && McpSettings.getInstance().lifecycleEnabled) {
             if (!modeService.isManaged(project)) {
@@ -241,12 +242,22 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
             }
         }
 
+        val normalizedArguments = if (UnifiedTargetArguments.isSupportedBy(inputSchema)) {
+            UnifiedTargetArguments.normalize(arguments).getOrElse {
+                return createErrorResult(it.message ?: "Invalid target")
+            }
+        } else {
+            arguments
+        }
+
         val settings = McpSettings.getInstance()
-        if (requiresPsiSync && settings.syncExternalChanges) {
+        if (needsPsiSync(normalizedArguments) && settings.syncExternalChanges) {
             ensurePsiUpToDate(project)
         }
         return try {
-            doExecute(project, arguments)
+            doExecute(project, normalizedArguments)
+        } catch (e: AmbiguousFileException) {
+            createErrorResult(e.message ?: "Ambiguous file path")
         } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
             // The IDE entered dumb mode (reindexing) during this call.
             createErrorResult(
@@ -272,15 +283,25 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     }
 
     /**
+     * Per-call refinement of [requiresPsiSync]. Long-poll attach calls (`runId`/`buildId`) touch
+     * no PSI until final collection, so they skip the VFS refresh + commit that a fresh call
+     * pays when "Sync external file changes" is enabled — a poll every ~45s on a large repo
+     * would otherwise spend seconds per poll on refreshes that cannot change the outcome.
+     *
+     * Internal rather than protected so tests can pin the per-call decision directly.
+     */
+    internal open fun needsPsiSync(arguments: JsonObject): Boolean = requiresPsiSync
+
+    /**
      * Implement this method with the tool's specific execution logic.
      *
      * PSI synchronization is handled automatically by [execute] before this is called.
      *
      * @param project The IntelliJ project context
      * @param arguments The tool arguments as a JSON object matching [inputSchema]
-     * @return A [ToolCallResult] containing the operation result or error
+     * @return A [CallToolResult] containing the operation result or error
      */
-    protected abstract suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult
+    protected abstract suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult
 
     /**
      * Throws [IndexNotReadyException] if the IDE is in dumb mode (indexing).
@@ -359,26 +380,160 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     }
 
     /**
-     * Executes a write action using suspend function (non-blocking for caller).
+     * Loads changes another program made to [file] into its Document and PSI before a tool edits it.
      *
-     * This is the preferred method for write operations as it:
-     * - Doesn't block the calling thread while waiting for EDT
-     * - Still executes the action on EDT with proper locking
-     * - Supports undo/redo grouping
+     * The IDE re-reads externally modified files only on a VFS refresh — when the IDE window is
+     * activated, or every ~15 s while the IDE is in the background. An agent that writes a file with
+     * its own tools and then edits it through MCP inside that window would edit the stale Document,
+     * and [FileDocumentManager] then silently declines the save as a memory/disk conflict: the tool
+     * reported success while the file on disk never received the edit (issue #430).
      *
-     * @param project The project context
-     * @param commandName Name for the undo command (shown in Edit menu)
-     * @param action The action to execute
+     * Call it before resolving PSI or computing offsets in [file]: the refresh can replace the
+     * Document's text, and the edit must be computed against the reloaded version.
+     *
+     * @return an error when the file cannot be edited safely — its Document holds unsaved IDE changes
+     *   that cannot be saved (typically because the file also changed on disk, in which case the IDE
+     *   asks the user which version to keep), or the refresh found the file deleted. Otherwise null.
      */
-    protected suspend fun suspendingWriteAction(
+    protected suspend fun syncFileForEdit(project: Project, file: VirtualFile): CallToolResult? {
+        val problem: String? = edtAction {
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val unsaved = fileDocumentManager.getCachedDocument(file)?.takeIf { fileDocumentManager.isDocumentUnsaved(it) }
+            if (unsaved != null) {
+                // Flush the pending IDE changes first; the tool's own save would write them anyway.
+                // Saving refreshes the file and declines to overwrite a newer disk version, so a
+                // Document that is still unsaved afterwards is the platform's conflict signal.
+                fileDocumentManager.saveDocument(unsaved)
+                if (fileDocumentManager.isDocumentUnsaved(unsaved)) {
+                    return@edtAction "${ProjectUtils.getToolFilePath(project, file)} has unsaved changes in the IDE " +
+                        "that could not be saved, usually because the file was also modified on disk. Nothing was " +
+                        "changed. The IDE will ask the user which version to keep; retry once the file is reconciled."
+                }
+            } else {
+                // A shallow synchronous refresh always re-checks the file on disk and reloads an
+                // unmodified Document whose file changed.
+                file.refresh(false, false)
+            }
+            if (!file.isValid) return@edtAction "File no longer exists on disk: ${file.path}"
+            fileDocumentManager.getCachedDocument(file)?.let { PsiDocumentManager.getInstance(project).commitDocument(it) }
+            null
+        }
+        return problem?.let { createErrorResult(it) }
+    }
+
+    /**
+     * Runs [action] as an undoable write command, then saves [document] in the same EDT turn and
+     * confirms the save reached disk.
+     *
+     * [FileDocumentManager.saveDocument] can decline without telling the caller: a memory/disk
+     * conflict (the file changed on disk after the IDE last read it), a
+     * [com.intellij.openapi.fileEditor.FileDocumentSynchronizationVetoer], or an I/O error all leave
+     * the Document unsaved. Without this check a write tool reports success for an edit that exists
+     * only in memory (issue #430). When the save is declined and [action] made the Document's only
+     * unsaved change, the Document is reloaded from disk, so the failed edit is discarded instead of
+     * lingering for a later autosave to write, or for the IDE's file-cache-conflict prompt, which
+     * would block every later tool call until a user answers it.
+     *
+     * Pair with [syncFileForEdit], which makes the declined save rare rather than routine.
+     *
+     * @return null when [action] changed nothing or its change is on disk; otherwise an error.
+     */
+    protected suspend fun suspendingWriteActionAndSave(
         project: Project,
         commandName: String,
+        document: Document,
         action: () -> Unit
-    ) {
-        edtAction {
+    ): CallToolResult? {
+        val problem: String? = edtAction {
+            val fileDocumentManager = FileDocumentManager.getInstance()
+            val stampBefore = document.modificationStamp
+            val cleanBefore = !fileDocumentManager.isDocumentUnsaved(document)
             WriteCommandAction.runWriteCommandAction(project, commandName, null, { action() })
+            if (document.modificationStamp == stampBefore) return@edtAction null
+            fileDocumentManager.saveDocument(document)
+            if (!fileDocumentManager.isDocumentUnsaved(document)) return@edtAction null
+
+            val path = fileDocumentManager.getFile(document)?.let { ProjectUtils.getToolFilePath(project, it) } ?: "the file"
+            if (cleanBefore) fileDocumentManager.reloadFromDisk(document, project)
+            if (fileDocumentManager.isDocumentUnsaved(document)) {
+                "The edit to $path was applied in the IDE but could not be saved to disk, usually because the file " +
+                    "also changed on disk. It remains as unsaved changes in the IDE, which will ask the user which " +
+                    "version to keep. Check the file on disk before retrying."
+            } else {
+                "The edit to $path was not saved: the file changed on disk after the IDE last read it, or the IDE " +
+                    "declined the save. The edit was discarded and this call did not modify the file. Re-read it and retry."
+            }
         }
+        return problem?.let { createErrorResult(it) }
     }
+
+    /**
+     * Loads every change another program made under the project's content roots before a
+     * multi-file refactoring resolves its target and searches for usages: the refresh the IDE
+     * itself runs when its window is activated.
+     *
+     * A refactoring that edits a stale Document hits the same silently declined save that
+     * [syncFileForEdit] prevents for single-file edits (issue #430), and its usage search misses
+     * references that exist only in the newer disk version. Pending IDE changes are saved first,
+     * as the tool's own save would do anyway, so the refresh reloads their Documents instead of
+     * registering memory/disk conflicts for them.
+     *
+     * The refresh follows the file watcher's change events, so it only visits what changed on
+     * disk; without a working watcher it rescans the content roots, as window activation does.
+     * Call it outside any read action, before PSI is resolved; never on a dry run, which must
+     * not save documents.
+     */
+    protected suspend fun syncProjectForRefactoring(project: Project) {
+        edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+        val localFileSystem = LocalFileSystem.getInstance()
+        val roots = (listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project))
+            .distinct()
+            .mapNotNull { localFileSystem.findFileByPath(it) }
+        if (roots.isNotEmpty()) {
+            localFileSystem.refreshFiles(roots, false, true, null)
+        }
+        commitDocuments(project)
+    }
+
+    /**
+     * Saves every Document and returns the files an operation changed whose changes did not
+     * reach disk.
+     *
+     * For operations that edit through platform processors (refactorings, reformat, J2K) rather
+     * than one Document of their own; those use [suspendingWriteActionAndSave].
+     * [FileDocumentManager.saveAllDocuments] skips a Document it declines to save without telling
+     * the caller (issue #430). The operation's Documents are those unsaved now but not in
+     * [unsavedBefore], captured just before it ran. A declined one only held the operation's
+     * change, so it is reloaded from disk: nothing lingers in memory for a later autosave to
+     * write, or for the IDE's file-cache-conflict prompt to block every later tool call on.
+     * Report a non-empty result with [changesNotSavedMessage], never as success.
+     *
+     * @return tool paths of the files that do not contain the operation's changes
+     */
+    @RequiresEdt
+    protected fun saveChangedDocuments(project: Project, unsavedBefore: Set<Document>): List<String> {
+        val fileDocumentManager = FileDocumentManager.getInstance()
+        val changed = fileDocumentManager.unsavedDocuments.filterNot { it in unsavedBefore }
+        // One at a time, each declined one reloaded at once: saveAllDocuments pumps EDT events
+        // under its progress, which would let the conflict prompt run before the reload settles it.
+        val declined = changed.filter { document ->
+            fileDocumentManager.saveDocument(document)
+            fileDocumentManager.isDocumentUnsaved(document).also { unsaved ->
+                if (unsaved) fileDocumentManager.reloadFromDisk(document, project)
+            }
+        }
+        fileDocumentManager.saveAllDocuments()
+        return declined
+            .mapNotNull { document -> fileDocumentManager.getFile(document)?.let { ProjectUtils.getToolFilePath(project, it) } }
+            .sorted()
+    }
+
+    /** The error for an operation whose changes did not reach [notSaved]; see [saveChangedDocuments]. */
+    protected fun changesNotSavedMessage(notSaved: List<String>): String =
+        "The changes did not reach ${notSaved.size} file(s) that changed on disk while the operation ran: " +
+            "${notSaved.joinToString(", ")}. The IDE declined to overwrite them, so they were reloaded with their " +
+            "disk content and lack those changes; any other affected files were updated. Re-read these files " +
+            "and apply what is missing before building."
 
     /**
      * Resolves a file path to a [VirtualFile].
@@ -400,38 +555,83 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
             return localFileSystem.refreshAndFindFileByPath(canonicalPath)
         }
 
-        // Absolute paths are validated against project roots before resolving
-        if (relativePath.startsWith("/") || relativePath.startsWith("\\")) {
-            val canonical = File(relativePath).canonicalPath
+        fun canonicalPathOrNull(file: File): String? = try {
+            file.canonicalPath
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
+
+        fun isWithinRoot(canonicalPath: String, rootPath: String): Boolean =
+            canonicalPath.startsWith(rootPath + File.separator)
+
+        // Absolute paths are validated against project roots before resolving.
+        val requestedFile = File(relativePath)
+        val hasAbsoluteSyntax = requestedFile.isAbsolute ||
+            relativePath.startsWith('/') || relativePath.startsWith('\\')
+        if (hasAbsoluteSyntax) {
+            val canonical = canonicalPathOrNull(requestedFile) ?: return null
             val projectRoots = listOfNotNull(project.basePath) + ProjectUtils.getModuleContentRoots(project)
             val withinProject = projectRoots.any { root ->
-                canonical.startsWith(File(root).canonicalPath + File.separator)
+                canonicalPathOrNull(File(root))?.let { isWithinRoot(canonical, it) } == true
             }
             if (!withinProject) return null
             return findOrRefresh(canonical)
         }
 
-        // Try project basePath first
+        // basePath match wins — this is the path form every tool returns
         val basePath = project.basePath
         if (basePath != null) {
-            val canonical = File(basePath, relativePath).canonicalPath
-            if (canonical.startsWith(File(basePath).canonicalPath + File.separator)) {
+            val canonical = canonicalPathOrNull(File(basePath, relativePath))
+            val canonicalBase = canonicalPathOrNull(File(basePath))
+            if (canonical != null && canonicalBase != null && isWithinRoot(canonical, canonicalBase)) {
                 val file = findOrRefresh(canonical)
                 if (file != null) return file
             }
         }
 
-        // Try module content roots (workspace sub-project support)
+        // Content-root fallbacks: collect all matches to detect ambiguity
+        val matches = mutableListOf<VirtualFile>()
         for (rootPath in ProjectUtils.getModuleContentRoots(project)) {
             if (rootPath != basePath) {
-                val canonical = File(rootPath, relativePath).canonicalPath
-                if (canonical.startsWith(File(rootPath).canonicalPath + File.separator)) {
+                val canonical = canonicalPathOrNull(File(rootPath, relativePath))
+                val canonicalRoot = canonicalPathOrNull(File(rootPath))
+                if (canonical != null && canonicalRoot != null && isWithinRoot(canonical, canonicalRoot)) {
                     val file = findOrRefresh(canonical)
-                    if (file != null) return file
+                    if (file != null && matches.none { it.path == file.path }) {
+                        matches.add(file)
+                    }
                 }
             }
         }
 
+        if (matches.size == 1) return matches[0]
+        if (matches.size > 1) {
+            // Under basePath the project-relative form is unique and resolves back to this file.
+            // Outside it, getRelativePath strips the matching content root, so every match would
+            // print as the same ambiguous path; list those by absolute path instead.
+            val paths = matches.joinToString(", ") { file ->
+                if (basePath != null && file.path.startsWith("$basePath/")) {
+                    ProjectUtils.getRelativePath(project, file)
+                } else {
+                    file.path
+                }
+            }
+            throw AmbiguousFileException(
+                "Ambiguous file path '$relativePath' matches ${matches.size} files: $paths. " +
+                    "Use an absolute path or a longer relative path to disambiguate."
+            )
+        }
+
+        return null
+    }
+
+    /** Returns a "read-only" error when [file] is not writable, or `null` if the file is writable. */
+    protected fun ensureWritable(file: VirtualFile): CallToolResult? {
+        if (!file.isWritable) {
+            return createErrorResult("File is read-only and cannot be modified: ${file.path}")
+        }
         return null
     }
 
@@ -504,6 +704,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         MISSING,
         POSITION,
         SYMBOL,
+        SYMBOL_ID,
         CONFLICT
     }
 
@@ -534,7 +735,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * A symbol-mode intent requires both `language` and `symbol`; a lone optional field can be a
      * client/schema placeholder and must not conflict with a complete position lookup.
      */
-    protected fun resolveLookupMode(arguments: JsonObject): LookupModeState {
+    protected fun resolveLookupMode(
+        arguments: JsonObject,
+        allowSymbolId: Boolean = false
+    ): LookupModeState {
+        val hasSymbolId = allowSymbolId && optionalStringArg(arguments, ParamNames.SYMBOL_ID) != null
         val hasLanguage = optionalStringArg(arguments, ParamNames.LANGUAGE) != null
         val hasSymbol = optionalStringArg(arguments, ParamNames.SYMBOL) != null
         val hasAnySymbol = hasLanguage || hasSymbol
@@ -546,6 +751,8 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         val hasCompletePosition = hasFile && hasLine && hasColumn
 
         return when {
+            hasSymbolId && (hasAnySymbol || hasAnyPosition) -> LookupModeState.CONFLICT
+            hasSymbolId -> LookupModeState.SYMBOL_ID
             hasCompleteSymbol && hasAnyPosition -> LookupModeState.CONFLICT
             hasCompletePosition -> LookupModeState.POSITION
             hasAnySymbol -> LookupModeState.SYMBOL
@@ -570,6 +777,59 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     }
 
     /**
+     * Parses the optional `paths` argument — an array of project-relative globs where a
+     * leading `!` excludes — into a [PathGlobMatcher]. Returns success(`null`) when the
+     * argument is absent, so tools keep today's behaviour exactly.
+     *
+     * Every include glob's literal directory prefix (the wildcard-free leading part) must
+     * resolve inside the project **and** be addressable under the name the caller wrote;
+     * otherwise the call fails with the offending globs listed, so a typo'd path errors
+     * loudly instead of looking like "no matches" (issue #328).
+     *
+     * Existing is not sufficient, because [resolveFile] searches module content roots while
+     * matching relativizes against the project base path first (both mirror
+     * [ProjectUtils.getRelativePath], which produces the paths the tools return). In a
+     * `/repo` project owning a `/repo/moduleA` content root, a glob rooted at `src/main`
+     * resolves via that content root, yet every file under it is named
+     * `moduleA/src/main/...` for matching — so the glob would validate and then match
+     * nothing. Comparing the resolved directory's relative path against the prefix catches
+     * that and names the path that does work.
+     *
+     * Exclude globs are not existence-checked: defensively excluding a directory that does
+     * not exist (e.g. `!build`) is legitimate and harmless.
+     */
+    protected fun resolvePathGlobMatcher(project: Project, arguments: JsonObject): Result<PathGlobMatcher?> {
+        val pathsArg = arguments[ParamNames.PATHS] ?: return Result.success(null)
+        if (pathsArg == JsonNull) return Result.success(null)
+        if (pathsArg !is JsonArray) {
+            return "'${ParamNames.PATHS}' must be an array of glob strings.".toArgumentFailure()
+        }
+        val entries = pathsArg.map { entry ->
+            (entry as? JsonPrimitive)?.contentOrNull
+                ?: return "'${ParamNames.PATHS}' must be an array of glob strings.".toArgumentFailure()
+        }
+        val matcher = PathGlobMatcher.parse(entries).getOrElse { return Result.failure(it) }
+        val unresolved = matcher.includes.mapNotNull { glob ->
+            if (glob.literalPrefix.isEmpty()) return@mapNotNull null
+            val dir = resolveFile(project, glob.literalPrefix)
+                ?: return@mapNotNull "'${glob.original}' ('${glob.literalPrefix}' does not exist in the project)"
+            val addressableAs = ProjectUtils.getRelativePath(project, dir)
+            if (addressableAs == glob.literalPrefix) null
+            else "'${glob.original}' ('${glob.literalPrefix}' resolves to '$addressableAs' in this project — " +
+                "globs match that name, so write the glob against it)"
+        }
+        if (unresolved.isNotEmpty()) {
+            return unresolved.joinToString(
+                prefix = "Unresolvable 'paths' glob(s): ",
+                separator = "; ",
+                postfix = ". Globs are project-relative with '/' separators; '*' matches within a path segment, " +
+                    "'**' crosses directories, and a leading '!' excludes."
+            ).toArgumentFailure()
+        }
+        return Result.success(matcher)
+    }
+
+    /**
      * Extracts the raw scope value from arguments for error reporting.
      * Returns empty string if scope is missing/null, the string content if primitive, or toString() for complex types.
      */
@@ -583,7 +843,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a structured invalid-scope error response.
      * Includes the provided value and list of supported scope values.
      */
-    protected fun createInvalidScopeError(provided: String): ToolCallResult =
+    protected fun createInvalidScopeError(provided: String): CallToolResult =
         createStructuredErrorResult(buildJsonObject {
             put("error", JsonPrimitive("invalid_scope"))
             put("parameter", JsonPrimitive(ParamNames.SCOPE))
@@ -609,16 +869,24 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     protected fun resolveElementFromArguments(
         project: Project,
         arguments: JsonObject,
-        allowLibraryFilesForPosition: Boolean = false
+        allowLibraryFilesForPosition: Boolean = false,
+        allowSymbolId: Boolean = false
     ): Result<PsiElement> {
+        val symbolId = if (allowSymbolId) optionalStringArg(arguments, ParamNames.SYMBOL_ID) else null
         val language = optionalStringArg(arguments, ParamNames.LANGUAGE)
         val symbol = optionalStringArg(arguments, ParamNames.SYMBOL)
         val file = optionalStringArg(arguments, ParamNames.FILE)
         val line = arguments[ParamNames.LINE]?.jsonPrimitive?.int
         val column = arguments[ParamNames.COLUMN]?.jsonPrimitive?.int
 
-        return when (resolveLookupMode(arguments)) {
-            LookupModeState.CONFLICT -> ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
+        return when (resolveLookupMode(arguments, allowSymbolId)) {
+            LookupModeState.CONFLICT -> {
+                if (symbolId != null) ErrorMessages.SYMBOL_ID_AND_OTHER_TARGET_EXCLUSIVE.toArgumentFailure()
+                else ErrorMessages.SYMBOL_AND_POSITION_EXCLUSIVE.toArgumentFailure()
+            }
+
+            LookupModeState.SYMBOL_ID ->
+                SymbolIdRegistry.getInstance().resolve(project, symbolId!!)
 
             LookupModeState.SYMBOL -> {
                 if (language == null) return ErrorMessages.missingParamForSymbol(ParamNames.LANGUAGE).toArgumentFailure()
@@ -647,8 +915,49 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
                 Result.success(element)
             }
 
-            LookupModeState.MISSING -> ErrorMessages.SYMBOL_OR_POSITION_REQUIRED.toArgumentFailure()
+            LookupModeState.MISSING -> {
+                val message = if (allowSymbolId) {
+                    ErrorMessages.SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED
+                } else {
+                    ErrorMessages.SYMBOL_OR_POSITION_REQUIRED
+                }
+                message.toArgumentFailure()
+            }
         }
+    }
+
+    /** Binds a declaration's navigation target while preserving exact handle identity. */
+    @RequiresReadLock
+    protected fun bindNavigationSymbolId(project: Project, element: PsiElement, preferredId: String? = null): String =
+        bindExactSymbolId(project, PsiUtils.resolveNavigationTarget(element), preferredId)
+
+    /** Preserve an already resolved handle's PSI identity, including non-named and light elements. */
+    @RequiresReadLock
+    protected fun bindExactSymbolId(project: Project, element: PsiElement, preferredId: String? = null): String =
+        SymbolIdRegistry.getInstance().bind(project, element, preferredId)
+
+    /** Builds the common post-resolution/refactoring metadata returned to MCP clients. */
+    @RequiresReadLock
+    protected fun resolvedSymbolInfo(
+        project: Project,
+        element: PsiElement,
+        preferredId: String? = null,
+        preserveExactTarget: Boolean = false
+    ): ResolvedSymbolInfo {
+        val target = if (preserveExactTarget) element else PsiUtils.resolveNavigationTarget(element)
+        val position = PsiSourcePosition.position(project, target)
+        val qualifiedName = PsiUtils.qualifiedName(target)
+        return ResolvedSymbolInfo(
+            symbolId = bindExactSymbolId(project, target, preferredId),
+            name = (target as? PsiNamedElement)?.name,
+            kind = UsageViewUtil.getType(target).takeIf { it.isNotBlank() },
+            container = qualifiedName ?: PsiUtils.getAstPath(target).joinToString(".").ifEmpty { null },
+            file = target.containingFile?.virtualFile?.let { getRelativePath(project, it) },
+            line = position?.line,
+            column = position?.column,
+            qualifiedName = qualifiedName,
+            language = OptimizedSymbolSearch.getLanguageName(target)
+        )
     }
 
     /**
@@ -714,18 +1023,130 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
         return ClassResolver.findClassByName(project, qualifiedName)
     }
 
+    protected fun findPackageByName(project: Project, packageName: String): PsiElement? {
+        return ClassResolver.findPackageByName(project, packageName)
+    }
+
     /**
      * Gets a page from the pagination cache.
-     * Extracts project basePath and PSI mod count, delegates to PaginationService.
-     * Returns GetPageResult — caller maps Success/Error into tool-specific ToolCallResult.
+     * Delegates to PaginationService with exact project identity and materializes cached symbol
+     * handles only for the items in the page that is about to be returned.
+     * Returns GetPageResult — caller maps Success/Error into tool-specific CallToolResult.
      *
      * @param pageSize Explicit pageSize from request, or null to use the cursor-embedded value.
      */
     protected suspend fun getPageFromCache(cursorToken: String, pageSize: Int?, project: Project): PaginationService.GetPageResult {
         val service = ApplicationManager.getApplication().getService(PaginationService::class.java)
-        val basePath = ProjectResolver.normalizePath(project.basePath ?: "")
-        val modCount = PsiModificationTracker.getInstance(project).modificationCount
-        return service.getPage(cursorToken, pageSize, basePath, modCount)
+        val modificationTracker = PsiModificationTracker.getInstance(project)
+        val modCount = modificationTracker.modificationCount
+        val pageResult = service.getPage(cursorToken, pageSize, project, modCount, expectedToolName = name)
+        if (pageResult !is PaginationService.GetPageResult.Success) return pageResult
+
+        val page = pageResult.page
+        val hasSerializedPayload = page.serializedItems.isNotEmpty() || page.serializedMetadata.isNotEmpty()
+        if (!service.isPageSnapshotCurrent(
+                page = page,
+                project = project,
+                expectedToolName = name
+            )
+        ) {
+            return invalidatedCachedPage()
+        }
+
+        if (!hasSerializedPayload) return pageResult
+
+        val materialized = suspendingReadAction {
+            val beforeModCount = modificationTracker.modificationCount
+            if (!service.isPageSnapshotCurrent(
+                    page = page,
+                    project = project,
+                    expectedToolName = name
+                )
+            ) {
+                return@suspendingReadAction invalidatedCachedPage()
+            }
+
+            val result = materializeCachedSymbolHandles(project, pageResult)
+            val afterModCount = modificationTracker.modificationCount
+            if (beforeModCount != afterModCount ||
+                !service.isPageSnapshotCurrent(
+                    page = page,
+                    project = project,
+                    expectedToolName = name
+                )
+            ) {
+                invalidatedCachedPage()
+            } else {
+                result
+            }
+        }
+
+        if (materialized !is PaginationService.GetPageResult.Success) return materialized
+        return if (service.isPageSnapshotCurrent(
+                page = page,
+                project = project,
+                expectedToolName = name
+            )
+        ) {
+            PaginationService.GetPageResult.Success(
+                materialized.page.copy(stale = page.stale || modificationTracker.modificationCount != page.psiModCount)
+            )
+        } else {
+            invalidatedCachedPage()
+        }
+    }
+
+    private fun invalidatedCachedPage(): PaginationService.GetPageResult.Error =
+        PaginationService.GetPageResult.Error(
+            PaginationService.CursorError.SEARCH_INVALIDATED,
+            "Cached symbol context expired or changed. Please re-search."
+        )
+
+    /**
+     * A cached smart pointer outlives the short-lived symbol handle that was last returned for it.
+     * Rebind the exact pointer on demand, preferring the previous handle while it is still valid.
+     */
+    private fun materializeCachedSymbolHandles(
+        project: Project,
+        result: PaginationService.GetPageResult.Success
+    ): PaginationService.GetPageResult {
+        return try {
+            fun materialize(serialized: PaginationService.SerializedResult): JsonElement {
+                val pointer = serialized.exactSymbolPointer ?: return serialized.data
+                val symbolId = synchronized(serialized) {
+                    val element = pointer.element
+                        ?: throw IllegalStateException("A cached symbol no longer resolves")
+                    bindExactSymbolId(project, element, serialized.materializedSymbolId).also {
+                        serialized.materializedSymbolId = it
+                    }
+                }
+                val objectData = serialized.data as? JsonObject
+                    ?: throw IllegalStateException("Cached symbol data is not a JSON object")
+                return JsonObject(objectData + (ParamNames.SYMBOL_ID to JsonPrimitive(symbolId)))
+            }
+
+            val page = result.page
+            val materializedMetadata = page.metadata + page.serializedMetadata.mapValues { (_, value) ->
+                materialize(value).toString()
+            }
+            PaginationService.GetPageResult.Success(
+                page.copy(
+                    items = page.serializedItems.map(::materialize),
+                    metadata = materializedMetadata
+                )
+            )
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+            throw e
+        } catch (_: Exception) {
+            PaginationService.GetPageResult.Error(
+                PaginationService.CursorError.SEARCH_INVALIDATED,
+                "Cached symbol context expired or changed. Please re-search."
+            )
+        }
     }
 
     /**
@@ -739,7 +1160,7 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
     protected inline fun <reified T, reified R> buildPaginatedResult(
         result: PaginationService.GetPageResult,
         builder: (items: List<T>, page: PaginationService.PaginationPage) -> R
-    ): ToolCallResult {
+    ): CallToolResult {
         return when (result) {
             is PaginationService.GetPageResult.Error -> createErrorResult(result.message)
             is PaginationService.GetPageResult.Success -> {
@@ -784,11 +1205,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a successful result with a text message.
      *
      * @param text The success message
-     * @return A [ToolCallResult] with `isError = false`
+     * @return A [CallToolResult] with `isError = false`
      */
-    protected fun createSuccessResult(text: String): ToolCallResult {
-        return ToolCallResult(
-            content = listOf(ContentBlock.Text(text = text)),
+    protected fun createSuccessResult(text: String): CallToolResult {
+        return CallToolResult(
+            content = listOf(TextContent(text = text)),
             isError = false
         )
     }
@@ -797,11 +1218,13 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates an error result with a message.
      *
      * @param message The error message
-     * @return A [ToolCallResult] with `isError = true`
+     * @return A [CallToolResult] with `isError = true`
      */
-    protected fun createErrorResult(message: String): ToolCallResult {
-        return ToolCallResult(
-            content = listOf(ContentBlock.Text(text = message)),
+    protected fun createErrorResult(message: String, vararg hintTools: String): CallToolResult {
+        val text = message.takeIf { hintTools.isEmpty() }
+            ?: "${message.removeSuffix(".")}. Run ${hintTools.joinToString()} for more details."
+        return CallToolResult(
+            content = listOf(TextContent(text = text)),
             isError = true
         )
     }
@@ -812,11 +1235,11 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * The payload is emitted using the configured response format.
      * If formatting fails, returns a plain-text formatting error instead.
      */
-    protected fun createStructuredErrorResult(data: JsonElement): ToolCallResult {
+    protected fun createStructuredErrorResult(data: JsonElement): CallToolResult {
         return try {
             val jsonText = json.encodeToString(JsonElement.serializer(), data)
-            ToolCallResult(
-                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+            CallToolResult(
+                content = listOf(TextContent(text = formatStructuredPayload(jsonText))),
                 isError = true
             )
         } catch (e: Exception) {
@@ -828,13 +1251,13 @@ withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) { act
      * Creates a successful result with JSON-serialized data.
      *
      * @param data The data to serialize (must be @Serializable)
-     * @return A [ToolCallResult] with JSON content and `isError = false`
+     * @return A [CallToolResult] with JSON content and `isError = false`
      */
-    protected inline fun <reified T> createJsonResult(data: T): ToolCallResult {
+    protected inline fun <reified T> createJsonResult(data: T): CallToolResult {
         return try {
             val jsonText = json.encodeToString(data)
-            ToolCallResult(
-                content = listOf(ContentBlock.Text(text = formatStructuredPayload(jsonText))),
+            CallToolResult(
+                content = listOf(TextContent(text = formatStructuredPayload(jsonText))),
                 isError = false
             )
         } catch (e: Exception) {

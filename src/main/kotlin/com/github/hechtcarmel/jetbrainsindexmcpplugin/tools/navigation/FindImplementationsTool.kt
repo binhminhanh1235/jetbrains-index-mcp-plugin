@@ -6,14 +6,15 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScopeResolver
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRegistry
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.psi.SmartPointerManager
 import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
@@ -27,7 +28,7 @@ import kotlinx.serialization.json.put
 /**
  * Tool for finding implementations of interfaces, abstract classes, or methods across multiple languages.
  *
- * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust
+ * Supports: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala
  *
  * Delegates to language-specific handlers via [LanguageHandlerRegistry].
  */
@@ -43,27 +44,32 @@ class FindImplementationsTool : AbstractMcpTool() {
     override val description = """
         Find all implementations of an interface, abstract class, or abstract method. Use to discover concrete implementations when working with abstractions.
 
-        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust.
+        Languages: Java, Kotlin, Python, JavaScript, TypeScript, PHP, Rust, Scala.
 
         Returns: list of implementing classes/methods with file paths, line/column numbers, and kind (class/method).
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
 
         Target (mutually exclusive):
-        - file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
-        - language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
+        - target: nested selector containing exactly one of symbolId, position {file, line, column}, or qualifiedName + language (necessary for fresh search, ignored when cursor is provided)
+        - top-level symbolId: opaque handle returned by a previous semantic call (necessary for fresh search, ignored when cursor is provided)
+        - top-level file + line + column: position-based lookup (necessary for fresh search, ignored when cursor is provided)
+        - top-level language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
         Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
+        Example: {"target": {"qualifiedName": "com.example.Repository", "language": "Java"}}
         Example: {"language": "Java", "symbol": "com.example.Repository", "scope": "project_and_libraries"}
         Example: {"language": "JavaScript", "symbol": "src/interfaces#IRepository"}
         Example: {"language": "PHP", "symbol": "\\App\\Contracts\\Repository"}
         """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
+        .target()
+        .symbolId()
         .file(required = false, description = "Project-relative file path, or a dependency/library absolute path or jar:// URL previously returned by the plugin. Required for position-based lookup.")
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
@@ -73,7 +79,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments)
@@ -104,7 +110,12 @@ class FindImplementationsTool : AbstractMcpTool() {
         requireSmartMode(project)
 
         val cursorToken = suspendingReadAction {
-            val element = resolveElementFromArguments(project, arguments, allowLibraryFilesForPosition = true).getOrElse {
+            val element = resolveElementFromArguments(
+                project,
+                arguments,
+                allowLibraryFilesForPosition = true,
+                allowSymbolId = true
+            ).getOrElse {
                 return@suspendingReadAction null to createErrorResult(it.message ?: ErrorMessages.COULD_NOT_RESOLVE_SYMBOL)
             }
 
@@ -132,14 +143,20 @@ class FindImplementationsTool : AbstractMcpTool() {
                     line = impl.line,
                     column = impl.column,
                     kind = impl.kind,
-                    language = impl.language
+                    language = impl.language,
+                    qualifiedName = impl.qualifiedName,
+                    symbolId = null,
+                    pointerTarget = impl.pointerTarget
                 )
             }
 
             val serializedResults = implementationLocations.map { impl ->
                 PaginationService.SerializedResult(
                     key = "${impl.file}:${impl.line}:${impl.column}:${impl.name}",
-                    data = json.encodeToJsonElement(impl)
+                    data = json.encodeToJsonElement(impl),
+                    symbolPointer = impl.pointerTarget?.let {
+                        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(it)
+                    }
                 )
             }
 
@@ -150,7 +167,7 @@ class FindImplementationsTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = null,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: "")
+                project = project
             )
 
             token to null

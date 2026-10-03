@@ -2,16 +2,17 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.codeInsight.actions.AbstractLayoutCodeProcessor
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.codeInsight.actions.RearrangeCodeProcessor
 import com.intellij.codeInsight.actions.ReformatCodeProcessor
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
@@ -57,7 +58,7 @@ class ReformatCodeTool : AbstractMcpTool() {
         Example: {"file": "src/MyClass.java", "startLine": 10, "endLine": 50, "optimizeImports": false}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file()
         .intProperty(ParamNames.START_LINE, "Start line for partial formatting (1-based). If provided, endLine is also required.")
@@ -75,7 +76,7 @@ class ReformatCodeTool : AbstractMcpTool() {
         val error: String? = null
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
@@ -91,6 +92,15 @@ class ReformatCodeTool : AbstractMcpTool() {
         if (startLine != null && endLine != null) {
             if (startLine < 1) return createErrorResult("startLine must be >= 1")
             if (endLine < startLine) return createErrorResult("endLine must be >= startLine")
+        }
+
+        // Refresh VFS for the target file to pick up external changes before PSI resolution.
+        // Without this, the stub index can be stale when files are modified by external tools,
+        // causing "Outdated stub in index" errors during import optimization or reformatting.
+        val virtualFile = resolveFile(project, file)
+        if (virtualFile != null) {
+            ensureWritable(virtualFile)?.let { return it }
+            syncFileForEdit(project, virtualFile)?.let { return it }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -112,8 +122,10 @@ class ReformatCodeTool : AbstractMcpTool() {
         // PHASE 2: EDT - Execute reformat using processor chaining
         // ═══════════════════════════════════════════════════════════════════════
         var errorMessage: String? = null
+        var unsavedBefore: Set<Document> = emptySet()
 
         edtAction {
+            unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             try {
                 executeReformat(project, psiFile, textRange, optimizeImports, rearrangeCode)
             } catch (e: Exception) {
@@ -126,11 +138,12 @@ class ReformatCodeTool : AbstractMcpTool() {
         // write-safe EDT modality.
         if (errorMessage == null) {
             commitDocuments(project)
-            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+            val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Reformat failed: $errorMessage")
+            createErrorResult("Reformat failed: $errorMessage", ToolNames.DIAGNOSTICS)
         } else {
             val operations = buildList {
                 add("reformatted")

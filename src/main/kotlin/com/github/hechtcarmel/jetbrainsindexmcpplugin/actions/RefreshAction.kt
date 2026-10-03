@@ -4,9 +4,11 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ui.McpToolWindowPanel
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.util.ui.UIUtil
 
 class RefreshAction : AnAction(
     McpBundle.message("toolWindow.refresh"),
@@ -18,14 +20,15 @@ class RefreshAction : AnAction(
 
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(McpConstants.TOOL_WINDOW_ID)
         toolWindow?.contentManager?.contents?.forEach { content ->
-            val component = content.component
-            if (component is McpToolWindowPanel) {
-                component.refresh()
-            }
+            // The content component is a wrapper JPanel (toolbar + panel), so the panel has to
+            // be located inside it rather than matched against the component itself.
+            UIUtil.findComponentOfType(content.component, McpToolWindowPanel::class.java)?.refresh()
         }
     }
 
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabled = e.project != null
     }
+
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
 }

@@ -1,13 +1,18 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ConflictMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -68,7 +73,7 @@ open class MoveFileTool : AbstractRefactoringTool() {
         - Move config file: {"file": "config/old.yml", "destination": "config/archive"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file(description = "Path to the source file to move, relative to project root. REQUIRED.")
         .stringProperty("destination", "Target directory path relative to project root. The file will be moved into this directory. Created automatically if it doesn't exist. REQUIRED.", required = true)
@@ -95,10 +100,14 @@ open class MoveFileTool : AbstractRefactoringTool() {
         val destinationRelativePath: String,
         val backend: MoveBackend,
         val phpDeclarationPointer: SmartPsiElementPointer<PsiElement>? = null,
-        val phpDeclarationName: String? = null
+        val phpDeclarationName: String? = null,
+        /** Repairs usage files the generic move damages; null when no language guard applies. */
+        val usageGuard: MoveUsageGuard? = null,
+        /** True when the file leaves a source root for a directory no module compiles. */
+        val leavesSourceRoots: Boolean = false
     )
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, "file").getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
         }
@@ -107,12 +116,14 @@ open class MoveFileTool : AbstractRefactoringTool() {
         }
 
         requireSmartMode(project)
+        syncProjectForRefactoring(project)
 
         // ═══════════════════════════════════════════════════════════════════════
         // PHASE 1: VFS + READ ACTION - Validate source file
         // ═══════════════════════════════════════════════════════════════════════
         val sourceVirtualFile = resolveFile(project, file)
             ?: return createErrorResult("Source file not found: $file")
+        ensureWritable(sourceVirtualFile)?.let { return it }
         val sourceInfo = suspendingReadAction {
             val psiFile = PsiManager.getInstance(project).findFile(sourceVirtualFile)
             if (psiFile == null || !psiFile.isPhysical) {
@@ -153,12 +164,16 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 is MoveBackendSelection.Unsupported -> null to backendSelection.message
                 MoveBackendSelection.GenericFileMove -> {
                     val destinationRelativePath = getRelativePath(project, targetDir)
+                    val fileIndex = ProjectRootManager.getInstance(project).fileIndex
                     MovePreparation(
                         psiFile = psiFile,
                         targetDirectory = targetPsiDir,
                         sourceRelativePath = sourceRelativePath,
                         destinationRelativePath = destinationRelativePath,
-                        backend = MoveBackend.GENERIC_FILE_MOVE
+                        backend = MoveBackend.GENERIC_FILE_MOVE,
+                        usageGuard = selectUsageGuard(psiFile, targetPsiDir),
+                        leavesSourceRoots = fileIndex.isInSourceContent(sourceVirtualFile) &&
+                            !fileIndex.isInSourceContent(targetDir)
                     ) to null
                 }
                 is MoveBackendSelection.PhpSemanticMove -> {
@@ -227,10 +242,12 @@ open class MoveFileTool : AbstractRefactoringTool() {
     private suspend fun executeMove(
         project: Project,
         preparation: MovePreparation
-    ): ToolCallResult {
+    ): CallToolResult {
         var success = false
         var errorMessage: String? = null
         var affectedFiles = linkedSetOf<String>()
+        var backendWarnings: List<String> = emptyList()
+        var notSaved: List<String> = emptyList()
         val fileName = preparation.psiFile.name
 
         edtAction {
@@ -242,9 +259,10 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
                 val filePointer = SmartPointerManager.createPointer(preparation.psiFile)
                 val modifiedFilesBeforeMove = collectUnsavedProjectFiles(project)
+                val unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
 
                 when (preparation.backend) {
-                    MoveBackend.GENERIC_FILE_MOVE -> executeGenericFileMove(preparation)
+                    MoveBackend.GENERIC_FILE_MOVE -> backendWarnings = executeGenericFileMove(preparation)
                     MoveBackend.PHP_SEMANTIC_MOVE -> executePhpSemanticMove(project, preparation)
                 }
 
@@ -254,13 +272,15 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
                 affectedFiles = collectAffectedFiles(project, preparation, filePointer, fileName, modifiedFilesBeforeMove)
-                FileDocumentManager.getInstance().saveAllDocuments()
+                notSaved = saveChangedDocuments(project, unsavedBefore)
 
                 success = true
             } catch (e: Exception) {
                 errorMessage = e.message
             }
         }
+
+        if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
 
         return if (success) {
             val newPath = if (preparation.destinationRelativePath.isBlank()) {
@@ -272,16 +292,29 @@ open class MoveFileTool : AbstractRefactoringTool() {
                 MoveBackend.GENERIC_FILE_MOVE -> " using IDE file move semantics"
                 MoveBackend.PHP_SEMANTIC_MOVE -> " using PhpStorm semantic PHP move"
             }
+            val warnings = buildList {
+                addAll(backendWarnings)
+                if (preparation.leavesSourceRoots) {
+                    add(
+                        "Destination '${preparation.destinationRelativePath}' is outside every source root: " +
+                            "'$fileName' is no longer part of any module's sources, so builds and code " +
+                            "intelligence stop seeing it until that directory belongs to a module source root " +
+                            "(reload the build system with ${ToolNames.RELOAD_PROJECT}, link it with " +
+                            "${ToolNames.LINK_BUILD_SYSTEM}, or register it with ${ToolNames.CREATE_MODULE})."
+                    )
+                }
+            }
             createJsonResult(
                 RefactoringResult(
                     success = true,
                     affectedFiles = affectedFiles.toList(),
                     changesCount = affectedFiles.size,
-                    message = "Successfully moved '${preparation.sourceRelativePath}' to '$newPath'$backendNote"
+                    message = "Successfully moved '${preparation.sourceRelativePath}' to '$newPath'$backendNote",
+                    warnings = warnings.takeIf { it.isNotEmpty() }
                 )
             )
         } else {
-            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"}")
+            createErrorResult("Move failed: ${errorMessage ?: "Unknown error"}", ToolNames.DIAGNOSTICS)
         }
     }
 
@@ -310,22 +343,55 @@ open class MoveFileTool : AbstractRefactoringTool() {
         return MoveBackendSelection.PhpSemanticMove(pointer, declarationName)
     }
 
+    /**
+     * Picks the [MoveUsageGuard] for a generic move, or null when no language needs one.
+     *
+     * Only Java has a guard today ([JavaOnDemandImportGuard], issue #360). Its class is loaded
+     * lazily on first use, so the plugin-availability check here is what keeps IDEs without the
+     * Java plugin from ever resolving Java PSI types.
+     */
+    private fun selectUsageGuard(psiFile: PsiFile, targetDirectory: PsiDirectory): MoveUsageGuard? {
+        if (!PluginDetectors.java.isAvailable) return null
+        return JavaOnDemandImportGuard.forMove(psiFile, targetDirectory)
+    }
+
+    /**
+     * Runs the generic file move and returns the plain-text warnings it produced: the
+     * sanitized conflict messages the processor detected, followed by one line per usage file
+     * whose imports the [MoveUsageGuard] had to restore. Empty when the move was clean.
+     */
     internal open fun executeGenericFileMove(
         preparation: MovePreparation
-    ) {
+    ): List<String> {
+        val project = preparation.psiFile.project
         val processor = HeadlessMoveProcessor(
-            preparation.psiFile.project,
+            project,
             arrayOf<PsiElement>(preparation.psiFile),
             preparation.targetDirectory,
             true,
             false, // searchInComments
             false, // searchInNonJavaFiles
             null,  // moveCallback
-            null   // prepareSuccessfulCallback
+            null,  // prepareSuccessfulCallback
+            preparation.usageGuard
         )
 
         processor.setPreviewUsages(false)
-        processor.run()
+        // MoveFilesOrDirectoriesProcessor.performRefactoring reads the thread's progress
+        // indicator without a null check, and headless write actions don't install one
+        // (ApplicationImpl.runEdtProgressWriteAction only installs the indicator when the
+        // UI is initialized), so install one for the duration of the move.
+        ProgressManager.getInstance().runProcess(
+            { processor.run() },
+            EmptyProgressIndicator()
+        )
+        val restoredImportWarnings = processor.restoredImports.map { restored ->
+            val imports = restored.imports.joinToString(", ") { "'$it'" }
+            "Restored import $imports in '${getRelativePath(project, restored.file)}': the IDE move removed " +
+                "it although '${preparation.psiFile.name}' stays in the same package, so the file would no " +
+                "longer have compiled."
+        }
+        return processor.capturedConflicts + restoredImportWarnings
     }
 
     internal open fun executePhpSemanticMove(project: Project, preparation: MovePreparation) {
@@ -647,7 +713,13 @@ open class MoveFileTool : AbstractRefactoringTool() {
  * Headless move processor that suppresses conflict dialogs for autonomous operation.
  *
  * Overrides [showConflicts] to always proceed (return true) instead of showing
- * a modal dialog that would block the MCP tool execution.
+ * a modal dialog that would block the MCP tool execution. The detected conflicts
+ * are captured in [capturedConflicts] (sanitized to plain text) so the tool can
+ * report them as warnings instead of silently claiming a conflict-free move.
+ *
+ * Wraps [performRefactoring] with the optional [usageGuard]: the guard sees which files the
+ * processor is about to rewrite, then gets a chance, inside the same write action, to repair
+ * what the rewrite broke. What it restored is exposed as [restoredImports].
  */
 private class HeadlessMoveProcessor(
     project: Project,
@@ -657,12 +729,29 @@ private class HeadlessMoveProcessor(
     searchInComments: Boolean,
     searchInNonJavaFiles: Boolean,
     moveCallback: com.intellij.refactoring.move.MoveCallback?,
-    prepareSuccessfulCallback: Runnable?
+    prepareSuccessfulCallback: Runnable?,
+    private val usageGuard: MoveUsageGuard?
 ) : MoveFilesOrDirectoriesProcessor(
     project, elements, newParent, searchForReferences,
     searchInComments, searchInNonJavaFiles, moveCallback, prepareSuccessfulCallback
 ) {
+    val capturedConflicts = mutableListOf<String>()
+    var restoredImports: List<RestoredImports> = emptyList()
+        private set
+
     override fun showConflicts(conflicts: MultiMap<PsiElement, String>, usages: Array<out UsageInfo>?): Boolean {
+        capturedConflicts.addAll(ConflictMessages.sanitizeAll(conflicts.values()))
         return true
+    }
+
+    override fun performRefactoring(usages: Array<out UsageInfo>) {
+        val guard = usageGuard
+        if (guard == null) {
+            super.performRefactoring(usages)
+            return
+        }
+        guard.beforeRetarget(usages.mapNotNull { it.file }.distinct())
+        super.performRefactoring(usages)
+        restoredImports = guard.afterRetarget()
     }
 }

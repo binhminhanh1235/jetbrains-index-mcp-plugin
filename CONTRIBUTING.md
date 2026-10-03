@@ -10,22 +10,44 @@ Follow every rule here before opening a pull request.
 ### Local feedback loop (run these yourself)
 
 ```bash
-./gradlew test --tests "*UnitTest*"   # fast unit tests, no IDE needed (< 30 s)
-./gradlew runIde                       # launch sandboxed IDE with plugin installed
-./scripts/check-pr.sh                  # pre-push validation — run before every push
+./gradlew test -Ptier=unit   # fast headless tier, no IntelliJ Platform (~20 s)
+./gradlew test               # everything, platform tests included (~40 s)
+# opt-in real Kotlin PSI/refactoring regressions
+./gradlew test -PkotlinPluginTests=true --tests '*Kotlin*BehaviorTest' --no-configuration-cache --rerun-tasks
+./gradlew runIde             # launch sandboxed IDE with plugin installed
+./scripts/check-pr.sh        # pre-push validation — run before every push
 ```
 
-### CI / maintainer-only (do not run locally unless explicitly asked)
+Run the full suite before pushing. Platform tests are part of your local loop, not a
+CI-only luxury — they are where tool behavior is actually verified.
+
+The Kotlin command above is the clean-checkout recipe: it resolves the IDE selected by
+`platformVersion` and loads that IDE's bundled Kotlin plugin. This build does not read a
+`localIdePath` Gradle property, so passing `-PlocalIdePath=...` alone has no effect. A machine-local
+SDK override must replace the platform dependency and supply the matching compiler, test-framework,
+and Kotlin runtime wiring as one complete setup.
+
+### CI / maintainer-only
 
 ```bash
-./gradlew test               # includes platform tests — times out on headless machines
-./gradlew build              # depends on ./gradlew test, same issue
-./gradlew runPluginVerifier  # Marketplace compatibility check — run in CI
+./gradlew build          # full build + tests + plugin artifact
+./gradlew verifyPlugin   # Marketplace compatibility check
 ```
 
-`./gradlew test` registers `TestFrameworkType.Platform` via `build.gradle.kts`, which means
-it includes platform tests that require a full IntelliJ Platform environment. Running it
-locally hangs on headless machines. Stick to `--tests "*UnitTest*"` for local iteration.
+### Notes on the test commands
+
+`-Ptier=unit` / `-Ptier=platform` exist because Gradle's `--tests` flag has **no negation
+operator** and OR-combines repeated occurrences. Earlier revisions of this file documented
+`--tests "*Test" --tests "!*UnitTest*"` for "platform tests only"; that command silently ran
+the entire suite, because `*Test` already matches every `*UnitTest` class and `!*UnitTest*` is
+a literal pattern matching nothing.
+
+This file also used to claim the platform tests "time out on headless machines." That was never
+substantiated: CI runs `./gradlew check` on `ubuntu-latest` with no xvfb and no `DISPLAY`, and
+the full suite completes locally in about 40 seconds. Run them.
+
+The task is `verifyPlugin`, not `runPluginVerifier` — the latter does not exist under the
+IntelliJ Platform Gradle Plugin 2.x used here.
 
 ---
 
@@ -58,6 +80,21 @@ When requested, follow [SemVer](https://semver.org):
 | New tool / new feature | Minor (`x.Y.0`) |
 | Breaking schema / transport change | Major (`X.0.0`) |
 
+### Releasing (maintainer)
+
+Releases are published from GitHub — no manual Marketplace upload:
+
+1. Merge a version-bump PR (`pluginVersion` in `gradle.properties`). Changelog entries may stay
+   in `[Unreleased]` — the release pipeline moves them under the new version.
+2. The Build workflow on `main` creates a draft GitHub Release carrying the pending change notes.
+3. Press **Publish release** on the draft. The Release workflow signs the plugin, publishes it to
+   JetBrains Marketplace, attaches the zip to the release, and — if entries were still in
+   `[Unreleased]` — opens a `Changelog update - x.y.z` PR that moves them; merge it.
+
+Manually moving entries into a `## [x.y.z]` section in the bump PR also works: the pipeline
+detects the existing section and skips the changelog patch/PR. A `-beta.N` version suffix
+published as a GitHub **prerelease** goes to the Marketplace `beta` channel instead of stable.
+
 ---
 
 ## Adding a new tool — complete checklist
@@ -69,6 +106,10 @@ Every item is required. CI will catch missing registrations and test count misma
 - [ ] Extend `AbstractMcpTool`, implement `doExecute()` (never `execute()`)
 - [ ] Set `override val requiresPsiSync = false` unless the tool reads PSI indexes
 - [ ] Set `override val participatesInLifecycle = false` for infrastructure / observer tools
+- [ ] If the tool can block longer than ~45s, it MUST use the long-poll pattern
+      (`LongPollRegistry` + `waitSeconds` + a poll id) — MCP clients kill any call at their own
+      request timeout (60s in Claude Code) and the transport cannot stream progress. See
+      "Long-Running Tools" in CLAUDE.md and `ide_run_tests`/`ide_build_project` for the shape.
   (tools that manage lifecycle state, or bulk-operate across all projects)
 - [ ] Use `SchemaBuilder` for `inputSchema` — never construct `JsonObject` manually
 - [ ] Add `project_path` via `.projectPath()` on the builder for any multi-project tool
@@ -78,8 +119,8 @@ Every item is required. CI will catch missing registrations and test count misma
 - [ ] Add constant to `ToolNames.kt` in the correct group
 - [ ] Add constant to `ToolNames.ALL` in **strict alphabetical order by full string value**
   (compare the complete `ide_*` string character by character:
-  `ide_release_all_projects` < `ide_release_project` < `ide_restart` because `all` < `project` < `start`
-  lexicographically at position 12). A sort test in `ConstantsUnitTest` will fail if the order is wrong.
+  `ide_release_all_projects` < `ide_release_project` (position 12: `a` < `p`) and both <
+  `ide_restart` (position 6: `l` < `s`)). A sort test in `ConstantsUnitTest` will fail if the order is wrong.
 - [ ] Add opt-in tools to `McpSettings.DEFAULT_DISABLED_TOOLS`
 - [ ] Bump `ToolSettingsDefaults.CURRENT_SCHEMA_VERSION` and add a migration entry so users with
   existing persisted settings also get the new tool disabled by default
@@ -107,10 +148,26 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
   - required fields are present / absent as expected
   - opt-in tool appears in `McpSettings.DEFAULT_DISABLED_TOOLS`
   - legacy `McpSettings.State(settingsSchemaVersion = 0)` migration keeps the tool disabled
+- [ ] **Regenerate the golden tool manifest** — a new tool changes the snapshot, so
+  `ToolManifestContractUnitTest` will fail until you do:
+
+  ```bash
+  ./gradlew test -Ptier=unit --tests "*ToolManifestContractUnitTest" -Dcontract.update=true
+  ```
+
+  Then re-run without the flag and **review the diff to
+  `src/test/resources/contract/tool-manifest.json` as part of the change**. The manifest is a
+  contract with MCP clients: the diff should show exactly your new tool and nothing else. If it
+  shows unrelated schema or description churn, something regressed — investigate before committing.
+  Never regenerate it to make an unexplained failure go away.
 - [ ] Update `ConstantsUnitTest.testToolNamesAllContainsEveryConstant` — add the new constant
   and verify `ToolNames.ALL.size` still matches
 - [ ] Update `ToolExecutionIntegrationTest.testAllToolsRegistered` — add the new constant
   in the same alphabetical position as in `ToolNames.ALL`
+- [ ] Add a **behavior test that executes the tool** and asserts on its real result, not just its
+  schema. A tool covered only by schema and registration assertions is a tool nobody has proven
+  works — see `SyncFilesToolBehaviorTest` / `ProjectStatusToolBehaviorTest` for the shape, and
+  extend `McpPlatformTestCase` so fixtures land on the real filesystem.
 - [ ] For opt-in features with a toggle (e.g. `lifecycleEnabled`): tests that exercise
   opt-in behaviour must enable the flag in `setUp()` and restore it in `tearDown()`
 
@@ -119,8 +176,130 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
 - Assertions must **actually fail** if the implementation is deleted (no vacuous tests)
 - Do not simulate the system under test with a private helper and then assert on the helper
 - Do not leave placeholder tests with comments referencing non-existent code
-- `McpServerWatchdogTest`-style tests (simulate stop-handler locally, assert on local simulation)
-  should be deleted; the real integration test (`KtorMcpServerWatchdogTest`) is the one that counts
+- Tests that simulate the system under test locally and assert on the simulation get deleted
+  (a former `McpServerWatchdogTest` did exactly this; the real integration test,
+  `KtorMcpServerWatchdogTest`, is the one that counts)
+- Never place a test class at a `PluginDetector` fallback FQN (the `fallbackClass` values in
+  `PluginDetectors.kt`) — the detector's `Class.forName` fallback would then report that language
+  plugin as available for the entire test fork. Use a duck-typed fake in the test's own package.
+  Enforced by `PluginDetectorLeakUnitTest` and by `scripts/check-pr.sh` (test tree hygiene check).
+
+---
+
+## Code correctness review — mandatory before every push
+
+The checklist above covers registration and documentation. This section covers
+**code correctness** — the bugs that slip past unit tests because they only
+surface under real threading, real disposal, or real multi-language execution.
+
+These checks exist because the same categories of bugs have appeared in multiple
+PRs. Each item maps to a real production defect. Do not skip items because
+"it looks fine" — trace the actual execution path.
+
+### Threading: trace every `doExecute` to PSI
+
+MCP tool calls arrive on Ktor coroutine worker threads — no read lock, not EDT.
+
+For every code path in your PR that touches PSI:
+
+- [ ] **PSI reads** are inside `suspendingReadAction { }` or `ReadAction.compute { }`
+- [ ] **PSI writes** are inside `edtAction { WriteCommandAction.runWriteCommandAction { } }`
+- [ ] **Processors that manage their own write actions** (e.g., `RenameProcessor.run()`,
+  `Replacer.replaceAll()`) are called on EDT but **not** wrapped in an extra
+  `WriteCommandAction` — double-wrapping deadlocks
+- [ ] **Line/column calculations** that depend on document length happen **inside** the
+  write action, after the edit — not before, when the document was a different length
+
+How to verify: start at `doExecute()`, follow every call that eventually reaches a
+`PsiElement`, `PsiFile`, `Document`, or `PsiManager`. Each one must be in the correct
+threading context. `BasePlatformTestCase` runs on EDT with implicit read access, so
+**tests will not catch threading violations** — you must trace the production path manually.
+
+### Reflection proxies: handle Object methods
+
+Every `Proxy.newProxyInstance` call must handle `equals`, `hashCode`, and `toString`.
+The default return of `null` causes `NullPointerException` when the proxy is stored in
+collections or disposed through `Disposer.dispose()`.
+
+```kotlin
+// ✗ NPE when Disposer calls equals() during removal
+{ _, method, args -> if (method.name == "onEvent") { ... }; null }
+
+// ✓ Safe
+{ proxyObj, method, args ->
+    when (method.name) {
+        "equals" -> proxyObj === args?.get(0)
+        "hashCode" -> System.identityHashCode(proxyObj)
+        "toString" -> "MyListener-proxy"
+        "onEvent" -> { ...; null }
+        else -> null
+    }
+}
+```
+
+- [ ] Every `Proxy.newProxyInstance` in the PR handles `equals`, `hashCode`, `toString`
+- [ ] `grep -rn "Proxy.newProxyInstance" src/main/` — check ALL existing proxies too,
+  not just the ones you added
+
+### Error handling: distinguish "unavailable" from "broken"
+
+When using reflection to access optional plugin APIs, the catch block must distinguish
+`ClassNotFoundException` (plugin not installed — expected, recoverable) from other
+exceptions (plugin present but call failed — unexpected, worth reporting).
+
+```kotlin
+// ✗ Loses error information — caller can't tell if Maven is missing or if import crashed
+return try { ... } catch (_: Exception) { null }
+
+// ✓ Caller can distinguish and report appropriately
+catch (e: ClassNotFoundException) { return PluginUnavailable }
+catch (e: Exception) { return Failed(e.message) }
+```
+
+- [ ] Every `catch (_: Exception)` or `catch (_: Throwable)` — is the error type information
+  actually unneeded, or is it being silently swallowed?
+
+### Sibling consistency: same fix in all language resolvers
+
+When fixing a bug in one language resolver (Java, Kotlin, JavaScript/TypeScript), check
+whether the same pattern exists in sibling implementations.
+
+- [ ] Search for the same method name in `Java*Resolver`, `Kotlin*Resolver`,
+  `JavaScript*Resolver` — does the fix apply to all of them?
+- [ ] Search for the same method name in `Java*Handler`, `Kotlin*Handler`,
+  `Python*Handler`, `JavaScript*Handler`, etc. — same question
+
+### Dead code: trace from interface to all implementations
+
+When removing a caller, check whether the method is still referenced anywhere.
+If not, remove it from the interface and all implementations.
+
+- [ ] Every method removed or added — does the interface still match all implementations?
+- [ ] `ide_find_references` on the method — zero callers means dead code
+
+### Test honesty: conditional skips must be visible
+
+Tests that skip when an optional plugin is absent must use `Assume.assumeTrue()`,
+not early-return. Early-return silently passes — the test appears green but never ran.
+
+```kotlin
+// ✗ Silently passes — CI shows green even though nothing was tested
+if (!pluginAvailable) return
+
+// ✓ CI shows "skipped" — the maintainer knows it didn't run
+Assume.assumeTrue("JavaScript plugin not available", pluginAvailable)
+```
+
+- [ ] Every conditional test skip uses `Assume.assumeTrue`, not `return` or `return@runBlocking`
+
+### Set operations: account for hierarchical containment
+
+When computing set differences on file paths or module roots, check whether the domain
+has parent-child relationships. Plain set subtraction (`A - B`) flags children of
+requested items as "extra".
+
+- [ ] Every set difference on paths — does the code account for nesting?
+  (e.g., `root !in expected && expected.none { root.startsWith("$it/") }`)
 
 ---
 
@@ -138,6 +317,12 @@ confirm each has an entry: `README.md`, `USAGE.md`, `CLAUDE.md`, `SKILL.md`,
 
 - Use `ModalityState.nonModal()` — **not** `ModalityState.NON_MODAL` (deprecated field)
 - Use `ModalityState.any()` — **not** `ModalityState.ANY` (deprecated field)
+
+### Plugin availability detection
+
+- `PluginDetector` must use `PluginManagerCore.isLoaded` / `isDisabled` — **never**
+  `PluginManager.findEnabledPlugin`, which was rejected in JetBrains Marketplace review.
+  `scripts/check-pr.sh` fails if it reappears.
 
 ### Service registration
 
@@ -255,12 +440,81 @@ than claiming success.
 
 ---
 
+## Known gaps in the test suite
+
+Stated plainly, so nobody mistakes green for covered. The suite is strong against "a refactor
+dropped a tool or mutated an input schema" and good against "a Java refactoring stopped updating
+call sites". It is thin in these areas:
+
+- **No mock JDK.** `testFramework(TestFrameworkType.Plugin.Java)` is declared, but no test supplies
+  a `getProjectDescriptor()`, so fixtures run without an SDK and `java.lang.*` does not resolve.
+  Consequence: `GetDiagnosticsToolBehaviorTest`'s `contains("Cannot resolve")` assertions cannot
+  distinguish a deliberate error from the missing standard library. Wiring a descriptor with
+  `JAVA_LATEST` is the fix.
+- **Dumb-mode coverage is minimal.** `ClassResolverTest` uses `DumbModeTestUtils` to pin that FQN
+  lookup propagates `IndexNotReadyException` (which the tool layer turns into retry guidance)
+  instead of misreporting "Class not found", but no test yet drives an index-backed tool
+  end-to-end through dumb mode to prove it degrades gracefully at the MCP boundary.
+- **No whole-file golden fixtures.** `configureByFile` / `checkResultByFile` are unused, so
+  formatting damage and collateral edits outside the asserted region are invisible. This matters
+  most for `ide_reformat_code` and `ide_optimize_imports`.
+- **Reflection-based language handlers are largely unverified.** Python, Go, PHP and Rust handlers
+  are reached only through reflection against plugins absent from the test classpath. The Python
+  hierarchy and call-hierarchy handlers have no automated coverage at all — verify changes to them
+  in the corresponding IDE by hand.
+- **Real Kotlin PSI tests are opt-in.** `-PkotlinPluginTests=true` loads the bundled Kotlin plugin
+  for tests. `KotlinReplaceMemberFormattingBehaviorTest` exercises block/expression bodies and
+  property initializers, exact saved text, returned body lines, and full-file formatter idempotence.
+  `KotlinRenameBaseBehaviorTest` covers headless base selection, Kotlin/Java interfaces,
+  overrides and call sites, handles from super-method queries, preview with and without a base,
+  and aborting failed discovery. It guards the interactive entry point because Kotlin's unit-test
+  mode auto-confirms the super-method chooser. The safe-delete fixtures cover used lambda/catch/loop
+  parameters, Java-signature lookup of Kotlin source declarations, and refusal of implicit
+  constructors, generated `copy` methods, and property accessors. Other Kotlin-specific paths still
+  need dedicated behavior coverage or manual IDE verification. The opt-in configuration keeps the
+  plugin's newer metadata off `compileTestKotlin`. All test runs, including the default CI suite,
+  exclude the Gradle-injected stdlib so the IDE's matching runtime is used. An older runtime
+  stdlib causes `NoSuchMethodError: SequencesKt.sequenceOf` in platform modal progress/conflict
+  discovery as well as Kotlin usage search, even without the Kotlin plugin enabled.
+  `KotlinChangeSignatureBehaviorTest` covers source-position and semantic-handle lookup,
+  function rename, adding an `Int` parameter with a caller default across an interface and
+  override, unchanged preview source, and silent processor aborts. It verifies that selecting
+  the base preserves the original override handle and checks the base source file's writability.
+  Post-apply verification must resolve a fresh light method from a source smart pointer because
+  a retained light method can report the old signature after successful source edits.
+  Extension/suspend parameter mapping, Kotlin-only type syntax, and other change-signature
+  options still lack dedicated Kotlin behavior coverage.
+  The `src/kotlinPluginTest/kotlin` fixtures are added to the test sources only with this flag;
+  run the command above when changing Kotlin editing or refactoring.
+- **Some tools are still never executed by any test**, only schema- and response-shape-checked:
+  `ide_build_project`, `ide_reload_project`, `ide_import_modules`, `ide_open_workspace`,
+  `ide_restart`, `ide_lifecycle_log`, `ide_set_lifecycle_log_file`, and `ide_run_tests` (only its
+  `parseTarget` helper is covered). `ide_reformat_code` has error paths only. Adding a behavior
+  test for one is a genuinely useful first contribution — see the checklist above for the shape.
+- **`ide_symbol_info`'s `quick_navigation` tier still lacks stable automated coverage.**
+  Java signatures have behavior coverage; the opt-in `KotlinSymbolInfoBehaviorTest` exercises
+  `element_text` with annotations, KDoc, quoted names, and a plain declaration. It asserts the
+  actual `signatureSource`, so a different resolution tier cannot silently satisfy the test.
+  A TypeScript fixture does reach `quick_navigation`, but adding one made a JS/TS background task throw on an
+  application pooled thread during teardown — `BackendThreadPoolExecutor.afterExecute` logged it
+  and `TestLoggerFactory$TestLogger.error` then failed inside `AsyncLog`. The build stayed green
+  (the throw lands outside any test method), so it was a permanent unexplained error in the log
+  rather than a failure; the test was removed instead of shipped.
+  Verify `quick_navigation` by hand in the corresponding IDE.
+- **`SafeDeleteTool` cannot see references in files outside any content root.** The usage
+  search scope only covers content roots, so a reference living outside them will not block
+  deletion. (The former fail-open exception handling — treating a failed `ReferencesSearch` as
+  "no usages" — was fixed in 5.0.1: a failed search now aborts the deletion unless `force=true`,
+  and `SafeDeleteToolBehaviorTest` pins that behavior.)
+
+If you close one of these, delete its bullet in the same PR.
+
 ## Smoke test protocol
 
 After any `./gradlew buildPlugin` → install → restart cycle, run the smoke test at
-`docs/smoke-test-protocol.md` when changes touch:
+`smoke-tests/mcp-protocol.md` when changes touch:
 
-- HTTP transport (`KtorMcpServer.kt`, `JsonRpcHandler.kt`)
+- HTTP transport (`server/transport/KtorMcpServer.kt`, `LegacySseRoutes.kt`, `LocalOriginGuard.kt`)
 - Tool registration (`ToolRegistry.kt`, `McpServerService.kt`)
 - Any tool covered by the protocol
 
@@ -275,7 +529,9 @@ src/main/kotlin/.../
 ├── constants/          ToolNames.kt — all tool name constants + ALL list
 ├── history/            Per-project command history (bounded ring buffer)
 ├── lifecycle/          ProjectModeService, LifecycleEventLog, focus tracking
-├── server/             JsonRpcHandler, ProjectResolver, McpServerService, Ktor transport
+├── server/             McpServerService, ProjectResolver, PaginationService,
+│                       mcp/ (McpServerFactory, McpToolDispatcher),
+│                       transport/ (KtorMcpServer, LegacySseRoutes, LocalOriginGuard)
 ├── settings/           McpSettings (app-level persisted state)
 ├── tools/
 │   ├── AbstractMcpTool.kt   — extend this, implement doExecute()

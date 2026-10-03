@@ -4,7 +4,7 @@ object ParamNames {
     // Common parameters
     const val PROJECT_PATH = "project_path"
     const val FILE = "file"
-    const val FILES = "files"  // array of file paths for batch operations
+    const val FILES = "files"
     const val LINE = "line"
     const val COLUMN = "column"
     const val NAME = "name"
@@ -25,6 +25,7 @@ object ParamNames {
     const val TARGET_DIRECTORY = "targetDirectory"
     const val REPLACE_ALL = "replaceAll"
     const val FORCE = "force"
+    const val DRY_RUN = "dryRun"
     const val TARGET_TYPE_CAMEL = "targetType"
     const val TARGET_TYPE = "target_type"
     const val OPTIMIZE_IMPORTS = "optimizeImports"
@@ -44,16 +45,46 @@ object ParamNames {
 
     // Symbol reference parameter
     const val SYMBOL = "symbol"
+    const val SYMBOL_ID = "symbolId"
 
     // Symbol search parameters
     const val QUERY = "query"
     const val LIMIT = "limit"
     const val CONTEXT = "context"
     const val CASE_SENSITIVE = "caseSensitive"
+    const val WHOLE_WORD = "wholeWord"
     const val FILE_PATTERN = "filePattern"
     const val REGEX = "regex"
     const val CURSOR = "cursor"
     const val INCLUDE_GENERATED = "includeGenerated"
+    const val INCLUDE_NODES = "includeNodes"
+    const val INCLUDE_SYMBOL_IDS = "includeSymbolIds"
+    const val MAX_SYMBOL_IDS = "maxSymbolIds"
+
+    // SSR parameters
+    const val SEARCH_PATTERN = "searchPattern"
+    const val REPLACE_PATTERN = "replacePattern"
+
+    // Change signature parameters
+    const val NEW_RETURN_TYPE = "newReturnType"
+    const val NEW_VISIBILITY = "newVisibility"
+    const val NEW_PARAMETERS = "newParameters"
+    const val GENERATE_DELEGATE = "generateDelegate"
+
+    // Code editing parameters
+    const val CLASS = "class"
+    const val MEMBER = "member"
+    const val CONTENT = "content"
+    const val POSITION = "position"
+    const val ANCHOR = "anchor"
+    const val ANCHOR_PARAMETER_COUNT = "anchorParameterCount"
+    const val ANCHOR_LINE = "anchorLine"
+    const val PARAMETER_COUNT = "parameterCount"
+    const val REFORMAT = "reformat"
+
+    // Symbol info parameters
+    const val INCLUDE_DOC = "includeDoc"
+    const val MAX_DOC_LENGTH = "maxDocLength"
 
     // Preview parameters
     const val FULL_ELEMENT_PREVIEW = "fullElementPreview"
@@ -67,6 +98,21 @@ object ParamNames {
     const val REBUILD = "rebuild"
     const val INCLUDE_RAW_OUTPUT = "includeRawOutput"
     const val TIMEOUT_SECONDS = "timeoutSeconds"
+    const val BUILD_ID = "buildId"
+
+    // Test parameters
+    const val TARGET = "target"
+    const val TARGETS = "targets"
+    const val PACKAGE = "package"
+    const val DIRECTORY = "directory"
+    const val MODULE = "module"
+    const val CLASS_PATTERN = "classPattern"
+    const val FRAMEWORK = "framework"
+    const val OFFSET = "offset"
+    const val ACTIVATE_TOOL_WINDOW = "activateToolWindow"
+    const val RUN_ID = "runId"
+    const val WAIT_SECONDS = "waitSeconds"
+    const val INCLUDE_SUCCESS_OUTPUT = "includeSuccessOutput"
 
     // Diagnostics parameters
     const val INCLUDE_BUILD_ERRORS = "includeBuildErrors"
@@ -75,4 +121,10 @@ object ParamNames {
     const val TEST_RESULT_FILTER = "testResultFilter"
     const val MAX_BUILD_ERRORS = "maxBuildErrors"
     const val MAX_TEST_RESULTS = "maxTestResults"
+
+    // Project diagnostics parameters
+    const val PATHS = "paths"
+    const val MAX_FILES = "maxFiles"
+    const val MAX_PROBLEMS = "maxProblems"
+    const val ANALYSIS_ID = "analysisId"
 }

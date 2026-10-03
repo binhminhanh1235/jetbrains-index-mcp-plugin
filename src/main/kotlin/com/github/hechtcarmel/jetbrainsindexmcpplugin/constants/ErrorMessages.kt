@@ -21,8 +21,16 @@ object ErrorMessages {
     // Symbol resolution errors
     const val SYMBOL_AND_POSITION_EXCLUSIVE =
         "Cannot specify both language+symbol and file+line+column. Use one or the other."
+    const val SYMBOL_ID_AND_OTHER_TARGET_EXCLUSIVE =
+        "Cannot specify symbolId together with another target selector. Use symbolId by itself."
+    const val LANGUAGE_SYMBOL_AND_OTHER_TARGET_EXCLUSIVE =
+        "Cannot specify language+symbol together with another target selector. Use language+symbol by itself."
     const val SYMBOL_OR_POSITION_REQUIRED =
-        "Must specify either file+line+column or language+symbol to identify the target element."
+        "Must specify file+line+column or language+symbol to identify the target element."
+    const val SYMBOL_ID_OR_SYMBOL_OR_POSITION_REQUIRED =
+        "Must specify symbolId, file+line+column, or language+symbol to identify the target element."
+    fun symbolIdExpired(symbolId: String) =
+        "SYMBOL_ID_EXPIRED: symbolId '${symbolId.take(64)}' is unknown, expired, belongs to a different project instance, or its PSI element can no longer be restored. Discover the symbol again to obtain a new symbolId."
     fun missingParamForSymbol(param: String) =
         "Missing required parameter: $param (required when using symbol)"
     fun missingParamForPosition(param: String, others: String) =

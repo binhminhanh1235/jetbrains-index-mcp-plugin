@@ -7,6 +7,6 @@ class GetSignatureToolUnitTest : TestCase() {
     fun testNameAndSchema() {
         val tool = GetSignatureTool()
         assertEquals(ToolNames.GET_SIGNATURE, tool.name)
-        assertTrue(tool.inputSchema.containsKey("properties"))
+        assertNotNull(tool.inputSchema.properties)
     }
 }

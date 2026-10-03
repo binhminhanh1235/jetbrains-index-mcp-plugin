@@ -7,22 +7,26 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScop
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.ProjectResolver
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.FindClassResult
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactSymbolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
 import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.SmartPointerManager
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.codeStyle.NameUtil
 import com.intellij.psi.search.GlobalSearchScope
@@ -35,6 +39,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -74,34 +79,49 @@ class FindClassTool : AbstractMcpTool() {
         Example: {"query": "UserService"} or {"query": "U*Impl"} or {"query": "USvc", "scope": "project_and_libraries"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .stringProperty(ParamNames.QUERY, "Search pattern. Supports substring and camelCase matching. Required for fresh search, ignored when cursor is provided.")
         .scopeProperty("Search scope. Default: project_files.")
         .stringProperty(ParamNames.LANGUAGE, "Filter results by language (e.g., \"Kotlin\", \"Java\", \"Python\"). Case-insensitive. Optional.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include classes defined in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
+        .booleanProperty("compact", "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.", required = false)
         .enumProperty(ParamNames.MATCH_MODE, "How to match the query. Default: \"substring\".", listOf("substring", "prefix", "exact"))
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
-            return buildPaginatedResult<SymbolMatch, FindClassResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                FindClassResult(
-                    classes = items,
-                    totalCount = page.totalCollected,
-                    query = page.metadata["query"] ?: "",
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                    CompactSymbolResult(
+                        symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore
+                    )
+                }
+            } else {
+                buildPaginatedResult<SymbolMatch, FindClassResult>(pageResult) { items, page ->
+                    FindClassResult(
+                        classes = items,
+                        totalCount = page.totalCollected,
+                        query = page.metadata["query"] ?: "",
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale
+                    )
+                }
             }
         }
 
@@ -147,7 +167,10 @@ class FindClassTool : AbstractMcpTool() {
             val serializedResults = sortedClasses.map { cls ->
                 PaginationService.SerializedResult(
                     key = "${cls.file}:${cls.line}:${cls.column}:${cls.name}",
-                    data = json.encodeToJsonElement(cls)
+                    data = json.encodeToJsonElement(cls),
+                    symbolPointer = cls.pointerTarget?.let {
+                        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(it)
+                    }
                 )
             }
 
@@ -158,23 +181,36 @@ class FindClassTool : AbstractMcpTool() {
                 seenKeys = serializedResults.map { it.key }.toSet(),
                 searchExtender = searchExtender,
                 psiModCount = PsiModificationTracker.getInstance(project).modificationCount,
-                projectBasePath = ProjectResolver.normalizePath(project.basePath ?: ""),
+                project = project,
                 metadata = mapOf("query" to query)
             )
         }
 
-        return buildPaginatedResult<SymbolMatch, FindClassResult>(getPageFromCache(cursorToken, pageSize, project)) { items, page ->
-            FindClassResult(
-                classes = items,
-                totalCount = page.totalCollected,
-                query = page.metadata["query"] ?: "",
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(cursorToken, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<SymbolMatch, CompactSymbolResult>(pageResult) { items, page ->
+                CompactSymbolResult(
+                    symbols = items.map { "${it.qualifiedName ?: it.name} [${it.kind}] (${it.file}:${it.line})" },
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<SymbolMatch, FindClassResult>(pageResult) { items, page ->
+                FindClassResult(
+                    classes = items,
+                    totalCount = page.totalCollected,
+                    query = page.metadata["query"] ?: "",
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
     }
 
@@ -207,7 +243,10 @@ class FindClassTool : AbstractMcpTool() {
             .map { cls ->
                 PaginationService.SerializedResult(
                     key = "${cls.file}:${cls.line}:${cls.column}:${cls.name}",
-                    data = json.encodeToJsonElement(cls)
+                    data = json.encodeToJsonElement(cls),
+                    symbolPointer = cls.pointerTarget?.let {
+                        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(it)
+                    }
                 )
             }
     }
@@ -236,7 +275,17 @@ class FindClassTool : AbstractMcpTool() {
 
             try {
                 processContributor(contributor, project, pattern, searchScope, scope, limit, nameFilter, matcher, results, seen, languageFilter)
+            } catch (e: ProcessCanceledException) {
+                // Swallowing cancellation would silently truncate the result set mid-enumeration
+                // while still reporting it as complete.
+                throw e
+            } catch (e: com.intellij.openapi.project.IndexNotReadyException) {
+                // Dumb mode started mid-search. Propagate so AbstractMcpTool.execute translates
+                // this into the standard retryable "IDE is indexing" error instead of caching a
+                // truncated result set as a complete page.
+                throw e
             } catch (e: Exception) {
+                e.rethrowIfControlFlow()
                 LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
             }
         }
@@ -335,30 +384,16 @@ class FindClassTool : AbstractMcpTool() {
         if (!scope.contains(file)) return null
         val relativePath = ProjectUtils.getToolFilePath(project, file)
 
-        val name = when (targetElement) {
-            is PsiNamedElement -> targetElement.name
-            else -> {
-                try {
-                    val method = targetElement.javaClass.getMethod("getName")
-                    method.invoke(targetElement) as? String
-                } catch (_: Exception) {
-                    null
-                }
-            }
-        } ?: return null
+        val name = PsiUtils.classDisplayName(project, targetElement) ?: return null
 
-        val qualifiedName = try {
-            val method = targetElement.javaClass.getMethod("getQualifiedName")
-            method.invoke(targetElement) as? String
-        } catch (e: Exception) {
-            null
-        }
+        val qualifiedName = PsiUtils.qualifiedName(targetElement)
 
         val line = getLineNumber(project, targetElement) ?: 1
         val kind = determineKind(targetElement)
         val language = getLanguageName(targetElement)
 
         return SymbolMatch(
+            symbolId = PaginationService.UNMATERIALIZED_SYMBOL_ID,
             name = name,
             qualifiedName = qualifiedName,
             kind = kind,
@@ -366,7 +401,8 @@ class FindClassTool : AbstractMcpTool() {
             line = line,
             column = getColumnNumber(project, targetElement) ?: 1,
             containerName = null,
-            language = language
+            language = language,
+            pointerTarget = targetElement
         )
     }
 
@@ -377,7 +413,8 @@ class FindClassTool : AbstractMcpTool() {
                 try {
                     val method = item.javaClass.getMethod("getElement")
                     method.invoke(item) as? PsiElement
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    e.rethrowIfControlFlow()
                     null
                 }
             }
@@ -399,14 +436,31 @@ class FindClassTool : AbstractMcpTool() {
     }
 
     private fun determineKind(element: PsiElement): String {
-        val className = element.javaClass.simpleName.lowercase()
+        PsiUtils.kotlinClassKind(element)?.let { return it }
+
+        fun probe(methodName: String): Boolean = try {
+            element.javaClass.getMethod(methodName).invoke(element) == true
+        } catch (e: Exception) {
+            e.rethrowIfControlFlow()
+            false
+        }
         return when {
-            className.contains("interface") -> "INTERFACE"
-            className.contains("enum") -> "ENUM"
-            className.contains("class") -> "CLASS"
-            className.contains("struct") -> "STRUCT"
-            className.contains("trait") -> "TRAIT"
-            else -> "CLASS"
+            // isAnnotationType must precede isInterface: Java PSI reports annotation types as interfaces too
+            probe("isAnnotationType") || probe("isAnnotation") -> "ANNOTATION"
+            probe("isRecord") -> "RECORD"
+            probe("isEnum") -> "ENUM"
+            probe("isInterface") -> "INTERFACE"
+            probe("isTrait") -> "TRAIT"
+            else -> {
+                val className = element.javaClass.simpleName.lowercase()
+                when {
+                    className.contains("interface") -> "INTERFACE"
+                    className.contains("enum") -> "ENUM"
+                    className.contains("struct") -> "STRUCT"
+                    className.contains("trait") -> "TRAIT"
+                    else -> "CLASS"
+                }
+            }
         }
     }
 

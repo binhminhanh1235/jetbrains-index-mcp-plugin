@@ -3,8 +3,10 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpBundle
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.ServerStatusListener
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpServerFactory
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp.McpToolDispatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorMcpServer
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.KtorSseSessionManager
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.transport.LegacySseTransports
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettingsConfigurable
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
@@ -20,7 +22,9 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.util.Alarm
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -30,11 +34,11 @@ import kotlinx.coroutines.launch
  * This service manages:
  * - Embedded Ktor CIO server with configurable port
  * - Tool registry for MCP tools
- * - JSON-RPC handler for message processing
- * - SSE session management for client connections
+ * - The MCP Kotlin SDK server factory that turns the registry into a protocol server
+ * - Legacy SSE transport bookkeeping
  * - Coroutine scope for non-blocking tool execution
  *
- * Uses HTTP+SSE transport for compatibility with MCP clients.
+ * Serves Streamable HTTP (primary) and legacy HTTP+SSE for older MCP clients.
  */
 @Service(Service.Level.APP)
 class McpServerService(
@@ -42,10 +46,21 @@ class McpServerService(
 ) : Disposable {
 
     private val toolRegistry: ToolRegistry = ToolRegistry()
-    private val jsonRpcHandler: JsonRpcHandler
-    private val sseSessionManager: KtorSseSessionManager = KtorSseSessionManager()
-    private var ktorServer: KtorMcpServer? = null
-    private var serverError: ServerError? = null
+    private val serverFactory: McpServerFactory
+    private val legacySseTransports: LegacySseTransports = LegacySseTransports()
+    private val serverEpoch: McpServerEpoch = McpServerEpoch.shared
+    private val symbolIdRegistry: SymbolIdRegistry = SymbolIdRegistry.getInstance()
+    private val paginationService: PaginationService =
+        ApplicationManager.getApplication().getService(PaginationService::class.java)
+
+
+    private val hierarchyContinuationRegistry: HierarchyContinuationRegistry =
+        HierarchyContinuationRegistry.getInstance()
+
+    // Written under the instance monitor (startServer/stopServer), read lock-free from
+    // status accessors on arbitrary threads — hence @Volatile.
+    @Volatile private var ktorServer: KtorMcpServer? = null
+    @Volatile private var serverError: ServerError? = null
 
     // Watchdog: restarts the server if it stops unexpectedly.
     // The reactive path (ApplicationStopped event) fires immediately; the safety-net
@@ -76,7 +91,7 @@ class McpServerService(
 
     init {
         LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
-        jsonRpcHandler = JsonRpcHandler(toolRegistry)
+        serverFactory = McpServerFactory(toolRegistry, McpToolDispatcher(toolRegistry))
         if (shouldStartServer()) {
             coroutineScope.launch { initialize() }
         } else {
@@ -95,6 +110,7 @@ class McpServerService(
         isInitialized = true
         val startServer = shouldStartServer()
         if (startServer) {
+            EdtHeartbeatService.getInstance()
             val settings = McpSettings.getInstance()
             val port = settings.serverPort
             val host = settings.serverHost
@@ -113,12 +129,21 @@ class McpServerService(
     /**
      * Starts the MCP server on the specified port.
      *
+     * Synchronized (together with [stopServer]) so concurrent restarts — the init coroutine,
+     * a settings apply, and the watchdog alarm — cannot interleave stop-then-start: without
+     * the monitor, two racing calls can both bind an engine and the one that loses the
+     * [ktorServer] write stays bound but unreachable for the rest of the IDE session.
+     * Nothing executed under the monitor waits on the EDT (notifications and status updates
+     * are posted via invokeLater), and the Ktor stop/bind calls are bounded.
+     *
      * @param host The host to bind to
      * @param port The port to listen on
      * @return The result of the start operation
      */
+    @Synchronized
     fun startServer(host: String, port: Int): KtorMcpServer.StartResult {
         watchdogAlarm.cancelAllRequests()
+        val previousError = serverError
         stopServer()
 
         LOG.info("Starting MCP Server on $host:$port")
@@ -126,13 +151,25 @@ class McpServerService(
         val server = KtorMcpServer(
             port = port,
             host = host,
-            jsonRpcHandler = jsonRpcHandler,
-            sseSessionManager = sseSessionManager,
+            serverFactory = serverFactory,
+            legacySseTransports = legacySseTransports,
             coroutineScope = coroutineScope,
             onUnexpectedStop = { scheduleRestart() }
         )
 
-        val result = when (val startResult = server.start()) {
+        val startResult = try {
+            server.start()
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: CancellationException) {
+            // Ktor CIO can surface an engine-side bind failure as a thrown
+            // JobCancellationException with no BindException in its cause chain. Letting it
+            // escape would kill the calling coroutine with no serverError recorded and no
+            // notification shown.
+            KtorMcpServer.StartResult.Error(e.message ?: "Server start was cancelled", e)
+        }
+
+        val result = when (startResult) {
             is KtorMcpServer.StartResult.Success -> {
                 ktorServer = server
                 serverError = null
@@ -141,20 +178,36 @@ class McpServerService(
                 startResult
             }
             is KtorMcpServer.StartResult.PortInUse -> {
-                serverError = ServerError("Port $port is already in use", port)
-                showErrorNotification(
-                    McpBundle.message("notification.serverPortInUse.title"),
-                    McpBundle.message("notification.serverPortInUse.content", port, host)
-                )
+                // The failed instance may hold a partially-started application; stop it so it
+                // is not abandoned with live monitor subscriptions.
+                server.stop()
+                val newError = ServerError("Port $port is already in use", port)
+                // Only notify on a new failure — the watchdog retries below, and a permanent
+                // conflict (e.g. a second IDE of the same type) must not balloon on every retry.
+                if (previousError?.message != newError.message) {
+                    showErrorNotification(
+                        McpBundle.message("notification.serverPortInUse.title"),
+                        McpBundle.message("notification.serverPortInUse.content", port, host)
+                    )
+                }
+                serverError = newError
+                // Keep the safety-net watchdog armed so a transient bind failure self-heals
+                // instead of leaving the server down for the rest of the IDE session.
+                scheduleWatchdog()
                 startResult
             }
             is KtorMcpServer.StartResult.Error -> {
-                serverError = ServerError(startResult.message)
+                server.stop()
+                val newError = ServerError(startResult.message)
                 LOG.warn("Failed to start MCP Server: ${startResult.message}", startResult.cause)
-                showErrorNotification(
-                    McpBundle.message("notification.serverStartFailed.title"),
-                    McpBundle.message("notification.serverStartFailed.content", startResult.message)
-                )
+                if (previousError?.message != newError.message) {
+                    showErrorNotification(
+                        McpBundle.message("notification.serverStartFailed.title"),
+                        McpBundle.message("notification.serverStartFailed.content", startResult.message)
+                    )
+                }
+                serverError = newError
+                scheduleWatchdog()
                 startResult
             }
         }
@@ -178,10 +231,21 @@ class McpServerService(
 
     /**
      * Stops the MCP server.
+     *
+     * Synchronized with [startServer] so a stop can never interleave with a concurrent
+     * restart's stop-then-start sequence. All handle registries cross one atomic epoch boundary:
+     * old in-flight requests are rejected, and new requests cannot start until every cache is
+     * clear.
      */
+    @Synchronized
     fun stopServer() {
         ktorServer?.stop()
         ktorServer = null
+        serverEpoch.advanceAndReset {
+            symbolIdRegistry.clearForSessionReset()
+            paginationService.clearForSessionReset()
+            hierarchyContinuationRegistry.clearForSessionReset()
+        }
     }
 
     /**
@@ -208,9 +272,8 @@ class McpServerService(
 
     fun getToolRegistry(): ToolRegistry = toolRegistry
 
-    fun getJsonRpcHandler(): JsonRpcHandler = jsonRpcHandler
-
-    fun getSseSessionManager(): KtorSseSessionManager = sseSessionManager
+    /** Number of open legacy SSE streams. Exposed for diagnostics. */
+    fun getActiveSseSessionCount(): Int = legacySseTransports.activeSessionCount()
 
     /**
      * Returns the Streamable HTTP endpoint URL for MCP connections (primary transport).
@@ -254,7 +317,7 @@ class McpServerService(
         val isRunning = isServerRunning()
         return ServerStatusInfo(
             name = McpConstants.SERVER_NAME,
-            version = McpConstants.SERVER_VERSION,
+            version = McpConstants.getServerVersion(),
             protocolVersion = McpConstants.MCP_PROTOCOL_VERSION,
             streamableHttpUrl = if (isRunning) "http://$host:$port${McpConstants.STREAMABLE_HTTP_ENDPOINT_PATH}" else "Server not running",
             legacySseUrl = if (isRunning) "http://$host:$port${McpConstants.SSE_ENDPOINT_PATH}" else "Server not running",
@@ -330,7 +393,6 @@ class McpServerService(
         isShuttingDown = true
         watchdogAlarm.cancelAllRequests()
         stopServer()
-        sseSessionManager.closeAllSessions()
     }
 }
 

@@ -2,18 +2,19 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.models.ToolCallResult
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Optimizes imports in a file without reformatting code.
@@ -41,14 +42,23 @@ class OptimizeImportsTool : AbstractMcpTool() {
         Example: {"file": "src/MyClass.java"}
     """.trimIndent()
 
-    override val inputSchema: JsonObject = SchemaBuilder.tool()
+    override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
         .file()
         .build()
 
-    override suspend fun doExecute(project: Project, arguments: JsonObject): ToolCallResult {
+    override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val file = requiredStringArg(arguments, ParamNames.FILE).getOrElse {
             return createErrorResult(it.message ?: "Missing required parameter: file")
+        }
+
+        // Refresh VFS for the target file to pick up external changes before PSI resolution.
+        // Without this, the stub index can be stale when files are modified by external tools,
+        // causing "Outdated stub in index" errors during import optimization.
+        val virtualFile = resolveFile(project, file)
+        if (virtualFile != null) {
+            ensureWritable(virtualFile)?.let { return it }
+            syncFileForEdit(project, virtualFile)?.let { return it }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -68,8 +78,10 @@ class OptimizeImportsTool : AbstractMcpTool() {
         // PHASE 2: EDT - Execute optimize imports
         // ═══════════════════════════════════════════════════════════════════════
         var errorMessage: String? = null
+        var unsavedBefore: Set<Document> = emptySet()
 
         edtAction {
+            unsavedBefore = FileDocumentManager.getInstance().unsavedDocuments.toSet()
             try {
                 executeOptimizeImports(project, psiFile)
             } catch (e: Exception) {
@@ -80,11 +92,12 @@ class OptimizeImportsTool : AbstractMcpTool() {
 
         if (errorMessage == null) {
             commitDocuments(project)
-            edtAction { FileDocumentManager.getInstance().saveAllDocuments() }
+            val notSaved = edtAction { saveChangedDocuments(project, unsavedBefore) }
+            if (notSaved.isNotEmpty()) return createErrorResult(changesNotSavedMessage(notSaved))
         }
 
         return if (errorMessage != null) {
-            createErrorResult("Optimize imports failed: $errorMessage")
+            createErrorResult("Optimize imports failed: $errorMessage", ToolNames.DIAGNOSTICS)
         } else {
             createJsonResult(
                 RefactoringResult(
