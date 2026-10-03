@@ -43,7 +43,7 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Find all usages of a method/class/variable | `ide_find_references` | Never - grep misses renamed imports, aliases, overrides |
 | Go to a symbol's definition | `ide_find_definition` (returns and accepts a reusable `symbolId`) | Never - grep can't resolve through imports/generics |
 | Check a symbol's resolved signature or docs | `ide_symbol_info` (returns and accepts a reusable `symbolId`) | Never - source text does not resolve short type names, and carries no doc comment |
-| Check method/function signature quickly | `ide_get_signature` | Never - reading whole file wastes tokens |
+| Check method/function signature quickly | `ide_symbol_info` | Never - reading whole file wastes tokens (`ide_get_signature` is deprecated) |
 | Find a class by name | `ide_find_class` | Only if IDE unavailable |
 | Find a file by name | `ide_find_file` | `Glob` is fine for simple patterns |
 | Search for text in code | `ide_search_text` | `Grep` is fine when IDE context filtering is unnecessary |
@@ -129,11 +129,10 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 2. `ide_call_hierarchy` with `direction: "callers"` - full call chain upward
 
 ### "I need to understand what X is"
-1. `ide_get_signature` - quick signature (parameters, return type, modifiers) without reading the file
-2. `ide_symbol_info` - resolved signature + doc comment without reading the file
-3. `ide_find_definition` - jump to source
-4. `ide_type_hierarchy` - inheritance chain
-5. `ide_find_super_methods` - what interface/base method it implements
+1. `ide_symbol_info` - resolved signature + doc comment without reading the file (preferred over deprecated `ide_get_signature`)
+2. `ide_find_definition` - jump to source
+3. `ide_type_hierarchy` - inheritance chain
+4. `ide_find_super_methods` - what interface/base method it implements
 
 ### "I need to find a class/file/symbol"
 1. `ide_find_class` - classes by name (CamelCase: `USvc` finds `UserService`)

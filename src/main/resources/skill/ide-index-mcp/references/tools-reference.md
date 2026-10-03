@@ -77,6 +77,8 @@ Find all usages of a symbol (semantic, not text search).
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default true** — keeps valid runtime references (Dagger/MapStruct/gRPC/serializers). Set false to drop generated call sites when they dominate results on injected symbols. |
 | `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
+| `compact` | boolean | no | Compact mode: returns lightweight formatted strings instead of full structured objects (default false) |
+| `includeAstPath` | boolean | no | Include AST ancestor path for each usage (default false) |
 | `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -153,6 +155,8 @@ because the bare name is rejected as ambiguous once a method is overloaded. On t
 resolved FQN, so it is descriptive rather than round-trippable — address those by position.
 
 ### ide_get_signature
+*(Deprecated in favor of `ide_symbol_info`; disabled by default in settings)*
+
 Get the signature (parameters, return type) of a method, function, or class at a position without reading the entire file.
 
 | Parameter | Type | Required | Description |
@@ -191,6 +195,7 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 | `query` | string | yes | File name pattern |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include files under generated sources (KSP/Dagger/annotation-processor output). Default false |
+| `compact` | boolean | no | Compact mode: returns string array of relative paths instead of file objects (default false) |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 25, max 500 |
@@ -211,6 +216,7 @@ Search for text using IntelliJ Find in Files. Plain-text queries do substring ma
 | `wholeWord` | boolean | no | Match whole words only. Default false (substring match) |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
 | `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
+| `compact` | boolean | no | Compact mode: returns formatted strings (file:line: match) instead of structured match objects (default false) |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 100, max 500 |
@@ -371,6 +377,7 @@ Read file content by path or qualified name, including library/jar sources.
 | `qualifiedName` | string | no | Java/PHP FQN (e.g., `java.util.ArrayList`) |
 | `startLine` | integer | no | 1-based start line |
 | `endLine` | integer | no | 1-based end line |
+| `maxLines` | integer | no | Maximum lines to return (default 1000, max 5000) |
 | `project_path` | string | no | Project root path |
 
 **Provide either** `file` **or** `qualifiedName`.
@@ -434,6 +441,7 @@ Run diagnostics on multiple files in a single MCP call. Returns errors and warni
 | `severity` | enum | no | Severity filter: `errors` (default), `warnings`, `all` |
 | `includeBuildErrors` | boolean | no | Include compiler build errors (default: true) |
 | `includeTestResults` | boolean | no | Include test failure results (default: false) |
+| `maxProblems` | integer | no | Maximum total problems across all files (default 100, max 1000) |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ filesChecked, hasErrors, results: [{ file, problemCount, analysisFresh, analysisTimedOut, analysisMessage?, problems?: [{ message, severity, line, column }] }] }`

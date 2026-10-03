@@ -277,7 +277,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_find_references` | Find all references to a symbol across the entire project, optionally restricted to path globs via `paths` |
 | `ide_find_definition` | Find the definition/declaration location of a symbol; accepts top-level `symbolId`, position, or qualified-name selectors plus an equivalent nested `target`, and returns a reusable `symbolId` |
 | `ide_symbol_info` | Resolved signature and documentation for a symbol — accepts the same flat or nested targets as `ide_find_definition`; parameter and return types expanded to fully qualified names (Java), structured `parameters`, modifiers, containing declaration, and the doc comment as plain text, without reading the file |
-| `ide_get_signature` | Get the signature (parameters, return type, modifiers) of a method, function, or class at a position without reading the entire file |
+| `ide_get_signature` | Get the signature (parameters, return type, modifiers) of a method, function, or class at a position without reading the entire file *(deprecated in favor of `ide_symbol_info`)* |
 | `ide_find_class` | Search for classes/interfaces by name with camelCase/substring/wildcard matching |
 | `ide_find_file` | Search for files by name using IDE's file index |
 | `ide_find_symbol` | Search for symbols (classes, methods, fields, functions) by name with IntelliJ Go to Symbol matching |

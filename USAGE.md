@@ -15,7 +15,7 @@ These tools work in every supported JetBrains IDE:
 | `ide_find_references` | Find all references to a symbol | Enabled |
 | `ide_find_definition` | Find symbol definition location | Enabled |
 | `ide_symbol_info` | Resolved signature + docs for the symbol at a position, without reading the file | Enabled |
-| `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position | Enabled |
+| `ide_get_signature` | Get the signature (parameters, return type) of a method, function, or class at a position *(deprecated in favor of `ide_symbol_info`)* | Disabled |
 | `ide_find_class` | Search classes/interfaces by name | Enabled |
 | `ide_find_file` | Search files by name | Enabled |
 | `ide_find_symbol` | Search code symbols by name | Enabled |
@@ -345,6 +345,8 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default: true** — keeps valid runtime references from generated DI factories, MapStruct mappers, gRPC stubs, and serializers. Set `false` to drop generated call sites when they dominate results. |
 | `paths` | array | No | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero results. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: false) |
+| `includeAstPath` | boolean | No | Include AST ancestor path for each usage (default: false) |
 | `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -601,7 +603,8 @@ so address those symbols by position instead.
 
 ### ide_get_signature
 
-> **Availability**: Universal Tool - works in all JetBrains IDEs
+> **Availability**: Universal Tool - works in all JetBrains IDEs  
+> **Deprecated**: Use `ide_symbol_info` instead. Disabled by default in MCP settings with automatic migration in schema version 11.
 
 Get the signature (parameters, return type) of a method, function, or class at a position.
 Useful when you need to know how to call a function without reading the entire file.
@@ -742,6 +745,7 @@ Searches for files by name using the IDE's file index.
 | `query` | string | Yes | File name pattern |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false |
+| `compact` | boolean | No | Compact mode: returns string array of relative paths instead of file objects (default: false) |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -801,6 +805,7 @@ Searches for text using IntelliJ's Find in Files engine, matching the IDE's own 
 | `wholeWord` | boolean | No | Match whole words only (default: false — substring match) |
 | `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
 | `paths` | array | No | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings (file:line: match) instead of structured match objects (default: false) |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
@@ -1149,6 +1154,7 @@ Run diagnostics on multiple files in a single MCP call. Returns errors and warni
 | `severity` | string | No | Severity filter: `"errors"` (default), `"warnings"`, or `"all"` |
 | `includeBuildErrors` | boolean | No | Include compiler build errors (default: true) |
 | `includeTestResults` | boolean | No | Include test failure results (default: false) |
+| `maxProblems` | integer | No | Maximum total problems to collect across all files (default: 100, max: 1000) |
 | `project_path` | string | No | Absolute path to project root |
 
 **Example Request:**
@@ -1870,6 +1876,7 @@ Read file content by file path or fully qualified class name.
 | `qualifiedName` | string | No* | Fully qualified class name (e.g., `java.util.ArrayList`) |
 | `startLine` | integer | No | Starting line (1-based, inclusive) |
 | `endLine` | integer | No | Ending line (1-based, inclusive) |
+| `maxLines` | integer | No | Maximum lines to return (default: 1000, max: 5000) |
 
 *Either `file` or `qualifiedName` must be provided.
 
