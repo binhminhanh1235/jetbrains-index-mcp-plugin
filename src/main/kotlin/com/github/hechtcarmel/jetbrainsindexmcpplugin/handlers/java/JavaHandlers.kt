@@ -11,6 +11,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiSourcePosition
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -249,8 +250,9 @@ abstract class BaseJavaHandler<T> : LanguageHandler<T> {
         val propertyClass = ktPropertyClass
         if (propertyClass?.isInstance(source) != true) return source
         for (accessorName in listOf("getGetter", "getSetter")) {
+            val accessorMethod = ReflectionCache.getMethod(propertyClass, accessorName) ?: continue
             val accessor = try {
-                propertyClass.getMethod(accessorName).invoke(source) as? PsiElement
+                accessorMethod.invoke(source) as? PsiElement
             } catch (e: InvocationTargetException) {
                 e.cause?.rethrowIfControlFlow()
                 throw e
@@ -1450,6 +1452,18 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
                 null
             }
         }
+
+        private val ktScriptClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtScript")
+            } catch (_: ClassNotFoundException) { null }
+        }
+
+        private val ktCallExprClass: Class<*>? by lazy {
+            try {
+                Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
+            } catch (_: ClassNotFoundException) { null }
+        }
     }
 
     override val languageId = "kotlin"
@@ -1472,8 +1486,8 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
         try {
             // Get all declarations from the Kotlin file
-            val getDeclarationsMethod = file.javaClass.getMethod("getDeclarations")
-            val declarations = getDeclarationsMethod.invoke(file) as? List<*> ?: emptyList<Any?>()
+            val getDeclarationsMethod = ReflectionCache.getMethod(file.javaClass, "getDeclarations")
+            val declarations = getDeclarationsMethod?.invoke(file) as? List<*> ?: emptyList<Any?>()
 
             for (declaration in declarations) {
                 if (declaration is PsiElement) {
@@ -1505,14 +1519,15 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
      */
     private fun extractScriptStructure(file: PsiFile, project: Project, structure: MutableList<StructureNode>) {
         try {
-            val ktScriptClass = Class.forName("org.jetbrains.kotlin.psi.KtScript")
+            val scriptClass = ktScriptClass ?: return
 
             // Find KtScript child in the file
-            val script = PsiTreeUtil.findChildOfType(file, ktScriptClass as Class<PsiElement>) ?: return
+            @Suppress("UNCHECKED_CAST")
+            val script = PsiTreeUtil.findChildOfType(file, scriptClass as Class<PsiElement>) ?: return
 
             // Get the block expression from the script
-            val getBlockMethod = script.javaClass.getMethod("getBlockExpression")
-            val blockExpression = getBlockMethod.invoke(script) as? PsiElement ?: return
+            val getBlockMethod = ReflectionCache.getMethod(script.javaClass, "getBlockExpression")
+            val blockExpression = getBlockMethod?.invoke(script) as? PsiElement ?: return
 
             // Extract declarations and top-level call expressions from the script body
             val statements = blockExpression.children
@@ -1525,10 +1540,6 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
                 }
 
                 // For script files, also capture top-level function calls (e.g., plugins {}, dependencies {})
-                val ktCallExprClass = try {
-                    Class.forName("org.jetbrains.kotlin.psi.KtCallExpression")
-                } catch (_: ClassNotFoundException) { null }
-
                 if (ktCallExprClass?.isInstance(statement) == true) {
                     val callNode = extractScriptCallStructure(statement, project)
                     if (callNode != null) {
@@ -1546,8 +1557,8 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
      */
     private fun extractScriptCallStructure(callExpr: PsiElement, project: Project): StructureNode? {
         return try {
-            val getCalleeMethod = callExpr.javaClass.getMethod("getCalleeExpression")
-            val callee = getCalleeMethod.invoke(callExpr) as? PsiElement
+            val getCalleeMethod = ReflectionCache.getMethod(callExpr.javaClass, "getCalleeExpression")
+            val callee = getCalleeMethod?.invoke(callExpr) as? PsiElement
             val name = callee?.text ?: return null
             val line = getLineNumber(project, callExpr) ?: return null
 
@@ -1588,12 +1599,12 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
         try {
             // Get class body and extract declarations
-            val getBodyMethod = ktClass.javaClass.getMethod("getBody")
-            val body = getBodyMethod.invoke(ktClass) as? PsiElement
+            val getBodyMethod = ReflectionCache.getMethod(ktClass.javaClass, "getBody")
+            val body = getBodyMethod?.invoke(ktClass) as? PsiElement
 
             body?.let {
-                val getChildrenMethod = it.javaClass.getMethod("getChildren")
-                val bodyChildren = getChildrenMethod.invoke(it) as? Array<*> ?: emptyArray<Any?>()
+                val getChildrenMethod = ReflectionCache.getMethod(it.javaClass, "getChildren")
+                val bodyChildren = getChildrenMethod?.invoke(it) as? Array<*> ?: emptyArray<Any?>()
 
                 for (child in bodyChildren) {
                     if (child is PsiElement) {
@@ -1659,8 +1670,8 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
     private fun getName(element: PsiElement): String? {
         return try {
             if (ktNamedDeclarationClass?.isInstance(element) == true) {
-                val getNameMethod = element.javaClass.getMethod("getName")
-                getNameMethod.invoke(element) as? String
+                val getNameMethod = ReflectionCache.getMethod(element.javaClass, "getName")
+                getNameMethod?.invoke(element) as? String
             } else null
         } catch (e: Exception) {
             null
@@ -1671,12 +1682,12 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
         PsiUtils.kotlinClassKind(ktClass)?.let { return StructureKind.valueOf(it) }
 
         return try {
-            val isInterfaceMethod = ktClass.javaClass.getMethod("isInterface")
-            val isInterface = isInterfaceMethod.invoke(ktClass) as? Boolean == true
-            val isEnumMethod = ktClass.javaClass.getMethod("isEnum")
-            val isEnum = isEnumMethod.invoke(ktClass) as? Boolean == true
-            val isDataMethod = ktClass.javaClass.getMethod("isData")
-            val isData = isDataMethod.invoke(ktClass) as? Boolean == true
+            val isInterfaceMethod = ReflectionCache.getMethod(ktClass.javaClass, "isInterface")
+            val isInterface = isInterfaceMethod?.invoke(ktClass) as? Boolean == true
+            val isEnumMethod = ReflectionCache.getMethod(ktClass.javaClass, "isEnum")
+            val isEnum = isEnumMethod?.invoke(ktClass) as? Boolean == true
+            val isDataMethod = ReflectionCache.getMethod(ktClass.javaClass, "isData")
+            val isData = isDataMethod?.invoke(ktClass) as? Boolean == true
 
             when {
                 isInterface -> StructureKind.INTERFACE
@@ -1698,12 +1709,12 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
     private fun buildKotlinClassSignature(ktClass: PsiElement): String {
         return try {
-            val getSuperTypeListMethod = ktClass.javaClass.getMethod("getSuperTypeList")
-            val superTypeList = getSuperTypeListMethod.invoke(ktClass) as? PsiElement
+            val getSuperTypeListMethod = ReflectionCache.getMethod(ktClass.javaClass, "getSuperTypeList")
+            val superTypeList = getSuperTypeListMethod?.invoke(ktClass) as? PsiElement
 
             if (superTypeList != null) {
-                val getEntriesMethod = superTypeList.javaClass.getMethod("getEntries")
-                val entries = getEntriesMethod.invoke(superTypeList) as? List<*> ?: emptyList<Any?>()
+                val getEntriesMethod = ReflectionCache.getMethod(superTypeList.javaClass, "getEntries")
+                val entries = getEntriesMethod?.invoke(superTypeList) as? List<*> ?: emptyList<Any?>()
 
                 if (entries.isNotEmpty()) {
                     val names = entries.mapNotNull {
@@ -1720,12 +1731,12 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
     private fun buildKotlinFunctionSignature(function: PsiElement): String {
         return try {
-            val getValueParameterListMethod = function.javaClass.getMethod("getValueParameterList")
-            val parameterList = getValueParameterListMethod.invoke(function) as? PsiElement
+            val getValueParameterListMethod = ReflectionCache.getMethod(function.javaClass, "getValueParameterList")
+            val parameterList = getValueParameterListMethod?.invoke(function) as? PsiElement
 
             if (parameterList != null) {
-                val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
-                val parameters = getParametersMethod.invoke(parameterList) as? List<*> ?: emptyList<Any?>()
+                val getParametersMethod = ReflectionCache.getMethod(parameterList.javaClass, "getParameters")
+                val parameters = getParametersMethod?.invoke(parameterList) as? List<*> ?: emptyList<Any?>()
 
                 val params = parameters.filterIsInstance<PsiElement>().joinToString(", ") { param ->
                     param.text
@@ -1741,8 +1752,8 @@ class KotlinStructureHandler : BaseJavaHandler<List<StructureNode>>(), Structure
 
     private fun buildKotlinPropertySignature(property: PsiElement): String {
         return try {
-            val getReturnTypeReferenceMethod = property.javaClass.getMethod("getTypeReference")
-            val typeRef = getReturnTypeReferenceMethod.invoke(property) as? PsiElement
+            val getReturnTypeReferenceMethod = ReflectionCache.getMethod(property.javaClass, "getTypeReference")
+            val typeRef = getReturnTypeReferenceMethod?.invoke(property) as? PsiElement
             typeRef?.text ?: ""
         } catch (_: Exception) {
             ""

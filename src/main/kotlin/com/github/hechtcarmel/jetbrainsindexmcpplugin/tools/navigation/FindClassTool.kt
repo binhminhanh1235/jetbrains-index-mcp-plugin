@@ -14,8 +14,10 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactSymbol
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.SymbolMatch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
@@ -411,8 +413,8 @@ class FindClassTool : AbstractMcpTool() {
             is PsiElement -> item
             else -> {
                 try {
-                    val method = item.javaClass.getMethod("getElement")
-                    method.invoke(item) as? PsiElement
+                    val method = ReflectionCache.getMethod(item.javaClass, "getElement")
+                    method?.invoke(item) as? PsiElement
                 } catch (e: Exception) {
                     e.rethrowIfControlFlow()
                     null
@@ -438,8 +440,18 @@ class FindClassTool : AbstractMcpTool() {
     private fun determineKind(element: PsiElement): String {
         PsiUtils.kotlinClassKind(element)?.let { return it }
 
+        if (PluginDetectors.java.isAvailable && element is com.intellij.psi.PsiClass) {
+            return when {
+                element.isAnnotationType -> "ANNOTATION"
+                element.isRecord -> "RECORD"
+                element.isEnum -> "ENUM"
+                element.isInterface -> "INTERFACE"
+                else -> "CLASS"
+            }
+        }
+
         fun probe(methodName: String): Boolean = try {
-            element.javaClass.getMethod(methodName).invoke(element) == true
+            ReflectionCache.getMethod(element.javaClass, methodName)?.invoke(element) == true
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             false

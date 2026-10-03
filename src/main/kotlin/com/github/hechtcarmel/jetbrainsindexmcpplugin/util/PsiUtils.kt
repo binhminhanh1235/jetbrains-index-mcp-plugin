@@ -327,8 +327,9 @@ object PsiUtils {
      */
     internal fun reflectiveQualifiedName(element: Any): String? {
         for (accessor in QUALIFIED_NAME_ACCESSORS) {
+            val method = ReflectionCache.getMethod(element.javaClass, accessor) ?: continue
             val value = try {
-                element.javaClass.getMethod(accessor).invoke(element)?.toString()
+                method.invoke(element)?.toString()
             } catch (failure: Throwable) {
                 failure.rethrowIfControlFlow()
                 null
@@ -430,7 +431,7 @@ object PsiUtils {
         if (ktClassType?.isInstance(element) != true) return null
 
         fun flag(methodName: String): Boolean = try {
-            element.javaClass.getMethod(methodName).invoke(element) == true
+            ReflectionCache.getMethod(element.javaClass, methodName)?.invoke(element) == true
         } catch (failure: Throwable) {
             failure.rethrowIfControlFlow()
             false
@@ -452,7 +453,7 @@ object PsiUtils {
     fun classDisplayName(project: Project, element: PsiElement): String? {
         (element as? PsiNamedElement)?.name?.takeIf { it.isNotBlank() }?.let { return it }
         try {
-            element.javaClass.getMethod("getName").invoke(element) as? String
+            ReflectionCache.getMethod(element.javaClass, "getName")?.invoke(element) as? String
         } catch (failure: Throwable) {
             failure.rethrowIfControlFlow()
             null
@@ -480,6 +481,20 @@ object PsiUtils {
         return "<anonymous implementation of $baseName at $fileName:${line ?: "?"}>"
     }
 
+    private val toLightClassMethod by lazy {
+        ktClassOrObjectClass?.let { ktClass ->
+            lightClassUtilsClass?.let { utils ->
+                ReflectionCache.getMethod(utils, "toLightClass", ktClass)
+            }
+        }
+    }
+
+    private val toLightMethodsMethod by lazy {
+        val lightClassUtils = lightClassUtilsClass ?: Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt")
+        ReflectionCache.getMethod(lightClassUtils, "toLightMethods", PsiElement::class.java)
+            ?: throw NoSuchMethodException("org.jetbrains.kotlin.asJava.LightClassUtilsKt.toLightMethods")
+    }
+
     /**
      * Returns [element] as a [PsiClass], or null if it cannot be resolved as one.
      *
@@ -493,10 +508,10 @@ object PsiUtils {
     fun resolveAsPsiClass(element: PsiElement): PsiClass? {
         if (psiClassInterface?.isInstance(element) == true) return element as PsiClass
         val ktClassOrObject = ktClassOrObjectClass ?: return null
-        val lightClassUtils = lightClassUtilsClass ?: return null
         if (!ktClassOrObject.isInstance(element)) return null
+        val method = toLightClassMethod ?: return null
         return try {
-            lightClassUtils.getMethod("toLightClass", ktClassOrObject).invoke(null, element) as? PsiClass
+            method.invoke(null, element) as? PsiClass
         } catch (failure: Throwable) {
             failure.rethrowIfControlFlow()
             null
@@ -522,11 +537,10 @@ object PsiUtils {
      * instead of being mistaken for a declaration with no JVM methods. Call under a read lock.
      */
     fun toLightMethodsStrict(element: PsiElement): List<PsiMethod> {
-        val lightClassUtils = Class.forName("org.jetbrains.kotlin.asJava.LightClassUtilsKt")
+        val method = toLightMethodsMethod
         return try {
             @Suppress("UNCHECKED_CAST")
-            lightClassUtils.getMethod("toLightMethods", PsiElement::class.java)
-                .invoke(null, element) as List<PsiMethod>
+            method.invoke(null, element) as List<PsiMethod>
         } catch (exception: InvocationTargetException) {
             throw exception.cause ?: exception
         }

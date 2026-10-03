@@ -4,6 +4,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.JavaHierarch
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.navigation.ChooseByNameContributorEx
@@ -13,6 +14,7 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
@@ -258,8 +260,8 @@ object OptimizedSymbolSearch {
             else -> {
                 // Try to extract PsiElement from NavigationItem
                 try {
-                    val method = item.javaClass.getMethod("getElement")
-                    method.invoke(item) as? PsiElement
+                    val method = ReflectionCache.getMethod(item.javaClass, "getElement")
+                    method?.invoke(item) as? PsiElement
                 } catch (e: Exception) {
                     e.rethrowIfControlFlow()
                     null
@@ -354,31 +356,36 @@ object OptimizedSymbolSearch {
         return element.textOffset - document.getLineStartOffset(lineNumber) + 1
     }
 
+    private val kindByClass = object : ClassValue<String>() {
+        override fun computeValue(clazz: Class<*>): String {
+            val className = clazz.simpleName.lowercase()
+            return when {
+                // Rust types
+                className.contains("structitem") -> "STRUCT"
+                className.contains("traititem") -> "TRAIT"
+                className.contains("enumitem") -> "ENUM"
+                className.contains("implitem") -> "IMPL"
+                className.contains("moditem") -> "MODULE"
+                // Common types
+                className.contains("class") -> "CLASS"
+                className.contains("interface") -> "INTERFACE"
+                className.contains("enum") -> "ENUM"
+                className.contains("struct") -> "STRUCT"
+                className.contains("trait") -> "TRAIT"
+                className.contains("method") -> "METHOD"
+                className.contains("function") -> "FUNCTION"
+                className.contains("field") -> "FIELD"
+                className.contains("variable") -> "VARIABLE"
+                className.contains("property") -> "PROPERTY"
+                className.contains("constant") -> "CONSTANT"
+                else -> "SYMBOL"
+            }
+        }
+    }
+
     private fun determineKind(element: PsiElement): String {
         PsiUtils.kotlinClassKind(element)?.let { return it }
-
-        val className = element.javaClass.simpleName.lowercase()
-        return when {
-            // Rust types
-            className.contains("structitem") -> "STRUCT"
-            className.contains("traititem") -> "TRAIT"
-            className.contains("enumitem") -> "ENUM"
-            className.contains("implitem") -> "IMPL"
-            className.contains("moditem") -> "MODULE"
-            // Common types
-            className.contains("class") -> "CLASS"
-            className.contains("interface") -> "INTERFACE"
-            className.contains("enum") -> "ENUM"
-            className.contains("struct") -> "STRUCT"
-            className.contains("trait") -> "TRAIT"
-            className.contains("method") -> "METHOD"
-            className.contains("function") -> "FUNCTION"
-            className.contains("field") -> "FIELD"
-            className.contains("variable") -> "VARIABLE"
-            className.contains("property") -> "PROPERTY"
-            className.contains("constant") -> "CONSTANT"
-            else -> "SYMBOL"
-        }
+        return kindByClass.get(element.javaClass)
     }
 
     private fun getContainerName(element: PsiElement): String? {
@@ -386,10 +393,18 @@ object OptimizedSymbolSearch {
             // Try to find containing class/type
             var parent = element.parent
             while (parent != null) {
-                val parentClassName = parent.javaClass.simpleName.lowercase()
-                if (parentClassName.contains("class") || parentClassName.contains("type")) {
-                    val nameMethod = parent.javaClass.getMethod("getName")
-                    return nameMethod.invoke(parent) as? String
+                if (parent is PsiNamedElement) {
+                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    if (parentClassName.contains("class") || parentClassName.contains("type")) {
+                        parent.name?.let { return it }
+                    }
+                } else {
+                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    if (parentClassName.contains("class") || parentClassName.contains("type")) {
+                        val nameMethod = ReflectionCache.getMethod(parent.javaClass, "getName")
+                        val name = nameMethod?.invoke(parent) as? String
+                        if (name != null) return name
+                    }
                 }
                 parent = parent.parent
             }
