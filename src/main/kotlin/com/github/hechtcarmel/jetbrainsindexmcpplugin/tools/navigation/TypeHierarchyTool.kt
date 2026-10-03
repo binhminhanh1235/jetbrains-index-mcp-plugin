@@ -90,8 +90,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val startedAt = System.currentTimeMillis()
-        val legacyTree = arguments["legacyTree"]?.jsonPrimitive?.booleanOrNull ?: false
         val explicitMaxNodes = arguments["maxNodes"]?.jsonPrimitive?.intOrNull
+        val legacyTree = arguments["legacyTree"]?.jsonPrimitive?.booleanOrNull ?: (explicitMaxNodes == null)
         val maxNodes = explicitMaxNodes ?: DEFAULT_MAX_NODES
         if (!legacyTree && maxNodes !in 1..MAX_NODES) {
             return createErrorResult("maxNodes must be between 1 and $MAX_NODES")
@@ -440,8 +440,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
         return createJsonResult(
             TypeHierarchyResult(
                 element = root,
-                supertypes = if (traversal.isNotEmpty()) null else returnedSupertypes,
-                subtypes = if (traversal.isNotEmpty()) null else returnedSubtypes,
+                supertypes = returnedSupertypes,
+                subtypes = returnedSubtypes,
                 traversal = traversal,
                 returnedNodes = returnedNodes,
                 truncated = hasMore,

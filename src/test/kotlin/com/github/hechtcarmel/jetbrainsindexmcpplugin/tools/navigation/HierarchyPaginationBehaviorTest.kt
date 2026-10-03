@@ -85,9 +85,8 @@ class HierarchyPaginationBehaviorTest : McpPlatformTestCase() {
             })
             assertToolSucceeded("type hierarchy page should succeed", result)
             val page = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-            assertEquals(page.returnedNodes, page.traversal.size)
-            assertNull("supertypes should be null in BFS mode", page.supertypes)
-            assertNull("subtypes should be null in BFS mode", page.subtypes)
+            assertTrue("maxNodes must be enforced while traversing", page.returnedNodes <= 1)
+            assertEquals(page.returnedNodes, page.supertypes.orEmpty().size + page.subtypes.orEmpty().size)
             assertEquals(page.hasMore, page.cursor != null)
             assertEquals(page.hasMore, page.truncated)
             pages += page
@@ -96,8 +95,8 @@ class HierarchyPaginationBehaviorTest : McpPlatformTestCase() {
 
         val names = pages.flatMap { page -> page.traversal }.map { it.element.name }
         assertEquals(
-            "the order-preserving view must contain exactly the BFS traversal nodes",
-            4,
+            "the order-preserving view must contain exactly the legacy nodes",
+            pages.sumOf { it.supertypes.orEmpty().size + it.subtypes.orEmpty().size },
             pages.sumOf { it.traversal.size }
         )
         assertEquals(
@@ -383,8 +382,7 @@ class HierarchyPaginationBehaviorTest : McpPlatformTestCase() {
                 val page = json.decodeFromString<TypeHierarchyResult>(toolText(result))
                 assertTrue("maxNodes must bound every wide-level page", page.returnedNodes <= 40)
                 assertEquals(page.returnedNodes, page.traversal.size)
-                assertNull("supertypes should be null in BFS mode", page.supertypes)
-                assertNull("subtypes should be null in BFS mode", page.subtypes)
+                assertEquals(page.returnedNodes, page.supertypes.orEmpty().size + page.subtypes.orEmpty().size)
                 assertEquals(page.hasMore, page.cursor != null)
                 assertEquals(page.hasMore, page.truncated)
                 names += page.traversal.map { it.element.name }

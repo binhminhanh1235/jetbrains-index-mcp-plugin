@@ -110,7 +110,7 @@ class HierarchyIdentityAndHandlesBehaviorTest : McpPlatformTestCase() {
         ))
         assertToolSucceeded("Paged hierarchy traverses out-of-scope intermediates", paged)
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(toolText(paged))
-        assertEquals(expected, hierarchy.traversal.filter { it.direction == "subtypes" }.map { it.element.name }.toSet())
+        assertEquals(expected, hierarchy.subtypes.orEmpty().map { it.name }.toSet())
     }
 
     override fun setUp() {

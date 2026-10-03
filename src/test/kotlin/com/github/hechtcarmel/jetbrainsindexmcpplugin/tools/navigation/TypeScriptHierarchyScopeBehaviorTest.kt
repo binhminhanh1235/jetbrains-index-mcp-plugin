@@ -104,7 +104,7 @@ class TypeScriptHierarchyScopeBehaviorTest : McpPlatformTestCase() {
             })
             assertToolSucceeded("Paged query must retain the included test descendant", result)
             val page = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-            pagedSubtypes += page.traversal.filter { it.direction == "subtypes" }.map { it.element }
+            pagedSubtypes += page.subtypes.orEmpty()
             cursor = page.cursor
             assertTrue("Probe traversal must terminate", ++pages <= 8)
         } while (cursor != null)

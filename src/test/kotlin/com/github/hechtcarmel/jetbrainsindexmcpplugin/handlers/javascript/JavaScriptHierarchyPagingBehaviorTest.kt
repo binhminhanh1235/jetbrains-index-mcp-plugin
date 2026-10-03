@@ -105,7 +105,7 @@ class JavaScriptHierarchyPagingBehaviorTest : McpPlatformTestCase() {
             })
             assertToolSucceeded("Page through actual TypeScript subtype identities", result)
             val page = Json { ignoreUnknownKeys = true }.decodeFromString<TypeHierarchyResult>(toolText(result))
-            subtypes.addAll(page.traversal.filter { it.direction == "subtypes" }.map { it.element })
+            subtypes.addAll(page.subtypes.orEmpty())
             cursor = page.cursor
             assertTrue("Traversal must terminate", ++pages <= 5)
         } while (cursor != null)

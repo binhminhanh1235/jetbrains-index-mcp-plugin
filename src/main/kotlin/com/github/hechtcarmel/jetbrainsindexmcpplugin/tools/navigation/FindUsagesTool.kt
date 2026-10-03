@@ -51,6 +51,7 @@ class FindUsagesTool : AbstractMcpTool() {
     companion object {
         private val LOG = logger<FindUsagesTool>()
         private const val DEFAULT_MAX_RESULTS = 100
+        private const val COLLECTION_CAP = 500
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
         private const val METADATA_RESOLVED_SYMBOL = "resolvedSymbol"
         private const val METADATA_SEARCH_EXHAUSTED = "searchExhausted"
@@ -156,7 +157,7 @@ class FindUsagesTool : AbstractMcpTool() {
         }
 
         val pageSize = resolvePageSize(arguments, DEFAULT_MAX_RESULTS, aliases = arrayOf("maxResults"))
-        val collectLimit = maxOf(PaginationService.computeOvercollect(pageSize), pageSize)
+        val collectLimit = maxOf(COLLECTION_CAP, pageSize)
         // Generated DI factories / *_MembersInjector classes are included by default so valid
         // runtime references (Dagger, MapStruct, gRPC, serializers) are not missed. Callers can
         // pass includeGenerated=false to drop generated output when it dominates results.
@@ -291,7 +292,7 @@ class FindUsagesTool : AbstractMcpTool() {
                 suspendingReadAction {
                     val el = smartPointer.element
                         ?: throw IllegalStateException("Target element no longer valid")
-                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated, pathMatcher)
+                    extendFindUsages(project, el, seenKeys, limit, scope, excludeGenerated, pathMatcher, includeAstPath)
                 }
             }
 
@@ -378,7 +379,8 @@ class FindUsagesTool : AbstractMcpTool() {
         limit: Int,
         scope: BuiltInSearchScope,
         excludeGenerated: Boolean,
-        pathMatcher: PathGlobMatcher?
+        pathMatcher: PathGlobMatcher?,
+        includeAstPath: Boolean = false
     ): List<PaginationService.SerializedResult> {
         val newResults = ConcurrentLinkedQueue<PaginationService.SerializedResult>()
         val count = AtomicInteger(0)
@@ -410,7 +412,7 @@ class FindUsagesTool : AbstractMcpTool() {
                                     column = columnNumber,
                                     context = lineText,
                                     type = classifyUsage(refElement),
-                                    astPath = PsiUtils.getAstPath(refElement)
+                                    astPath = if (includeAstPath) PsiUtils.getAstPath(refElement) else null
                                 )
                                 newResults.add(PaginationService.SerializedResult(key, json.encodeToJsonElement(usage)))
                             }
