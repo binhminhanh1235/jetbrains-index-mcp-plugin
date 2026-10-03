@@ -159,7 +159,7 @@ class ApplyQuickFixTool : AbstractMcpTool() {
 
         // 8. Apply fix on EDT inside write-command action
         var applyError: String? = null
-        suspendingWriteAction(project, "Apply quick fix: ${selectedAction.text}") {
+        val saveError = suspendingWriteActionAndSave(project, "Apply quick fix: ${selectedAction.text}", editor.document) {
             try {
                 selectedAction.action.invoke(project, editor, selectedAction.psiFile)
             } catch (e: Exception) {
@@ -169,6 +169,9 @@ class ApplyQuickFixTool : AbstractMcpTool() {
 
         if (applyError != null) {
             return createErrorResult(applyError!!)
+        }
+        if (saveError != null) {
+            return saveError
         }
 
         return createJsonResult(ApplyQuickFixResult(
