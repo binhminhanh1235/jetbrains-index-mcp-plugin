@@ -42,6 +42,15 @@ object OptimizedSymbolSearch {
 
     private val LOG = logger<OptimizedSymbolSearch>()
 
+    private data class SymbolCoordKey(
+        val file: String,
+        val line: Int,
+        val column: Int,
+        val name: String
+    )
+
+    private fun SymbolData.coordKey() = SymbolCoordKey(file, line, column, name)
+
     /**
      * Search for symbols using the optimized platform infrastructure.
      *
@@ -61,6 +70,8 @@ object OptimizedSymbolSearch {
     ): List<SymbolData> {
         if (pattern.isBlank()) return emptyList()
 
+        val normalizedFilter = languageFilter?.map { it.lowercase() }?.toSet()
+
         LOG.debug("Searching for symbols matching '$pattern' (limit=$limit, filter=$languageFilter)")
 
         try {
@@ -70,15 +81,15 @@ object OptimizedSymbolSearch {
             while (true) {
                 val popupResults = PopupFaithfulSymbolSearch.search(project, pattern, scope, popupLimit)
                 val results = popupResults.candidates
-                    .mapNotNull { candidate -> convertToSymbolData(candidate.item, project, scope, languageFilter) }
-                    .distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+                    .mapNotNull { candidate -> convertToSymbolData(candidate.item, project, scope, normalizedFilter) }
+                    .distinctBy { it.coordKey() }
 
                 if (results.size >= limit || popupResults.candidates.size < popupLimit || popupLimit >= popupLimitCap) {
                     LOG.debug("Found ${results.size} symbols via popup-backed search")
                     if (popupResults.isQualifiedQuery) {
                         return results.take(limit)
                     }
-                    return complementSuppressedOverrides(project, results, scope, languageFilter).take(limit)
+                    return complementSuppressedOverrides(project, results, scope, normalizedFilter).take(limit)
                 }
 
                 popupLimit = minOf(popupLimitCap, popupLimit * 2)
@@ -88,12 +99,12 @@ object OptimizedSymbolSearch {
             LOG.debug("Popup-backed symbol search failed, falling back to contributor iteration: ${e.message}", e)
         }
 
-        val legacyResults = legacySearch(project, pattern, scope, limit, languageFilter)
+        val legacyResults = legacySearch(project, pattern, scope, limit, normalizedFilter)
         // Same unqualified check the popup model applies via its separators ('.' and '#').
         if (pattern.contains('.') || pattern.contains('#')) {
             return legacyResults
         }
-        return complementSuppressedOverrides(project, legacyResults, scope, languageFilter).take(limit)
+        return complementSuppressedOverrides(project, legacyResults, scope, normalizedFilter).take(limit)
     }
 
     /**
@@ -127,7 +138,7 @@ object OptimizedSymbolSearch {
                 .mapNotNull { convertToSymbolData(it, project, scope, languageFilter) }
         }
 
-        return (results + complemented).distinctBy { "${it.file}:${it.line}:${it.column}:${it.name}" }
+        return (results + complemented).distinctBy { it.coordKey() }
     }
 
     /**
@@ -141,7 +152,7 @@ object OptimizedSymbolSearch {
         languageFilter: Set<String>? = null
     ): List<SymbolData> {
         val results = mutableListOf<SymbolData>()
-        val seen = mutableSetOf<String>() // Deduplication key: file:line:column:name
+        val seen = mutableSetOf<SymbolCoordKey>() // Deduplication key: file:line:column:name
         val matcher = createMatcher(pattern)
         val nameFilter = createNameFilter(pattern, matcher)
 
@@ -179,7 +190,7 @@ object OptimizedSymbolSearch {
         nameFilter: (String) -> Boolean,
         matcher: MinusculeMatcher,
         results: MutableList<SymbolData>,
-        seen: MutableSet<String>
+        seen: MutableSet<SymbolCoordKey>
     ) {
         if (contributor is ChooseByNameContributorEx) {
             // Modern API with Processor pattern - streaming, memory efficient
@@ -209,12 +220,8 @@ object OptimizedSymbolSearch {
                         if (results.size >= limit) return@processElementsWithName false
 
                         val symbolData = convertToSymbolData(item, project, scope, languageFilter)
-                        if (symbolData != null) {
-                            val key = "${symbolData.file}:${symbolData.line}:${symbolData.column}:${symbolData.name}"
-                            if (key !in seen) {
-                                seen.add(key)
-                                results.add(symbolData)
-                            }
+                        if (symbolData != null && seen.add(symbolData.coordKey())) {
+                            results.add(symbolData)
                         }
                         true
                     },
@@ -234,12 +241,8 @@ object OptimizedSymbolSearch {
                     if (results.size >= limit) break
 
                     val symbolData = convertToSymbolData(item, project, scope, languageFilter)
-                    if (symbolData != null) {
-                        val key = "${symbolData.file}:${symbolData.line}:${symbolData.column}:${symbolData.name}"
-                        if (key !in seen) {
-                            seen.add(key)
-                            results.add(symbolData)
-                        }
+                    if (symbolData != null && seen.add(symbolData.coordKey())) {
+                        results.add(symbolData)
                     }
                 }
             }
@@ -274,7 +277,7 @@ object OptimizedSymbolSearch {
 
         // Apply language filter if specified (case-insensitive — the tool's `language`
         // parameter is user-facing and may be "kotlin", "Kotlin", "KOTLIN", etc.)
-        if (languageFilter != null && languageFilter.none { it.equals(language, ignoreCase = true) }) {
+        if (languageFilter != null && language.lowercase() !in languageFilter) {
             return null
         }
 

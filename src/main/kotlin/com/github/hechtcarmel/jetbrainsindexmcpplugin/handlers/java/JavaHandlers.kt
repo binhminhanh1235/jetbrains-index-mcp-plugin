@@ -855,24 +855,6 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                     })
             }
 
-            // Recurse only after the index query has released its consumer lock.
-            for (containingMethod in callerMethods) {
-                if (results.size >= maxResults) break
-                val children = if (depth > 1) {
-                    findCallersRecursive(
-                        project, containingMethod, depth - 1, visited, stackDepth + 1,
-                        searchScope, maxResults, legacyReferenceCap
-                    )
-                } else null
-                val candidates = if (shouldIncludeNavigationElement(searchScope, containingMethod)) {
-                    listOf(createCallElement(project, containingMethod, children))
-                } else children.orEmpty()
-                for (candidate in candidates) {
-                    if (results.size >= maxResults) break
-                    if (seenResults.add(callElementKey(candidate))) results.add(candidate)
-                }
-            }
-
             // For Kotlin methods, always supplement with ReferencesSearch on the KtNamedFunction.
             // MethodReferencesSearch operates on the JVM-desugared PsiMethod, which for `suspend fun`
             // has a compiler-added `Continuation` parameter that never appears in Kotlin source call
@@ -893,6 +875,24 @@ class JavaCallHierarchyHandler : BaseJavaHandler<CallHierarchyData>(), CallHiera
                         if (++inspectedReferences > rawReferenceCap) return@Processor false
                         collectCaller(reference.element)
                     })
+            }
+
+            // Recurse only after the index query has released its consumer lock.
+            for (containingMethod in callerMethods) {
+                if (results.size >= maxResults) break
+                val children = if (depth > 1) {
+                    findCallersRecursive(
+                        project, containingMethod, depth - 1, visited, stackDepth + 1,
+                        searchScope, maxResults, legacyReferenceCap
+                    )
+                } else null
+                val candidates = if (shouldIncludeNavigationElement(searchScope, containingMethod)) {
+                    listOf(createCallElement(project, containingMethod, children))
+                } else children.orEmpty()
+                for (candidate in candidates) {
+                    if (results.size >= maxResults) break
+                    if (seenResults.add(callElementKey(candidate))) results.add(candidate)
+                }
             }
             results
         } catch (e: ProcessCanceledException) {

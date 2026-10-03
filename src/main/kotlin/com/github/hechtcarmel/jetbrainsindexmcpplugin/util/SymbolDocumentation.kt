@@ -45,8 +45,6 @@ object SymbolDocumentation {
 
     private const val NON_BREAKING_SPACE = '\u00A0'
 
-    private val BLANK_LINE_RUN = Regex("\n{3,}")
-
     /**
      * The Ctrl/Cmd-hover text for [element] — the signature line as the language renders it,
      * including its container.
@@ -112,36 +110,94 @@ object SymbolDocumentation {
      * Navigation info is HTML across two or three lines (container, then the declaration).
      * Blank lines carry no information here, so they are dropped rather than preserved.
      */
-    private fun normalizeSignature(html: String): String? =
-        toPlainText(html)
-            .lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .joinToString("\n")
-            .takeIf { it.isNotBlank() }
+    internal fun normalizeSignature(html: String): String? {
+        val raw = StringUtil.removeHtmlTags(html, true)
+        return cleanSignature(raw)
+    }
 
     /**
      * Documentation is prose, so paragraph breaks are kept — collapsed to a single blank line,
      * because the HTML layout produces long runs of them.
      */
-    private fun normalizeDoc(html: String): String? =
-        toPlainText(html)
-            .lineSequence()
-            .map { it.trim() }
-            .joinToString("\n")
-            .replace(BLANK_LINE_RUN, "\n\n")
-            .trim()
-            .takeIf { it.isNotBlank() }
+    internal fun normalizeDoc(html: String): String? {
+        val raw = StringUtil.removeHtmlTags(html, true)
+        return cleanDoc(raw)
+    }
 
-    /**
-     * `removeHtmlTags` parses the markup rather than stripping angle brackets, so entities are
-     * decoded and flow-breaking tags become line breaks. Decoding turns the `&nbsp;` that the
-     * Java doc generator uses for signature spacing into U+00A0, which reads as a normal space
-     * but does not compare or split as one — so it is folded back to a plain space here.
-     */
-    private fun toPlainText(html: String): String =
-        StringUtil.removeHtmlTags(html, true)
-            .replace(NON_BREAKING_SPACE, ' ')
-            .replace("\r\n", "\n")
-            .replace('\r', '\n')
+    private fun cleanSignature(raw: String): String? {
+        val sb = StringBuilder(raw.length)
+        val lineSb = StringBuilder()
+        var i = 0
+        val n = raw.length
+
+        fun flushLine() {
+            val trimmed = lineSb.trim()
+            lineSb.setLength(0)
+            if (trimmed.isNotEmpty()) {
+                if (sb.isNotEmpty()) sb.append('\n')
+                sb.append(trimmed)
+            }
+        }
+
+        while (i < n) {
+            val ch = raw[i]
+            if (ch == '\r') {
+                if (i + 1 < n && raw[i + 1] == '\n') i++
+                flushLine()
+            } else if (ch == '\n') {
+                flushLine()
+            } else {
+                val c = if (ch == NON_BREAKING_SPACE) ' ' else ch
+                lineSb.append(c)
+            }
+            i++
+        }
+        flushLine()
+
+        return sb.toString().takeIf { it.isNotBlank() }
+    }
+
+    private fun cleanDoc(raw: String): String? {
+        val sb = StringBuilder(raw.length)
+        val lineSb = StringBuilder()
+        var consecutiveNewlines = 0
+        var hasContent = false
+        var i = 0
+        val n = raw.length
+
+        fun flushDocLine() {
+            val trimmed = lineSb.trim()
+            lineSb.setLength(0)
+            if (trimmed.isNotEmpty()) {
+                if (hasContent) {
+                    val newlinesToEmit = minOf(consecutiveNewlines, 2)
+                    for (k in 0 until newlinesToEmit) {
+                        sb.append('\n')
+                    }
+                }
+                sb.append(trimmed)
+                hasContent = true
+                consecutiveNewlines = 1
+            } else if (hasContent) {
+                consecutiveNewlines++
+            }
+        }
+
+        while (i < n) {
+            val ch = raw[i]
+            if (ch == '\r') {
+                if (i + 1 < n && raw[i + 1] == '\n') i++
+                flushDocLine()
+            } else if (ch == '\n') {
+                flushDocLine()
+            } else {
+                val c = if (ch == NON_BREAKING_SPACE) ' ' else ch
+                lineSb.append(c)
+            }
+            i++
+        }
+        flushDocLine()
+
+        return sb.toString().takeIf { it.isNotBlank() }
+    }
 }
