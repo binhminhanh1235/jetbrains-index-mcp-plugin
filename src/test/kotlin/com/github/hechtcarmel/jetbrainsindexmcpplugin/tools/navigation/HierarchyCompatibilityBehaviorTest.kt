@@ -60,9 +60,9 @@ class HierarchyCompatibilityBehaviorTest : McpPlatformTestCase() {
         val result = TypeHierarchyTool().execute(project, typeArguments())
         assertToolSucceeded("Legacy type hierarchy", result)
         val tree = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-        assertEquals(listOf("compat.Parent"), tree.supertypes.map { it.name })
-        assertEquals(listOf("compat.Grand"), tree.supertypes.single().supertypes.orEmpty().map { it.name })
-        assertEquals("Supertypes must not spend the legacy 100-subtype limit", 100, tree.subtypes.size)
+        assertEquals(listOf("compat.Parent"), tree.supertypes!!.map { it.name })
+        assertEquals(listOf("compat.Grand"), tree.supertypes!!.single().supertypes.orEmpty().map { it.name })
+        assertEquals("Supertypes must not spend the legacy 100-subtype limit", 100, tree.subtypes!!.size)
         assertNull(tree.cursor)
     }
 
@@ -82,7 +82,7 @@ class HierarchyCompatibilityBehaviorTest : McpPlatformTestCase() {
         val result = TypeHierarchyTool().execute(project, typeArguments())
         assertToolSucceeded("Legacy wide supertype hierarchy", result)
         val tree = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-        assertEquals((0 until 105).map { "compat.Parent$it" }.toSet(), tree.supertypes.map { it.name }.toSet())
+        assertEquals((0 until 105).map { "compat.Parent$it" }.toSet(), tree.supertypes!!.map { it.name }.toSet())
     }
 
     fun testTypePagesRetainParentAndDepthAcrossCursors() = runBlocking {

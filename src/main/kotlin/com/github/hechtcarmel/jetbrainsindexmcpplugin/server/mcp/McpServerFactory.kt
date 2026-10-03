@@ -1,7 +1,10 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server.mcp
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.settings.McpSettings
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.ToolRegistry
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import io.modelcontextprotocol.kotlin.sdk.server.RegisteredTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -30,21 +33,41 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
  */
 open class McpServerFactory(
     private val toolRegistry: ToolRegistry,
-    private val dispatcher: McpToolDispatcher
+    private val dispatcher: McpToolDispatcher,
+    parentDisposable: Disposable? = null
 ) {
+
+    @Volatile
+    private var cachedTools: List<RegisteredTool>? = null
+
+    init {
+        val app = ApplicationManager.getApplication()
+        if (app != null) {
+            val connection = if (parentDisposable != null) {
+                app.messageBus.connect(parentDisposable)
+            } else {
+                app.messageBus.connect()
+            }
+            connection.subscribe(McpSettings.TOPIC, McpSettings.ChangeListener { cachedTools = null })
+        }
+    }
+
+    fun invalidateCache() {
+        cachedTools = null
+    }
+
+    private val serverInfo by lazy {
+        Implementation(
+            name = McpConstants.getServerName(),
+            version = McpConstants.getServerVersion(),
+            title = McpConstants.PLUGIN_NAME
+        )
+    }
 
     open fun newServer(): Server {
         val server = Server(
-            serverInfo = Implementation(
-                name = McpConstants.getServerName(),
-                version = McpConstants.getServerVersion(),
-                title = McpConstants.PLUGIN_NAME
-            ),
-            options = ServerOptions(
-                capabilities = ServerCapabilities(
-                    tools = ServerCapabilities.Tools(listChanged = false)
-                )
-            ),
+            serverInfo = serverInfo,
+            options = SERVER_OPTIONS,
             // `Implementation` has no `description` field — MCP puts this kind of "how to use
             // this server" text in `instructions`, which clients surface to the model.
             instructions = McpConstants.SERVER_DESCRIPTION
@@ -53,10 +76,21 @@ open class McpServerFactory(
         return server
     }
 
-    private fun registeredTools(): List<RegisteredTool> =
+    internal fun registeredTools(): List<RegisteredTool> =
+        cachedTools ?: buildToolList().also { cachedTools = it }
+
+    private fun buildToolList(): List<RegisteredTool> =
         toolRegistry.getToolDefinitions().map { tool ->
             RegisteredTool(tool) { request ->
                 dispatcher.call(request.params.name, request.params.arguments ?: EmptyJsonObject)
             }
         }
+
+    companion object {
+        private val SERVER_OPTIONS = ServerOptions(
+            capabilities = ServerCapabilities(
+                tools = ServerCapabilities.Tools(listChanged = false)
+            )
+        )
+    }
 }

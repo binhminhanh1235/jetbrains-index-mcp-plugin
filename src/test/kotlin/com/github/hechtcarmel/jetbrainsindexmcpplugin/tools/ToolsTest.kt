@@ -592,7 +592,7 @@ class ToolsTest : McpPlatformTestCase() {
         assertEquals("ABSTRACT_CLASS", payload.element.kind)
         assertEquals("Scala", payload.element.language)
         assertTrue("Hierarchy element should resolve BaseService", payload.element.name.contains("BaseService"))
-        val subtypes = payload.subtypes.map { it.name }
+        val subtypes = payload.subtypes!!.map { it.name }
         assertTrue("Employee and Contractor extend BaseService: $subtypes",
             subtypes.any { it.contains("Employee") } && subtypes.any { it.contains("Contractor") })
     }
@@ -676,7 +676,7 @@ class ToolsTest : McpPlatformTestCase() {
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
         assertEquals("Scala", payload.language)
         for (expected in listOf("object ServiceRunner (lines", "val defaultTask (line 4)", "var runCount (line 5)", "def runAll (worker)")) {
-            assertTrue("Structure should contain '$expected':\n${payload.structure}", payload.structure.contains(expected))
+            assertTrue("Structure should contain '$expected':\n${payload.structure}", payload.structure!!.contains(expected))
         }
     }
 
@@ -1224,10 +1224,10 @@ class ToolsTest : McpPlatformTestCase() {
 
         assertFalse("Type alias fixture should be accepted by file structure tool", result.isFailure)
         val payload = json.decodeFromString<FileStructureResult>(errorTextless(result))
-        assertTrue("Type alias output should remain distinct from classes", payload.structure.contains("typealias FileStructureAlias"))
-        assertFalse("Type alias output should not regress back to class formatting", payload.structure.contains("class FileStructureAlias"))
-        assertTrue("Interface output should remain visible beside type aliases", payload.structure.contains("interface FileStructureInterface"))
-        assertTrue("Class output should remain visible beside type aliases", payload.structure.contains("class FileStructureClass"))
+        assertTrue("Type alias output should remain distinct from classes", payload.structure!!.contains("typealias FileStructureAlias"))
+        assertFalse("Type alias output should not regress back to class formatting", payload.structure!!.contains("class FileStructureAlias"))
+        assertTrue("Interface output should remain visible beside type aliases", payload.structure!!.contains("interface FileStructureInterface"))
+        assertTrue("Class output should remain visible beside type aliases", payload.structure!!.contains("class FileStructureClass"))
     }
 
     fun testFindImplementationsToolInterfaceImplementsFixtureCoverageHook() = runBlocking {
@@ -1282,7 +1282,7 @@ class ToolsTest : McpPlatformTestCase() {
         })
 
         assertFalse("Type import alias fixture should be accepted by file structure tool", result.isFailure)
-        val structure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
+        val structure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure!!
         assertTrue("Type import alias coverage should mention ImportedPluginNameAlias", structure.contains("typealias ImportedPluginNameAlias"))
         assertTrue("Type import alias coverage should keep importedPluginName visible", structure.contains("var importedPluginName"))
         assertTrue("Type import alias coverage should keep echoImportedPluginName visible", structure.contains("function echoImportedPluginName"))
@@ -1299,7 +1299,7 @@ class ToolsTest : McpPlatformTestCase() {
         })
 
         assertFalse("as const derived fixture should be accepted by file structure tool", result.isFailure)
-        val derivedStructure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure
+        val derivedStructure = json.decodeFromString<FileStructureResult>(errorTextless(result)).structure!!
         assertTrue("as const coverage should mention THOTH_STATUS", derivedStructure.contains("var THOTH_STATUS"))
         assertTrue("Derived type coverage should mention ThothStatus", derivedStructure.contains("typealias ThothStatus"))
         assertTrue("Derived type coverage should mention DEFAULT_THOTH_STATUS", derivedStructure.contains("var DEFAULT_THOTH_STATUS"))

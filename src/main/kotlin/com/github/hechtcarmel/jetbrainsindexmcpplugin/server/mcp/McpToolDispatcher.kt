@@ -20,11 +20,13 @@ import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
+import com.intellij.util.concurrency.AppExecutorUtil
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.error
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
@@ -241,10 +243,14 @@ class McpToolDispatcher @JvmOverloads constructor(
             else -> "[${block::class.simpleName}]"
         }
 
+    private val toolExecutionDispatcher by lazy {
+        AppExecutorUtil.getAppExecutorService().asCoroutineDispatcher()
+    }
+
     private suspend fun <T> withIdeModality(block: suspend () -> T): T {
         // Null in plain unit tests that never boot the platform.
         ApplicationManager.getApplication() ?: return block()
-        return withContext(ModalityState.any().asContextElement()) { block() }
+        return withContext(toolExecutionDispatcher + ModalityState.any().asContextElement()) { block() }
     }
 
     private fun recordHistorySafely(project: Project, commandEntry: CommandEntry) {

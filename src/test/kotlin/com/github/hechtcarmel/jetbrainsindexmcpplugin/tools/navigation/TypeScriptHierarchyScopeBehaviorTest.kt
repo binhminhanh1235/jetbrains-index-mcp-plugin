@@ -84,7 +84,7 @@ class TypeScriptHierarchyScopeBehaviorTest : McpPlatformTestCase() {
         })
         assertToolSucceeded("Legacy query must see the test leaf", legacyResult)
         val legacy = json.decodeFromString<TypeHierarchyResult>(toolText(legacyResult))
-        assertEquals(setOf("bridge-probe-tests/leaf.ts"), legacy.subtypes.map { it.file }.toSet())
+        assertEquals(setOf("bridge-probe-tests/leaf.ts"), legacy.subtypes!!.map { it.file }.toSet())
         deliveredRootDescendants = 0
         val pagedSubtypes = mutableListOf<TypeElement>()
         var cursor: String? = null
@@ -104,12 +104,12 @@ class TypeScriptHierarchyScopeBehaviorTest : McpPlatformTestCase() {
             })
             assertToolSucceeded("Paged query must retain the included test descendant", result)
             val page = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-            pagedSubtypes += page.subtypes
+            pagedSubtypes += page.traversal.filter { it.direction == "subtypes" }.map { it.element }
             cursor = page.cursor
             assertTrue("Probe traversal must terminate", ++pages <= 8)
         } while (cursor != null)
         assertTrue("The real collector must consume the controlled descendant stream", deliveredRootDescendants > 0)
-        assertEquals(legacy.subtypes.map { it.file }.toSet(), pagedSubtypes.map { it.file }.toSet())
+        assertEquals(legacy.subtypes!!.map { it.file }.toSet(), pagedSubtypes.map { it.file }.toSet())
         assertEquals("The excluded parent is collapsed into the visible root edge", "n0", pagedSubtypes.single().parentId)
     }
 }

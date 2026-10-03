@@ -51,13 +51,13 @@ class HierarchyIdentityAndHandlesBehaviorTest : McpPlatformTestCase() {
         })
         assertToolSucceeded("Legacy type hierarchy remains available", result)
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-        assertEquals(setOf("Left", "Right"), hierarchy.supertypes.map { it.name.substringAfterLast('.') }.toSet())
-        assertEquals("Top", hierarchy.supertypes.first { it.name.endsWith("Left") }.supertypes!!.single().name.substringAfterLast('.'))
-        assertEquals("Leaf", hierarchy.subtypes.single().name.substringAfterLast('.'))
+        assertEquals(setOf("Left", "Right"), hierarchy.supertypes!!.map { it.name.substringAfterLast('.') }.toSet())
+        assertEquals("Top", hierarchy.supertypes!!.first { it.name.endsWith("Left") }.supertypes!!.single().name.substringAfterLast('.'))
+        assertEquals("Leaf", hierarchy.subtypes!!.single().name.substringAfterLast('.'))
         fun flatten(nodes: List<TypeElement>): List<TypeElement> =
             nodes.flatMap { listOf(it) + flatten(it.supertypes.orEmpty()) }
         assertNotNull("The root must retain a useful handle", hierarchy.element.symbolId)
-        val ids = (listOf(hierarchy.element) + flatten(hierarchy.supertypes) + flatten(hierarchy.subtypes))
+        val ids = (listOf(hierarchy.element) + flatten(hierarchy.supertypes!!) + flatten(hierarchy.subtypes!!))
             .mapNotNull { it.symbolId }
         assertTrue("The response should retain useful declaration handles", ids.size >= 2)
         for (id in ids) {
@@ -103,14 +103,14 @@ class HierarchyIdentityAndHandlesBehaviorTest : McpPlatformTestCase() {
         }
         val legacy = TypeHierarchyTool().execute(project, arguments)
         assertToolSucceeded("Legacy hierarchy fixture resolves test descendants", legacy)
-        val expected = json.decodeFromString<TypeHierarchyResult>(toolText(legacy)).subtypes.map { it.name }.toSet()
+        val expected = json.decodeFromString<TypeHierarchyResult>(toolText(legacy)).subtypes!!.map { it.name }.toSet()
         assertEquals("The legacy query must discover the test leaf", setOf("Leaf"), expected)
         val paged = TypeHierarchyTool().execute(project, kotlinx.serialization.json.JsonObject(
             arguments + ("maxNodes" to kotlinx.serialization.json.JsonPrimitive(1))
         ))
         assertToolSucceeded("Paged hierarchy traverses out-of-scope intermediates", paged)
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(toolText(paged))
-        assertEquals(expected, hierarchy.subtypes.map { it.name }.toSet())
+        assertEquals(expected, hierarchy.traversal.filter { it.direction == "subtypes" }.map { it.element.name }.toSet())
     }
 
     override fun setUp() {

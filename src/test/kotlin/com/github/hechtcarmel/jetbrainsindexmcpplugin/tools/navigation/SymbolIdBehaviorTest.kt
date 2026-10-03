@@ -250,7 +250,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
         assertToolSucceeded("type_hierarchy should accept symbolId", hierarchyResult)
         val hierarchy = decode<TypeHierarchyResult>(hierarchyResult)
         assertEquals(base.symbolId, hierarchy.element.symbolId)
-        val derived = hierarchy.subtypes.single { it.name.endsWith("DerivedType") }
+        val derived = hierarchy.subtypes!!.single { it.name.endsWith("DerivedType") }
         assertNotNull("Hierarchy nodes backed by PSI must expose IDs", derived.symbolId)
 
         val derivedDefinition = FindDefinitionTool().execute(project, buildJsonObject {

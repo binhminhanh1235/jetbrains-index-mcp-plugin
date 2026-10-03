@@ -48,7 +48,7 @@ class FileStructureNodesBehaviorTest : McpPlatformTestCase() {
         assertToolSucceeded("file_structure should return Java structure", result)
 
         val payload = json.decodeFromString<FileStructureResult>(toolText(result))
-        assertTrue("Legacy formatted output must remain available", payload.structure.contains("OverloadedStructure"))
+        assertNull("structure string should be null when includeNodes is true", payload.structure)
 
         val classNode = payload.nodes.single()
         assertEquals("OverloadedStructure", classNode.name)
@@ -96,7 +96,7 @@ class FileStructureNodesBehaviorTest : McpPlatformTestCase() {
         val root = payload.nodes.single()
         assertEquals(fieldCount, root.children.size)
         assertEquals("field${fieldCount - 1}", root.children.last().name)
-        assertTrue(payload.structure.contains("field${fieldCount - 1}"))
+        assertNull("structure string should be null when includeNodes is true", payload.structure)
         val allNodes = listOf(root) + root.children
         val registry = SymbolIdRegistry.getInstance()
         val handles = allNodes.mapNotNull { it.symbolId }
@@ -119,7 +119,7 @@ class FileStructureNodesBehaviorTest : McpPlatformTestCase() {
         })
         assertToolSucceeded("legacy file structure", result)
         val payload = json.decodeFromString<FileStructureResult>(toolText(result))
-        assertTrue(payload.structure.contains("Legacy"))
+        assertTrue(payload.structure!!.contains("Legacy"))
         assertTrue(payload.nodes.isEmpty())
         assertEquals(0, registry.sizeForTest())
     }

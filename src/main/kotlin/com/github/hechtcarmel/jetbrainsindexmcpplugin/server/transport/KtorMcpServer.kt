@@ -7,12 +7,17 @@ import com.intellij.openapi.diagnostic.logger
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.engine.applicationEnvironment
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.plugins.compression.Compression
+import io.ktor.server.plugins.compression.deflate
+import io.ktor.server.plugins.compression.gzip
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.routing.routing
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStatelessStreamableHttp
@@ -70,7 +75,19 @@ class KtorMcpServer(
     fun start(): StartResult {
         intentionallyStopped = false
         return try {
-            val embeddedServer = embeddedServer(CIO, port = port, host = host) {
+            val embeddedServer = embeddedServer(
+                factory = CIO,
+                environment = applicationEnvironment(),
+                configure = {
+                    connector {
+                        this.port = port
+                        this.host = host
+                    }
+                    connectionGroupSize = 1
+                    workerGroupSize = 2
+                    callGroupSize = 4
+                }
+            ) {
                 configure()
             }
             embeddedServer.monitor.subscribe(ApplicationStarted) { engineRunning = true }
@@ -133,6 +150,11 @@ class KtorMcpServer(
         // uses internally (explicitNulls = false, encodeDefaults = true) — anything else changes
         // the bytes on the wire.
         install(ContentNegotiation) { json(McpJson) }
+
+        install(Compression) {
+            gzip { priority = 1.0 }
+            deflate { priority = 0.5 }
+        }
 
         // Covers every MCP endpoint: they all live under /index-mcp. Installed before the SDK
         // routes so a rejected request never reaches a handler.

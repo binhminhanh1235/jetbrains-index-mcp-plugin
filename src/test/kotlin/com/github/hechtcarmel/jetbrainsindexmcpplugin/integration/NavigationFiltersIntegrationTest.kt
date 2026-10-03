@@ -70,7 +70,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
 
         val content = result.content.first() as TextContent
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(content.text)
-        val subtypeNames = hierarchy.subtypes.map { it.name }
+        val subtypeNames = hierarchy.subtypes!!.map { it.name }
 
         assertTrue("Production implementation should remain visible", subtypeNames.any { it.contains("ProdRepositoryImpl") })
         assertFalse("Test implementation should be filtered out by project_production_files", subtypeNames.any { it.contains("TestRepositoryImpl") })

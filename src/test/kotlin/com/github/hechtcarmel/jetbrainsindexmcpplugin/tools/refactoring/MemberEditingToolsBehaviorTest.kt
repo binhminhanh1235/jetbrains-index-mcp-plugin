@@ -384,7 +384,7 @@ class MemberEditingToolsBehaviorTest : McpPlatformTestCase() {
         })
 
         assertToolSucceeded("File structure should succeed", result)
-        val structure = json.decodeFromString<FileStructureResult>(toolText(result)).structure
+        val structure = json.decodeFromString<FileStructureResult>(toolText(result)).structure!!
 
         val classLine = structure.lines().single { it.contains("Structured") && it.contains("class") }
         assertTrue("Class should span the whole file, got: $classLine", classLine.endsWith("(lines 1-14)"))

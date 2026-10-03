@@ -87,6 +87,7 @@ dependencies {
     // can move to one, McpKtorServer installs it and these two artifacts supply it.
     implementation(libs.ktor.server.content.negotiation) { excludePlatformProvided() }
     implementation(libs.ktor.serialization.kotlinx.json) { excludePlatformProvided() }
+    implementation(libs.ktor.server.compression) { excludePlatformProvided() }
 
     // Testing
     testImplementation(libs.junit)

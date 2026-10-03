@@ -91,7 +91,7 @@ class McpServerService(
 
     init {
         LOG.info("Initializing MCP Server Service (Protocol: ${McpConstants.MCP_PROTOCOL_VERSION})")
-        serverFactory = McpServerFactory(toolRegistry, McpToolDispatcher(toolRegistry))
+        serverFactory = McpServerFactory(toolRegistry, McpToolDispatcher(toolRegistry), this)
         if (shouldStartServer()) {
             coroutineScope.launch { initialize() }
         } else {

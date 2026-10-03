@@ -2,11 +2,13 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.settings
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.McpConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
+import com.intellij.util.messages.Topic
 
 private object ToolSettingsDefaults {
     const val CURRENT_SCHEMA_VERSION = 10
@@ -95,6 +97,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
 
     override fun loadState(state: State) {
         this.state = migrateState(state)
+        notifyChanged()
     }
 
     private fun migrateState(loaded: State): State {
@@ -180,6 +183,10 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         set(value) { state.minimumOpenProjects = value }
 
 
+    fun interface ChangeListener {
+        fun settingsChanged()
+    }
+
     fun isToolEnabled(toolName: String): Boolean = toolName !in state.disabledTools
 
     fun setToolEnabled(toolName: String, enabled: Boolean) {
@@ -189,6 +196,7 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
             state.disabledTools.add(toolName)
         }
         state.settingsSchemaVersion = ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
+        notifyChanged()
     }
 
     fun updateToolEnabledStates(toolStates: Map<String, Boolean>) {
@@ -202,11 +210,20 @@ class McpSettings : PersistentStateComponent<McpSettings.State> {
         }
         state.disabledTools = disabledTools
         state.settingsSchemaVersion = ToolSettingsDefaults.CURRENT_SCHEMA_VERSION
+        notifyChanged()
+    }
+
+    private fun notifyChanged() {
+        val app = ApplicationManager.getApplication() ?: return
+        app.messageBus.syncPublisher(TOPIC).settingsChanged()
     }
 
     companion object {
+        val TOPIC: Topic<ChangeListener> = Topic.create("McpSettingsChanged", ChangeListener::class.java)
+
         val DEFAULT_DISABLED_TOOLS: Set<String> get() = ToolSettingsDefaults.DEFAULT_DISABLED_TOOLS
 
-        fun getInstance(): McpSettings = service()
+        fun getInstance(): McpSettings =
+            ApplicationManager.getApplication()?.getService(McpSettings::class.java) ?: McpSettings()
     }
 }

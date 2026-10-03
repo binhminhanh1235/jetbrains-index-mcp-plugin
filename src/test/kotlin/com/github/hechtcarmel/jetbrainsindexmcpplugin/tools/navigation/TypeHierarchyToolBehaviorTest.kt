@@ -73,8 +73,8 @@ class TypeHierarchyToolBehaviorTest : McpPlatformTestCase() {
         assertToolSucceeded("type hierarchy should succeed for hier.Child", result)
 
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-        val supertypeNames = hierarchy.supertypes.map { it.name }
-        val parentEntries = hierarchy.supertypes.filter { it.name == "hier.Parent" }
+        val supertypeNames = hierarchy.supertypes!!.map { it.name }
+        val parentEntries = hierarchy.supertypes!!.filter { it.name == "hier.Parent" }
         assertEquals(
             "hier.Parent must appear exactly once in Child's supertypes; got $supertypeNames",
             1,
@@ -122,7 +122,7 @@ class TypeHierarchyToolBehaviorTest : McpPlatformTestCase() {
         assertToolSucceeded("type hierarchy should succeed for diamond.Foo", result)
 
         val hierarchy = json.decodeFromString<TypeHierarchyResult>(toolText(result))
-        val supertypeNames = hierarchy.supertypes.map { it.name }
+        val supertypeNames = hierarchy.supertypes!!.map { it.name }
 
         // Bar's own recursion already visited Baz. Foo's *directly implemented* Baz must still
         // be reported — a global-visited guard on the interfaces loop would wrongly drop it.

@@ -179,7 +179,9 @@ class CommandHistoryService(private val project: Project) {
     }
 
     private fun notifyListeners(event: CommandHistoryEvent) {
-        ApplicationManager.getApplication().invokeLater({
+        if (listeners.isEmpty()) return
+        val app = ApplicationManager.getApplication() ?: return
+        app.invokeLater({
             when (event) {
                 is CommandHistoryEvent.CommandAdded -> {
                     listeners.forEach { it.onCommandAdded(event.entry) }
