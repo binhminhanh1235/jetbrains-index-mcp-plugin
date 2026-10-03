@@ -1,6 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
@@ -12,9 +13,7 @@ import kotlinx.coroutines.withContext
 object ThreadingUtils {
 
     suspend fun <T> readActionSuspend(action: () -> T): T {
-        return withContext(Dispatchers.Default) {
-            ReadAction.compute<T, Throwable>(action)
-        }
+        return com.intellij.openapi.application.readAction { action() }
     }
 
     suspend fun writeActionSuspend(
@@ -22,7 +21,7 @@ object ThreadingUtils {
         commandName: String,
         action: () -> Unit
     ) {
-        withContext(Dispatchers.Main) {
+        withContext(Dispatchers.EDT) {
             WriteCommandAction.runWriteCommandAction(
                 project,
                 commandName,
@@ -32,25 +31,11 @@ object ThreadingUtils {
         }
     }
 
-    fun runOnEdt(action: () -> Unit) {
+    suspend fun <T> runOnEdt(action: () -> T): T =
+        withContext(Dispatchers.EDT) { action() }
+
+    fun runOnEdtAsync(action: () -> Unit) {
         ApplicationManager.getApplication().invokeLater(action, ModalityState.any())
-    }
-
-    fun <T> runOnEdtAndWait(action: () -> T): T {
-        var result: T? = null
-        var exception: Throwable? = null
-
-        ApplicationManager.getApplication().invokeAndWait {
-            try {
-                result = action()
-            } catch (e: Throwable) {
-                exception = e
-            }
-        }
-
-        exception?.let { throw it }
-        @Suppress("UNCHECKED_CAST")
-        return result as T
     }
 
     fun isDumbMode(project: Project): Boolean {

@@ -181,7 +181,7 @@ class DiagnosticsAnalysisService(private val project: Project) {
 
         val minSeverity = minimumSeverityFor(severity)
 
-        return DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
+        return DiagnosticsAnalysisCoordinator.getInstance(project).withMainPassLock {
             if (fileContext.openEditorEligible) {
                 val outcome = analyzeOpenEditorFile(
                     fileContext = fileContext,

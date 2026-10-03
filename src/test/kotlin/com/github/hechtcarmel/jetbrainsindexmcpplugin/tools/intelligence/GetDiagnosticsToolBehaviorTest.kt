@@ -1132,7 +1132,7 @@ class GetDiagnosticsToolBehaviorTest : BasePlatformTestCase() {
         val lockAcquired = CompletableDeferred<Unit>()
         val releaseLock = CompletableDeferred<Unit>()
         val lockHolder = launch(Dispatchers.Default) {
-            DiagnosticsAnalysisCoordinator.getInstance().withMainPassLock {
+            DiagnosticsAnalysisCoordinator.getInstance(project).withMainPassLock {
                 lockAcquired.complete(Unit)
                 releaseLock.await()
             }

@@ -1,16 +1,16 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.project.Project
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-@Service(Service.Level.APP)
+@Service(Service.Level.PROJECT)
 class DiagnosticsAnalysisCoordinator {
 
     companion object {
-        fun getInstance(): DiagnosticsAnalysisCoordinator =
-            ApplicationManager.getApplication().getService(DiagnosticsAnalysisCoordinator::class.java)
+        fun getInstance(project: Project): DiagnosticsAnalysisCoordinator =
+            project.getService(DiagnosticsAnalysisCoordinator::class.java) ?: DiagnosticsAnalysisCoordinator()
     }
 
     private val mainPassesMutex = Mutex()
