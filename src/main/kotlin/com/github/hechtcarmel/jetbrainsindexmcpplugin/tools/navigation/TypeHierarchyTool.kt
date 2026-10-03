@@ -34,6 +34,7 @@ import java.util.ArrayDeque
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -80,7 +81,8 @@ class TypeHierarchyTool : AbstractMcpTool() {
         .file(required = false, description = "Path to file relative to project root (e.g., 'src/main/java/com/example/MyClass.java'). Use with line and column.")
         .intProperty("line", "1-based line number where the class is defined. Required if using file parameter.")
         .intProperty("column", "1-based column number. Required if using file parameter.")
-        .intProperty("maxNodes", "Opt into BFS paging with 1–500 nodes. Omit for a legacy tree; cursor default: 100.")
+        .intProperty("maxNodes", "Opt into BFS paging with 1–500 nodes (default: 100). Ignored when legacyTree is true.")
+        .booleanProperty("legacyTree", "When true, returns the legacy nested tree format (supertypes/subtypes) instead of bounded BFS traversal. Default: false.", required = false)
         .stringProperty("cursor", "Opaque session/project-bound continuation from the previous hierarchy page. Other search parameters are ignored.")
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include supertypes/subtypes defined in generated sources (KSP/Dagger/annotation-processor output). Default: true — keep generated types in the hierarchy.")
@@ -88,9 +90,10 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
         val startedAt = System.currentTimeMillis()
+        val legacyTree = arguments["legacyTree"]?.jsonPrimitive?.booleanOrNull ?: false
         val explicitMaxNodes = arguments["maxNodes"]?.jsonPrimitive?.intOrNull
         val maxNodes = explicitMaxNodes ?: DEFAULT_MAX_NODES
-        if (maxNodes !in 1..MAX_NODES) {
+        if (!legacyTree && maxNodes !in 1..MAX_NODES) {
             return createErrorResult("maxNodes must be between 1 and $MAX_NODES")
         }
 
@@ -150,7 +153,7 @@ class TypeHierarchyTool : AbstractMcpTool() {
 
             ProgressManager.checkCanceled() // Allow cancellation before heavy operation
 
-            if (explicitMaxNodes == null) {
+            if (legacyTree) {
                 val legacy = handler.getTypeHierarchy(element, project, scope, excludeGenerated)
                     ?: return@suspendingReadAction createErrorResult("No class/type found at the specified position.")
                 // Reserve one registry slot for the root. Handles are emitted in traversal order;

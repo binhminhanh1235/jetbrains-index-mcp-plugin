@@ -503,7 +503,7 @@ data class FileMatch(
     val directory: String
 )
 
-// ide_get_active_file output
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class ActiveFileInfo(
     val file: String,
@@ -511,7 +511,11 @@ data class ActiveFileInfo(
     val column: Int?,
     val selectedText: String?,
     val hasSelection: Boolean,
-    val language: String?
+    val language: String?,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val selectedTextTruncated: Boolean? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val selectionLength: Int? = null
 )
 
 @Serializable

@@ -14,6 +14,10 @@ import kotlinx.serialization.json.JsonObject
 
 class GetActiveFileTool : AbstractMcpTool() {
 
+    companion object {
+        const val MAX_SELECTION_LENGTH = 2000
+    }
+
     override val requiresPsiSync: Boolean = false
 
     override val name = ToolNames.GET_ACTIVE_FILE
@@ -50,7 +54,10 @@ class GetActiveFileTool : AbstractMcpTool() {
 
                 val selectionModel = editor?.selectionModel
                 val hasSelection = selectionModel?.hasSelection() ?: false
-                val selectedText = if (hasSelection) selectionModel?.selectedText else null
+                val rawSelection = if (hasSelection) selectionModel?.selectedText else null
+                val selectedTextTruncated = rawSelection != null && rawSelection.length > MAX_SELECTION_LENGTH
+                val selectedText = rawSelection?.take(MAX_SELECTION_LENGTH)
+                val selectionLength = rawSelection?.length
 
                 val language = virtualFile.fileType.name
 
@@ -60,7 +67,9 @@ class GetActiveFileTool : AbstractMcpTool() {
                     column = column,
                     selectedText = selectedText,
                     hasSelection = hasSelection,
-                    language = language
+                    language = language,
+                    selectedTextTruncated = if (selectedTextTruncated) true else null,
+                    selectionLength = if (selectedTextTruncated) selectionLength else null
                 )
             }
         }

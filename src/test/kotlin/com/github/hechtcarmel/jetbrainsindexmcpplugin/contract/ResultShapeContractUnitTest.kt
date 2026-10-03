@@ -950,7 +950,9 @@ class ResultShapeContractUnitTest : TestCase() {
                             column = 17,
                             selectedText = "handle",
                             hasSelection = true,
-                            language = "JAVA"
+                            language = "JAVA",
+                            selectedTextTruncated = true,
+                            selectionLength = 6
                         )
                     )
                 )

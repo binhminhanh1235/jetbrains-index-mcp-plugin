@@ -43,6 +43,7 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
             required = true
         )
         .enumProperty(ParamNames.SEVERITY, "Severity filter", listOf("errors", "warnings", "all"))
+        .intProperty("maxProblems", "Maximum total problems to collect across all files (default: 200, max: 500).", required = false)
         .booleanProperty(ParamNames.INCLUDE_BUILD_ERRORS, "Include compiler build errors (default: true)")
         .booleanProperty(ParamNames.INCLUDE_TEST_RESULTS, "Include test failure results (default: false)")
         .build()
@@ -61,10 +62,17 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
         val severity = arguments[ParamNames.SEVERITY]?.jsonPrimitive?.contentOrNull ?: "errors"
         val includeBuildErrors = arguments[ParamNames.INCLUDE_BUILD_ERRORS]?.jsonPrimitive?.booleanOrNull ?: true
         val includeTestResults = arguments[ParamNames.INCLUDE_TEST_RESULTS]?.jsonPrimitive?.booleanOrNull ?: false
+        val maxProblems = arguments["maxProblems"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.coerceIn(1, 500) ?: 200
 
         var hasErrors = false
+        var totalProblems = 0
+        var problemsTruncated = false
         val resultsArray = buildJsonArray {
             for (file in files) {
+                if (totalProblems >= maxProblems) {
+                    problemsTruncated = true
+                    break
+                }
                 val virtualFile = resolveFile(project, file)
                 if (virtualFile == null) {
                     add(buildJsonObject {
@@ -75,15 +83,20 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
                     continue
                 }
 
+                val remainingCap = maxProblems - totalProblems
                 val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(
                     virtualFile = virtualFile,
                     filePath = file,
                     severity = severity,
                     startLine = null,
                     endLine = null,
-                    maxProblems = 100
+                    maxProblems = remainingCap
                 )
                 val problems = analysisResult.problems
+                totalProblems += problems.size
+                if (totalProblems >= maxProblems) {
+                    problemsTruncated = true
+                }
                 if (problems.isNotEmpty()) hasErrors = true
 
                 add(buildJsonObject {
@@ -111,6 +124,10 @@ class BatchDiagnosticsTool : AbstractMcpTool() {
         val summary = buildJsonObject {
             put("filesChecked", files.size)
             put("hasErrors", hasErrors)
+            put("totalProblems", totalProblems)
+            if (problemsTruncated) {
+                put("problemsTruncated", true)
+            }
             put("results", resultsArray)
         }
 

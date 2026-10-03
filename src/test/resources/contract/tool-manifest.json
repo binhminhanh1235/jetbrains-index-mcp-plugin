@@ -85,6 +85,11 @@ schema:
         "description": "Include test failure results (default: false)",
         "type": "boolean"
       },
+      "maxProblems":
+      {
+        "description": "Maximum total problems to collect across all files (default: 200, max: 500).",
+        "type": "integer"
+      },
       "project_path":
       {
         "description": "Absolute project root; required with multiple open projects. For workspaces use the sub-project path.",
@@ -3951,6 +3956,11 @@ schema:
         ],
         "type": "string"
       },
+      "legacyTree":
+      {
+        "description": "When true, returns the legacy nested tree format (supertypes/subtypes) instead of bounded BFS traversal. Default: false.",
+        "type": "boolean"
+      },
       "line":
       {
         "description": "1-based line number where the class is defined. Required if using file parameter.",
@@ -3958,7 +3968,7 @@ schema:
       },
       "maxNodes":
       {
-        "description": "Opt into BFS paging with 1–500 nodes. Omit for a legacy tree; cursor default: 100.",
+        "description": "Opt into BFS paging with 1–500 nodes (default: 100). Ignored when legacyTree is true.",
         "type": "integer"
       },
       "project_path":
