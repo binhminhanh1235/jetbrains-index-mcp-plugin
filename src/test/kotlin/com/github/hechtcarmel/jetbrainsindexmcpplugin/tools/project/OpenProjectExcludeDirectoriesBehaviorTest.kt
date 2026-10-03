@@ -21,7 +21,9 @@ class OpenProjectExcludeDirectoriesBehaviorTest : McpPlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
-        val baseVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(project.basePath!!)!!
+        val basePath = requireNotNull(project.basePath) { "Project base path is null" }
+        java.nio.file.Files.createDirectories(java.nio.file.Path.of(basePath))
+        val baseVf = requireNotNull(LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath))
         PsiTestUtil.addContentRoot(module, baseVf)
         addedRoot = baseVf
     }
