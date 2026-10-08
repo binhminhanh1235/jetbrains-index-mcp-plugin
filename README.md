@@ -294,7 +294,7 @@ These tools work in all supported JetBrains IDEs.
 | `ide_reload_project` | Force-reload Maven or Gradle build model after modifying `pom.xml`/`build.gradle` |
 | `ide_link_build_system` | Link an unlinked Maven/Gradle project for dependency resolution *(disabled by default)* |
 | `ide_import_modules` | Import external Maven project directories as modules into the current IntelliJ window *(requires Maven plugin)* |
-| `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence *(requires Maven plugin)* |
+| `ide_open_workspace` | Scan a root directory for Maven projects, or provide an explicit module list, and open them all in one IntelliJ window with full cross-project code intelligence. Call once with every repository; a single repository belongs in `ide_open_project` *(requires Maven plugin)* |
 | `ide_build_project` | Build project using IDE's build system (JPS, Gradle, Maven, CMake (CLion)) with structured errors. Long builds return a `buildId` to poll, so the MCP client's request timeout is never hit |
 | `ide_run_tests` | Run tests via the IDE's run configuration infrastructure; structured pass/fail results with per-test console output, read from the IDE's test runner (works with any framework — JUnit, TestNG, pytest, Jest, Go test, PHPUnit). Scope by single `target`, batch `targets` list, `package`, `directory`, or `module`. Long runs return a `runId` to poll, so the MCP client's request timeout is never hit; each poll reports the failures so far |
 | `ide_read_file` | Read file content by path or qualified name, including library/jar sources |

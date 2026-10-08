@@ -41,6 +41,12 @@
 - **Modernized non-blocking threading** — Replaced blocking read and EDT thread operations with non-blocking platform coroutines (`readAction`, `writeActionSuspend`, `runOnEdt`), and scoped the diagnostics analysis mutex to the project level.
 - **Fast symbol coordinate keys and single-pass doc sanitization** — Eliminated string key concatenation allocations in symbol deduplication with `SymbolCoordKey`, pre-normalized symbol search language filters to sets for $O(1)$ lookups, and implemented single-pass HTML documentation sanitization.
 
+## [5.20.1] - 2026-10-07
+
+### Fixed
+
+- **`ide_open_workspace` no longer opens a new window for every repository** ([#436](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/issues/436)) — an open project that already contains every requested Maven project is now reused, and a single Maven project is refused with a ready-to-use `ide_open_project` call; the tool descriptions and bundled skill now say when to use which. Workspace folders left by earlier calls are not removed: delete unused ones from `ide-workspaces/` in the IDE's system directory.
+
 ## [5.20.0] - 2026-09-29
 
 ### Added
@@ -1410,7 +1416,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...HEAD
+[5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0
 [5.18.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.0...v5.18.1
