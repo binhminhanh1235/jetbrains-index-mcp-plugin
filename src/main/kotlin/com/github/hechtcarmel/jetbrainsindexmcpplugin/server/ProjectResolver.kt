@@ -89,17 +89,29 @@ object ProjectResolver {
     private val json = Json { encodeDefaults = true; prettyPrint = false }
 
     private val fallbackProjects = java.util.concurrent.ConcurrentHashMap<String, Project>()
+    private val contentRootCache = java.util.concurrent.ConcurrentHashMap<String, Project>()
 
     fun onProjectOpened(project: Project) {
         if (project.isDefault) return
         val path = project.basePath ?: return
         LOG.info("ProjectResolver: caching opened project '${project.name}' at $path")
         fallbackProjects[normalizePath(path)] = project
+
+        try {
+            for (module in ModuleManager.getInstance(project).modules) {
+                for (root in ModuleRootManager.getInstance(module).contentRoots) {
+                    contentRootCache[normalizePath(root.path)] = project
+                }
+            }
+        } catch (e: Exception) {
+            LOG.debug("Failed to cache module content roots for project ${project.name}", e)
+        }
     }
 
     fun onProjectClosed(project: Project) {
         val path = project.basePath ?: return
         fallbackProjects.remove(normalizePath(path))
+        contentRootCache.entries.removeIf { it.value == project }
     }
 
     // Serialises concurrent auto-opens so only one project indexes at a time.
@@ -165,10 +177,11 @@ object ProjectResolver {
                 return Result(project = exactMatch)
             }
 
-            // 2. Match against module content roots (workspace support)
-            val moduleMatch = findProjectByModuleContentRoot(openProjects, normalizedPath)
-            if (moduleMatch != null) {
-                return Result(project = moduleMatch)
+            // 2. Exact match against module content roots (workspace support)
+            // Using cached mappings avoids O(P*M*R) nested loop on every request
+            val exactContentRootMatch = contentRootCache[normalizedPath]
+            if (exactContentRootMatch != null && exactContentRootMatch in openProjects) {
+                return Result(project = exactContentRootMatch)
             }
 
             // 3. Match if the given path is a subdirectory of an open project
@@ -180,14 +193,23 @@ object ProjectResolver {
                 return Result(project = parentMatch)
             }
 
-            // 4. Match if the given path is inside a module content root. Workspace
+            // 4. Prefix match against module content roots. Workspace
             // sub-projects need this: an ide_open_workspace aggregator's basePath is a
             // generated directory that shares no prefix with the real module roots, so a
             // sub-path of a sub-project fails all of the passes above. Runs last so it
             // cannot reroute any path the earlier passes already resolve.
-            val contentRootParentMatch = findProjectByContentRootPrefix(openProjects, normalizedPath)
-            if (contentRootParentMatch != null) {
-                return Result(project = contentRootParentMatch)
+            var bestProject: Project? = null
+            var bestRootLength = -1
+            for ((rootPath, project) in contentRootCache) {
+                if (project !in openProjects) continue
+                if (normalizedPath.startsWith("$rootPath/") && rootPath.length > bestRootLength) {
+                    bestProject = project
+                    bestRootLength = rootPath.length
+                }
+            }
+
+            if (bestProject != null) {
+                return Result(project = bestProject)
             }
 
             return Result(
@@ -221,58 +243,6 @@ object ProjectResolver {
                 format = responseFormat()
             )
         )
-    }
-
-    /**
-     * Finds a project by checking if any of its module content roots match the given path.
-     * This supports workspace projects where sub-projects are represented as modules
-     * with content roots in different directories.
-     */
-    private fun findProjectByModuleContentRoot(projects: List<Project>, normalizedPath: String): Project? {
-        for (project in projects) {
-            try {
-                val modules = ModuleManager.getInstance(project).modules
-                for (module in modules) {
-                    val contentRoots = ModuleRootManager.getInstance(module).contentRoots
-                    for (root in contentRoots) {
-                        if (normalizePath(root.path) == normalizedPath) {
-                            return project
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                LOG.debug("Failed to check module content roots for project ${project.name}", e)
-            }
-        }
-        return null
-    }
-
-    /**
-     * Finds the project owning a module content root that contains the given path,
-     * preferring the longest (most specific) matching root — mirroring
-     * [ProjectUtils.getRelativePath]'s content-root matching for file paths.
-     */
-    private fun findProjectByContentRootPrefix(projects: List<Project>, normalizedPath: String): Project? {
-        var bestProject: Project? = null
-        var bestRootLength = -1
-        for (project in projects) {
-            try {
-                for (module in ModuleManager.getInstance(project).modules) {
-                    for (root in ModuleRootManager.getInstance(module).contentRoots) {
-                        val rootPath = normalizePath(root.path)
-                        val matches = normalizedPath == rootPath ||
-                            normalizedPath.startsWith("$rootPath/")
-                        if (matches && rootPath.length > bestRootLength) {
-                            bestProject = project
-                            bestRootLength = rootPath.length
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                LOG.debug("Failed to check module content roots for project ${project.name}", e)
-            }
-        }
-        return bestProject
     }
 
     /**
