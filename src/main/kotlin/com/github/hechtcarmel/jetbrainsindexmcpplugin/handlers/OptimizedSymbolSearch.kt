@@ -194,7 +194,7 @@ object OptimizedSymbolSearch {
     ) {
         if (contributor is ChooseByNameContributorEx) {
             // Modern API with Processor pattern - streaming, memory efficient
-            val matchingNames = mutableListOf<String>()
+            val matchingNames = mutableSetOf<String>()
 
             contributor.processNames(
                 { name ->
@@ -231,7 +231,7 @@ object OptimizedSymbolSearch {
         } else {
             // Legacy API - load all names then filter
             val names = contributor.getNames(project, true)
-            val matchingNames = names.filter { nameFilter(it) }
+            val matchingNames = names.filter { nameFilter(it) }.distinct()
 
             for (name in matchingNames) {
                 if (results.size >= limit) break
