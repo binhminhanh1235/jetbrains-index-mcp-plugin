@@ -9,7 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.ArrayDeque
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.CircularBuffer
 import java.util.concurrent.CopyOnWriteArrayList
 
 @Service(Service.Level.PROJECT)
@@ -22,7 +22,9 @@ class CommandHistoryService(private val project: Project) {
     }
 
     private val historyLock = Any()
-    private val history = ArrayDeque<CommandEntry>()
+    // History is bounded, we use CircularBuffer to avoid allocating/deallocating continuously
+    private var history = CircularBuffer<CommandEntry>(100)
+    private var currentCapacity = 100
     private val listeners = CopyOnWriteArrayList<CommandHistoryListener>()
 
     private val json = Json {
@@ -32,20 +34,34 @@ class CommandHistoryService(private val project: Project) {
 
     val entries: List<CommandEntry>
         get() = synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
-            history.toList()
+            ensureCapacityLocked()
+            history.toList().asReversed() // CircularBuffer add appends, so we reverse to get newest first
         }
+
+    private fun ensureCapacityLocked() {
+        val maxSize = configuredMaxSize()
+        if (maxSize != currentCapacity) {
+            val newBuffer = CircularBuffer<CommandEntry>(maxSize)
+            // Add oldest first so they get pushed out if necessary
+            val currentEntries = history.toList()
+            for (entry in currentEntries) {
+                newBuffer.add(entry)
+            }
+            history = newBuffer
+            currentCapacity = maxSize
+        }
+    }
 
     fun recordCommand(entry: CommandEntry) {
         val event = synchronized(historyLock) {
             val maxSize = configuredMaxSize()
+            ensureCapacityLocked()
             if (maxSize == 0) {
-                val hadEntries = history.isNotEmpty()
+                val hadEntries = history.isNotEmpty
                 history.clear()
                 if (hadEntries) CommandHistoryEvent.HistoryCleared else null
             } else {
-                history.addFirst(entry)
-                trimHistoryLocked(maxSize)
+                history.add(entry)
                 CommandHistoryEvent.CommandAdded(entry)
             }
         }
@@ -62,7 +78,7 @@ class CommandHistoryService(private val project: Project) {
         affectedFiles: List<String>? = null
     ) {
         val updatedEntry = synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
+            ensureCapacityLocked()
 
             val entry = history.firstOrNull { it.id == id } ?: return
 
@@ -88,7 +104,7 @@ class CommandHistoryService(private val project: Project) {
 
     fun clearHistory() {
         val shouldNotify = synchronized(historyLock) {
-            val hadEntries = history.isNotEmpty()
+            val hadEntries = history.isNotEmpty
             history.clear()
             hadEntries
         }
@@ -101,7 +117,7 @@ class CommandHistoryService(private val project: Project) {
 
     fun getFilteredHistory(filter: CommandFilter): List<CommandEntry> {
         return synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
+            ensureCapacityLocked()
 
             history.filter { entry ->
                 val matchesTool = filter.toolName == null || entry.toolName == filter.toolName
@@ -112,21 +128,21 @@ class CommandHistoryService(private val project: Project) {
                     entry.result?.contains(filter.searchText, ignoreCase = true) == true
 
                 matchesTool && matchesStatus && matchesSearch
-            }
+            }.asReversed() // return newest first
         }
     }
 
     fun getUniqueToolNames(): List<String> {
         return synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
+            ensureCapacityLocked()
             history.map { it.toolName }.distinct().sorted()
         }
     }
 
     fun exportToJson(): String {
         val exports = synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
-            history.map { it.toExport() }
+            ensureCapacityLocked()
+            history.toList().asReversed().map { it.toExport() }
         }
         return json.encodeToString(exports)
     }
@@ -134,8 +150,8 @@ class CommandHistoryService(private val project: Project) {
     fun exportToCsv(): String {
         val header = "ID,Timestamp,Tool,Status,Duration(ms),Result,Error"
         val rows = synchronized(historyLock) {
-            trimHistoryLocked(configuredMaxSize())
-            history.map { entry ->
+            ensureCapacityLocked()
+            history.toList().asReversed().map { entry ->
                 listOf(
                     entry.id,
                     entry.timestamp.toString(),
@@ -164,17 +180,6 @@ class CommandHistoryService(private val project: Project) {
             McpSettings.getInstance().maxHistorySize.coerceAtLeast(0)
         } catch (_: Exception) {
             100
-        }
-    }
-
-    private fun trimHistoryLocked(maxSize: Int) {
-        if (maxSize == 0) {
-            history.clear()
-            return
-        }
-
-        while (history.size > maxSize) {
-            history.removeLast()
         }
     }
 
