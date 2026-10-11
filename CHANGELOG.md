@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-10-12
+
 ### Added
 
 - **Batch and scoped test execution (`ide_run_tests`)** — Run multiple test classes or methods via `targets` (up to 50 entries), or scope test runs by `package`, `directory`, or `module` in a single execution.
@@ -17,10 +19,15 @@
 - **Single-call change verification (`ide_verify_change`)** — Verify file modifications by syncing VFS, checking compiler/syntax errors, and optionally executing nearby tests in a single round-trip.
 - **Apply quick fixes (`ide_apply_quick_fix`)** — Apply an available quick fix or intention action at a specific position in an open file.
 - **Compact mode for search tools (`ide_find_class`, `ide_find_symbol`, `ide_find_usages`, `ide_find_file`, `ide_search_text`)** — Optional `compact: true` parameter reduces output payload size and token usage by 50–70%.
-- **Simple name resolution for `ide_find_usages`** — Optional `simpleName` parameter enables direct class lookup without requiring a preceding `ide_find_class` call.
+- **Module targeting for `ide_build_project`** — Optional `module` parameter allows compiling a single module and its dependencies instead of the entire project.
+- **Compact mode for `ide_find_implementations`** — Added `compact` parameter returning lightweight formatted strings.
 
 ### Changed
 
+- **Default `compact: true` across navigation and search tools** — `ide_find_references`, `ide_find_class`, `ide_find_symbol`, `ide_find_file`, `ide_search_text`, and `ide_find_implementations` now default to `compact: true` (reducing token payload by 60–75%); default page sizes for text and reference searches reduced from 100 to 25.
+- **Lower default limits for `ide_list_tests` and `ide_project_diagnostics`** — Reduced default `maxResults` from 500 to 30 in `ide_list_tests` to prevent response overflow, and set default `severity: "errors"` with `maxFiles: 50` in `ide_project_diagnostics`.
+- **Tightened test execution output and trace budgets (`ide_run_tests`)** — Capped per-test output and stack traces to 2,500 characters (run-level ceiling 15,000 characters) to eliminate context-window flooding on test failures.
+- **Non-blocking `ide_index_status` resolution** — Bypassed 120s smart-mode waits and lifecycle hooks in `ide_index_status` so status queries return immediate indexing snapshots even in dumb mode.
 - **`ide_get_signature` deprecated** — Deprecated in favor of `ide_symbol_info`. Disabled by default in MCP settings with automatic migration in schema version 11.
 - **Bounded legacy type hierarchy (`ide_type_hierarchy`)** — Default `maxNodes` bounded to 100 in BFS traversal; added `legacyTree: Boolean` parameter to explicitly request unbounded depth-first tree traversal.
 - **Global problem limit for batch diagnostics (`ide_batch_diagnostics`)** — Added `maxProblems` parameter (default 200, cap 500) and `problemsTruncated` result field; delegated batch diagnostics execution to `ide_diagnostics`.
@@ -1416,7 +1423,8 @@
 - **Runtime**: JVM 21
 - **Transport**: HTTP+SSE with JSON-RPC 2.0
 
-[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...HEAD
+[Unreleased]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.21.0...HEAD
+[5.21.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.1...v5.21.0
 [5.20.1]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.20.0...v5.20.1
 [5.20.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.19.0...v5.20.0
 [5.19.0]: https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/compare/v5.18.1...v5.19.0

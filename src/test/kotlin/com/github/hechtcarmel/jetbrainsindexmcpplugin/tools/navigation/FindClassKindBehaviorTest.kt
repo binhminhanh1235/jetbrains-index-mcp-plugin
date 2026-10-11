@@ -31,6 +31,7 @@ class FindClassKindBehaviorTest : McpPlatformTestCase() {
         val result = FindClassTool().execute(project, buildJsonObject {
             put("query", name)
             put("matchMode", "exact")
+            put("compact", false)
         })
         assertToolSucceeded("ide_find_class should succeed for '$name'", result)
         val parsed = json.decodeFromString<FindClassResult>(toolText(result))

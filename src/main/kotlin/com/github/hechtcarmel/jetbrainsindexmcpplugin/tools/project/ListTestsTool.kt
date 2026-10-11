@@ -31,7 +31,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ListTestsTool : AbstractMcpTool() {
 
     companion object {
-        internal const val MAX_TESTS = 500
+        internal const val MAX_TESTS = 30
 
         internal fun globToRegex(glob: String): Regex {
             val regexStr = buildString {

@@ -50,7 +50,7 @@ class FindUsagesTool : AbstractMcpTool() {
 
     companion object {
         private val LOG = logger<FindUsagesTool>()
-        private const val DEFAULT_MAX_RESULTS = 100
+        private const val DEFAULT_MAX_RESULTS = 25
         private const val COLLECTION_CAP = 500
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
         private const val METADATA_RESOLVED_SYMBOL = "resolvedSymbol"
@@ -90,7 +90,7 @@ class FindUsagesTool : AbstractMcpTool() {
         - top-level language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
-        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), pageSize (optional, default: 100, max: 500).
+        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), compact (optional, default: true), pageSize (optional, default: 25, max: 500).
 
         Example: {"file": "src/UserService.java", "line": 25, "column": 18}
         Example: {"target": {"position": {"file": "src/UserService.java", "line": 25, "column": 18}}}
@@ -108,7 +108,7 @@ class FindUsagesTool : AbstractMcpTool() {
         .lineAndColumn(required = false)
         .languageAndSymbol(required = false)
         .stringProperty("simpleName", "Simple class/interface name (e.g. \"UserService\"). Plugin auto-resolves to the first matching declaration in project scope — eliminates the ide_find_class round-trip. If multiple classes share the name, the tool returns an error listing them for disambiguation.", required = false)
-        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: false.", required = false)
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: true.", required = false)
         .booleanProperty("includeAstPath", "Include AST ancestor path for each usage. Default: false.", required = false)
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include references in generated sources (KSP/Dagger/annotation-processor output, e.g. build/generated DI factories). Default: true — keeps valid runtime references (Dagger, MapStruct, gRPC, serializers). Set false to drop generated output when it dominates the result set.")
@@ -119,7 +119,7 @@ class FindUsagesTool : AbstractMcpTool() {
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
-        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: true
         val includeAstPath = arguments["includeAstPath"]?.jsonPrimitive?.booleanOrNull ?: false
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {

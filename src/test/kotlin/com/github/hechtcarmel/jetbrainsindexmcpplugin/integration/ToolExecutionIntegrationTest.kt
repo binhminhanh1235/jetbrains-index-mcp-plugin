@@ -298,6 +298,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
         val projectOnlyResult = tool.execute(project, buildJsonObject {
             put("query", "$className.java")
             put("scope", "project_files")
+            put("compact", false)
         })
 
         assertFalse("Project-only file search should succeed", projectOnlyResult.isFailure)
@@ -311,6 +312,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("query", "$className.java")
             put("scope", "project_and_libraries")
+            put("compact", false)
         })
 
         assertFalse("Library file search should succeed", result.isFailure)
@@ -430,6 +432,7 @@ class ToolExecutionIntegrationTest : McpPlatformTestCase() {
             put("file", libraryFile.toString().replace('\\', '/'))
             put("line", line)
             put("column", column)
+            put("compact", false)
         })
 
         assertFalse("Library-source usages lookup should succeed", result.isFailure)

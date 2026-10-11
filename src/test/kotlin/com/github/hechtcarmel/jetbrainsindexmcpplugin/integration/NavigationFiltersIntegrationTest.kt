@@ -87,6 +87,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("line", line)
             put("column", column)
             put("scope", "project_test_files")
+            put("compact", false)
         })
 
         assertFalse("Find implementations should succeed: ${result.content}", result.isFailure)
@@ -107,6 +108,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("query", "RepositoryImpl")
             put("scope", "project_test_files")
+            put("compact", false)
         })
 
         assertFalse("Find class should succeed: ${result.content}", result.isFailure)
@@ -129,6 +131,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "fetch")
             put("scope", "project_test_files")
             put("pageSize", 1)
+            put("compact", false)
         })
 
         assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isFailure)
@@ -142,6 +145,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             val nextPage = tool.execute(project, buildJsonObject {
                 put("cursor", nextCursor)
                 put("pageSize", 1)
+                put("compact", false)
             })
             assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isFailure)
             val nextContent = nextPage.content.first() as TextContent
@@ -167,6 +171,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", fixture.className)
             put("matchMode", "exact")
             put("scope", "project_production_files")
+            put("compact", false)
         })
         assertFalse("Find class should succeed: ${classResult.content}", classResult.isFailure)
         val classContent = classResult.content.first() as TextContent
@@ -179,6 +184,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val fileResult = fileTool.execute(project, buildJsonObject {
             put("query", fixture.fileName)
             put("scope", "project_production_files")
+            put("compact", false)
         })
         assertFalse("Find file should succeed: ${fileResult.content}", fileResult.isFailure)
         val fileContent = fileResult.content.first() as TextContent
@@ -191,6 +197,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val symbolResult = symbolTool.execute(project, buildJsonObject {
             put("query", fixture.className)
             put("scope", "project_production_files")
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${symbolResult.content}", symbolResult.isFailure)
         val symbolContent = symbolResult.content.first() as TextContent
@@ -207,6 +214,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject {
             put("query", "BasicSolver.run")
+            put("compact", false)
         })
 
         assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
@@ -232,6 +240,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         // resolve via middle-matching on the class/module segment.
         val result = tool.execute(project, buildJsonObject {
             put("query", "asic.run")
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
@@ -252,6 +261,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("query", "*Solver")
             put("pageSize", 100)
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
@@ -281,6 +291,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("query", "Batch*")
             put("pageSize", 100)
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
 
@@ -304,6 +315,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
 
         val result = tool.execute(project, buildJsonObject {
             put("query", "test.BasicSolver.run")
+            put("compact", false)
         })
 
         assertFalse("Find symbol should succeed: ${result.content}", result.isFailure)
@@ -327,6 +339,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
         val firstPage = tool.execute(project, buildJsonObject {
             put("query", "Solver.run")
             put("pageSize", 1)
+            put("compact", false)
         })
 
         assertFalse("Find symbol first page should succeed: ${firstPage.content}", firstPage.isFailure)
@@ -340,6 +353,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             val nextPage = tool.execute(project, buildJsonObject {
                 put("cursor", nextCursor)
                 put("pageSize", 1)
+                put("compact", false)
             })
             assertFalse("Find symbol page for cursor $nextCursor should succeed: ${nextPage.content}", nextPage.isFailure)
             val nextContent = nextPage.content.first() as TextContent
@@ -371,6 +385,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "run")
             put("language", "Java")
             put("pageSize", 100)
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${filtered.content}", filtered.isFailure)
 
@@ -390,6 +405,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "run")
             put("language", "java")
             put("pageSize", 100)
+            put("compact", false)
         })
         assertFalse("Find symbol with lowercase language should succeed: ${lowercase.content}", lowercase.isFailure)
         val lowercaseContent = lowercase.content.first() as TextContent
@@ -404,6 +420,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("query", "run")
             put("language", "Kotlin")
             put("pageSize", 100)
+            put("compact", false)
         })
         assertFalse("Find symbol should succeed: ${mismatched.content}", mismatched.isFailure)
         val mismatchedContent = mismatched.content.first() as TextContent
@@ -467,6 +484,7 @@ class NavigationFiltersIntegrationTest : BasePlatformTestCase() {
             put("line", fixture.targetLine)
             put("column", fixture.targetColumn)
             put("scope", "project_and_libraries")
+            put("compact", false)
         })
 
         assertFalse("Find references should succeed: ${result.content}", result.isFailure)

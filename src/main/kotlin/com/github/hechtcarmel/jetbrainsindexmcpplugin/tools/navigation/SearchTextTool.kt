@@ -51,7 +51,7 @@ import java.util.regex.PatternSyntaxException
 class SearchTextTool : AbstractMcpTool() {
 
     companion object {
-        private const val DEFAULT_PAGE_SIZE = 100
+        private const val DEFAULT_PAGE_SIZE = 25
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
     }
 
@@ -69,7 +69,7 @@ class SearchTextTool : AbstractMcpTool() {
         Returns: matching locations with file, line, column, context snippet, and context type.
 
         Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+        Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), compact (optional, default: true), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
 
         Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "createScope", "paths": ["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]}
     """.trimIndent()
@@ -83,14 +83,14 @@ class SearchTextTool : AbstractMcpTool() {
         .booleanProperty(ParamNames.WHOLE_WORD, "Match whole words only. Default: false (substring match).")
         .stringProperty(ParamNames.FILE_PATTERN, "IntelliJ file mask to filter files by name, e.g. \"*.kt\", \"*.gradle.kts\", \"*.java,!*Test.java\".")
         .stringArrayProperty(ParamNames.PATHS, SchemaConstants.DESC_PATHS)
-        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: false.", required = false)
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: true.", required = false)
         .intProperty(ParamNames.LIMIT, "Maximum results per page (deprecated, use pageSize). Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
-        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: false
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: true
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments, aliases = arrayOf("limit"))
@@ -193,7 +193,7 @@ class SearchTextTool : AbstractMcpTool() {
         cursorToken: String,
         pageSize: Int?,
         project: Project,
-        compact: Boolean = false
+        compact: Boolean = true
     ): CallToolResult {
         val pageResult = getPageFromCache(cursorToken, pageSize, project)
         return if (compact) {

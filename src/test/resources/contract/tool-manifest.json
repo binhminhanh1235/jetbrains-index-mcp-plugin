@@ -156,13 +156,13 @@ description:
   Returns: success status, error/warning counts, and structured build messages with file locations.
   Note: errors/warnings are null when no compiler messages were captured (e.g. no-op incremental build where nothing was recompiled, or build system without compiler message integration). null does NOT mean 0.
   
-  When project_path points to a workspace sub-project, that module and its dependencies are built.
+  When project_path points to a workspace sub-project or module is specified, that module and its dependencies are built.
   
-  Parameters: project_path (optional), rebuild (optional, default false), includeRawOutput (optional, default false),
+  Parameters: project_path (optional), module (optional IntelliJ module name to build; when omitted builds whole project or workspace sub-project), rebuild (optional, default false), includeRawOutput (optional, default false),
   timeoutSeconds (optional, max seconds for the whole build before it is reported timed out; no limit if omitted),
   waitSeconds (optional, default 45, max 55), buildId (optional, polls a running build; excludes all other parameters).
   
-  Example: {} or {"rebuild": true} — then if a "running" status comes back: {"buildId": "<buildId from that response>"}
+  Example: {} or {"module": "my-service"} or {"rebuild": true} — then if a "running" status comes back: {"buildId": "<buildId from that response>"}
 schema:
   {
     "properties":
@@ -176,6 +176,11 @@ schema:
       {
         "description": "Include raw build output log in response. Default: false.",
         "type": "boolean"
+      },
+      "module":
+      {
+        "description": "IntelliJ module name to build (e.g. 'sam2-customer-service'). When specified, builds only this module and its dependencies. If omitted, builds the whole project (or workspace sub-project if project_path points to one).",
+        "type": "string"
       },
       "project_path":
       {
@@ -990,7 +995,7 @@ schema:
     {
       "compact":
       {
-        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.",
+        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: true.",
         "type": "boolean"
       },
       "cursor":
@@ -1197,7 +1202,7 @@ schema:
     {
       "compact":
       {
-        "description": "Compact mode: returns lightweight formatted strings (file paths) instead of full structured JSON objects, reducing output tokens. Default: false.",
+        "description": "Compact mode: returns lightweight formatted strings (file paths) instead of full structured JSON objects, reducing output tokens. Default: true.",
         "type": "boolean"
       },
       "cursor":
@@ -1273,7 +1278,7 @@ description:
   - top-level language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript; necessary for fresh search, ignored when cursor is provided)
   - cursor: pagination cursor from a previous response
   
-  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), compact (optional, default: true), pageSize (optional, default: 25, max: 500).
   
   Example: {"file": "src/Repository.java", "line": 8, "column": 18}
   Example: {"target": {"qualifiedName": "com.example.Repository", "language": "Java"}}
@@ -1288,6 +1293,11 @@ schema:
       {
         "description": "1-based column number",
         "type": "integer"
+      },
+      "compact":
+      {
+        "description": "Compact mode: returns lightweight formatted strings (file:line:col [kind] symbol) instead of full structured JSON objects, reducing output tokens by 50-70%. Default: true.",
+        "type": "boolean"
       },
       "cursor":
       {
@@ -1323,7 +1333,7 @@ schema:
       },
       "pageSize":
       {
-        "description": "Results per page. Default: 100, max: 500.",
+        "description": "Results per page. Default: 25, max: 500.",
         "type": "integer"
       },
       "project_path":
@@ -1423,7 +1433,7 @@ description:
   - top-level language + symbol: fully qualified symbol reference (supported languages: Java, Kotlin, JavaScript, TypeScript; necessary for fresh search, ignored when cursor is provided)
   - cursor: pagination cursor from a previous response
   
-  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), pageSize (optional, default: 100, max: 500).
+  Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), paths (optional array of project-relative globs restricting results, '!' prefix excludes), compact (optional, default: true), pageSize (optional, default: 25, max: 500).
   
   Example: {"file": "src/UserService.java", "line": 25, "column": 18}
   Example: {"target": {"position": {"file": "src/UserService.java", "line": 25, "column": 18}}}
@@ -1442,7 +1452,7 @@ schema:
       },
       "compact":
       {
-        "description": "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: false.",
+        "description": "Compact mode: returns lightweight formatted strings (e.g. 'file:line:col [type] context') instead of full structured JSON objects, reducing output tokens by 50-70%. Default: true.",
         "type": "boolean"
       },
       "cursor":
@@ -1484,12 +1494,12 @@ schema:
       },
       "maxResults":
       {
-        "description": "Maximum results per page (deprecated, use pageSize). Default: 100, max: 500.",
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 25, max: 500.",
         "type": "integer"
       },
       "pageSize":
       {
-        "description": "Results per page. Default: 100, max: 500.",
+        "description": "Results per page. Default: 25, max: 500.",
         "type": "integer"
       },
       "paths":
@@ -1731,7 +1741,7 @@ schema:
     {
       "compact":
       {
-        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: false.",
+        "description": "Compact mode: returns lightweight strings ('qualifiedName [kind] (file:line)') instead of full objects, reducing tokens by 50-70%. Default: true.",
         "type": "boolean"
       },
       "cursor":
@@ -2186,7 +2196,7 @@ description:
   - module (optional): filter tests by IntelliJ module name.
   - classPattern (optional): glob pattern to match class names (e.g. '*ServiceTest').
   - framework (optional): filter tests by framework name (e.g. 'JUnit4', 'JUnit5').
-  - maxResults (optional, default 500): maximum number of test entries to return.
+  - maxResults (optional, default 30): maximum number of test entries to return.
   - offset (optional, default 0): starting offset for pagination.
   
   Example: {} or {"package": "com.example.service"} or {"classPattern": "*Test", "maxResults": 50}
@@ -2216,7 +2226,7 @@ schema:
       },
       "maxResults":
       {
-        "description": "Maximum number of test entries to return. Default: 500.",
+        "description": "Maximum number of test entries to return. Default: 30.",
         "type": "integer"
       },
       "module":
@@ -2458,7 +2468,7 @@ description:
   
   Parameters: project_path (optional), paths (optional array of files/directories relative to project
   root; omit to analyze all content roots), severity (optional, default 'all'), maxFiles (optional,
-  default 1000, max 10000), maxProblems (optional, default 1000, max 5000), timeoutSeconds (optional, default 600, max 3600),
+  default 50, max 10000), maxProblems (optional, default 1000, max 5000), timeoutSeconds (optional, default 600, max 3600),
   waitSeconds (optional, default 45, max 55), analysisId (optional, polls a running analysis; excludes all
   other parameters).
   
@@ -2475,7 +2485,7 @@ schema:
       },
       "maxFiles":
       {
-        "description": "Maximum files to analyze. Files beyond the limit are reported as not_analyzed and complete becomes false. Default: 1000, max: 10000.",
+        "description": "Maximum files to analyze. Files beyond the limit are reported as not_analyzed and complete becomes false. Default: 50, max: 10000.",
         "type": "integer"
       },
       "maxProblems":
@@ -2500,12 +2510,12 @@ schema:
       },
       "severity":
       {
-        "description": "Filter problems by severity. Default: all.",
+        "description": "Filter problems by severity. Default: errors.",
         "enum":
         [
-          "all",
           "errors",
-          "warnings"
+          "warnings",
+          "all"
         ],
         "type": "string"
       },
@@ -3427,7 +3437,7 @@ description:
   Returns: matching locations with file, line, column, context snippet, and context type.
   
   Supports pagination: first call returns results + nextCursor. Pass cursor to get the next page.
-  Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), pageSize (optional, default: 100, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
+  Parameters: query (required for fresh search), regex (optional, default: false), context (optional: "code", "comments", "strings", "all"), filePattern (optional IntelliJ file mask), paths (optional array of project-relative globs, '!' prefix excludes), caseSensitive (optional, default: true), wholeWord (optional, default: false), compact (optional, default: true), pageSize (optional, default: 25, max: 500), cursor (for pagination, replaces search params; project_path may still be required).
   
   Example: {"query": "ConfigManager"} or {"query": "TODO", "context": "comments", "filePattern": "*.kt"} or {"query": "createScope", "paths": ["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]}
 schema:
@@ -3441,7 +3451,7 @@ schema:
       },
       "compact":
       {
-        "description": "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: false.",
+        "description": "Compact mode: returns lightweight formatted strings (file:line: context) instead of full structured JSON objects, reducing output tokens. Default: true.",
         "type": "boolean"
       },
       "context":
@@ -3468,12 +3478,12 @@ schema:
       },
       "limit":
       {
-        "description": "Maximum results per page (deprecated, use pageSize). Default: 100, max: 500.",
+        "description": "Maximum results per page (deprecated, use pageSize). Default: 25, max: 500.",
         "type": "integer"
       },
       "pageSize":
       {
-        "description": "Results per page. Default: 100, max: 500.",
+        "description": "Results per page. Default: 25, max: 500.",
         "type": "integer"
       },
       "paths":

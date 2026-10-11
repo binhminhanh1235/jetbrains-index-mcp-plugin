@@ -607,6 +607,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("file", scalaFixtureProjectPath("scala2-models.scala"))
             put("line", line)
             put("column", column)
+            put("compact", false)
         })
 
         assertFalse("Scala implementations lookup should succeed: ${errorText(result)}", result.isFailure)
@@ -869,6 +870,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("query", "needle")
             put("filePattern", "*.xml")
             put("pageSize", 10)
+            put("compact", false)
         })
 
         assertFalse("Search should succeed", result.isFailure)
@@ -898,6 +900,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("context", "code")
             put("filePattern", "*.java")
             put("pageSize", 10)
+            put("compact", false)
         })
 
         assertFalse("Regex search should succeed", result.isFailure)
@@ -912,7 +915,7 @@ class ToolsTest : McpPlatformTestCase() {
             "infra/alerts.yaml",
             """
             rules:
-              - alert: StuckCases
+               - alert: StuckCases
                 expr: 'max(a_word_and_another_word) > 0'
             """.trimIndent()
         )
@@ -920,6 +923,7 @@ class ToolsTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "a_word")
+            put("compact", false)
         })
 
         assertFalse("Search should not return an error", result.isFailure)
@@ -955,6 +959,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("query", "needle")
             put("context", "comments")
             put("pageSize", 50)
+            put("compact", false)
         })
 
         assertFalse("Search should succeed", result.isFailure)
@@ -981,6 +986,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("query", "8080")
             put("context", "code")
             put("pageSize", 10)
+            put("compact", false)
         })
 
         assertFalse("Search should succeed", codeResult.isFailure)
@@ -999,6 +1005,7 @@ class ToolsTest : McpPlatformTestCase() {
             put("query", "8080")
             put("context", "all")
             put("pageSize", 10)
+            put("compact", false)
         })
 
         assertFalse("Search should succeed", allResult.isFailure)
@@ -1237,6 +1244,7 @@ class ToolsTest : McpPlatformTestCase() {
         val result = tool.execute(project, buildJsonObject {
             put("language", "JavaScript")
             put("symbol", fixtureSymbol("interface-implements/thoth-client-interface.ts", "ThothClient"))
+            put("compact", false)
         })
 
         assertFalse("Interface+implements fixture should be wired into implementations coverage", result.isFailure)

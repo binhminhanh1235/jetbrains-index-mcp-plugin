@@ -49,7 +49,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
         internal const val MAX_PROBLEMS_PER_FILE = 100
         private const val DEFAULT_MAX_TOTAL_PROBLEMS = 1000
         private const val MAX_TOTAL_PROBLEMS = 5000
-        private const val DEFAULT_MAX_FILES = 1000
+        private const val DEFAULT_MAX_FILES = 50
         private const val MAX_MAX_FILES = 10_000
         private const val DEFAULT_TIMEOUT_SECONDS = 600
         private const val MAX_TIMEOUT_SECONDS = 3600
@@ -127,7 +127,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
             put("items", kotlinx.serialization.json.buildJsonObject { put("type", JsonPrimitive("string")) })
             put("minItems", JsonPrimitive(1))
         })
-        .enumProperty(ParamNames.SEVERITY, "Filter problems by severity. Default: all.", listOf("all", "errors", "warnings"))
+        .enumProperty(ParamNames.SEVERITY, "Filter problems by severity. Default: errors.", listOf("errors", "warnings", "all"))
         .intProperty(
             ParamNames.MAX_FILES,
             "Maximum files to analyze. Files beyond the limit are reported as not_analyzed and complete " +
@@ -181,7 +181,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
 
         requireSmartMode(project)
 
-        val severity = arguments[ParamNames.SEVERITY]?.jsonPrimitive?.contentOrNull ?: "all"
+        val severity = arguments[ParamNames.SEVERITY]?.jsonPrimitive?.contentOrNull ?: "errors"
         val maxFiles = (arguments[ParamNames.MAX_FILES]?.jsonPrimitive?.intOrNull ?: DEFAULT_MAX_FILES)
             .coerceIn(1, MAX_MAX_FILES)
         val maxProblems = (arguments[ParamNames.MAX_PROBLEMS]?.jsonPrimitive?.intOrNull ?: DEFAULT_MAX_TOTAL_PROBLEMS)

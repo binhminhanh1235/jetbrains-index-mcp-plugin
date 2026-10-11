@@ -77,11 +77,11 @@ Find all usages of a symbol (semantic, not text search).
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default true** — keeps valid runtime references (Dagger/MapStruct/gRPC/serializers). Set false to drop generated call sites when they dominate results on injected symbols. |
 | `paths` | array | no | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `scope`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero results. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
-| `compact` | boolean | no | Compact mode: returns lightweight formatted strings instead of full structured objects (default false) |
+| `compact` | boolean | no | Compact mode: returns lightweight formatted strings instead of full structured objects (default true) |
 | `includeAstPath` | boolean | no | Include AST ancestor path for each usage (default false) |
-| `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
+| `maxResults` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
-| `pageSize` | integer | no | Results per page. Default 100, max 500 |
+| `pageSize` | integer | no | Results per page. Default 25, max 500 |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ usages: [{ file, line, column, context, type, astPath }], totalCount, totalIsExact, resolvedSymbol, truncated, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
@@ -178,6 +178,7 @@ Search for classes/interfaces by name using IDE's class index. Equivalent to Ctr
 | `language` | string | no | Filter: "Java", "Kotlin", "Python", etc. |
 | `includeGenerated` | boolean | no | Include classes from generated sources (KSP/Dagger/annotation-processor output). Default false |
 | `matchMode` | enum | no | `substring` (default), `prefix`, `exact` |
+| `compact` | boolean | no | Compact mode: returns lightweight formatted strings instead of full structured objects (default true) |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 25, max 500 |
@@ -195,7 +196,7 @@ Search for files by name using IDE's file index. Equivalent to Ctrl+Shift+N / Cm
 | `query` | string | yes | File name pattern |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include files under generated sources (KSP/Dagger/annotation-processor output). Default false |
-| `compact` | boolean | no | Compact mode: returns string array of relative paths instead of file objects (default false) |
+| `compact` | boolean | no | Compact mode: returns string array of relative paths instead of file objects (default true) |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 25, max 500 |
@@ -216,10 +217,10 @@ Search for text using IntelliJ Find in Files. Plain-text queries do substring ma
 | `wholeWord` | boolean | no | Match whole words only. Default false (substring match) |
 | `filePattern` | string | no | IntelliJ file mask, e.g. `*.kt`, `*.java,!*Test.java` |
 | `paths` | array | no | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a segment, `**` crosses directories, a plain directory includes everything beneath it, `!` excludes. Composes with `filePattern`. An include glob whose literal prefix does not exist (or resolves under a different relative name) errors instead of returning zero matches. Include globs also drop library/jar hits under `project_and_libraries`; `\` separators are normalized to `/` |
-| `compact` | boolean | no | Compact mode: returns formatted strings (file:line: match) instead of structured match objects (default false) |
-| `limit` | integer | no | Deprecated alias for `pageSize`. Default 100, max 500 |
+| `compact` | boolean | no | Compact mode: returns formatted strings (file:line: match) instead of structured match objects (default true) |
+| `limit` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
-| `pageSize` | integer | no | Results per page. Default 100, max 500 |
+| `pageSize` | integer | no | Results per page. Default 25, max 500 |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ matches: [{file, line, column, context}], totalCount, query, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
@@ -241,8 +242,9 @@ Find implementations of interfaces, abstract classes, or abstract methods.
 | `symbol` | string | conditional | Fully qualified symbol reference. For JS/TS, use module-qualified forms: `modulePath#exportName`, `modulePath#default`, or `modulePath#ClassName.memberName`. Required for symbol-based lookup. |
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | no | Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default false |
+| `compact` | boolean | no | Compact mode: returns formatted strings instead of structured objects (default true) |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
-| `pageSize` | integer | no | Results per page. Default 100, max 500 |
+| `pageSize` | integer | no | Results per page. Default 25, max 500 |
 | `project_path` | string | no | Project root path |
 
 **Returns**: `{ implementations: [{symbolId?, name, file, line, column, kind, language}], totalCount, nextCursor?, hasMore, totalCollected, offset, pageSize, stale }`
@@ -257,6 +259,7 @@ Search for any code symbol (classes, methods, fields, functions) by name.
 | `scope` | enum | no | One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `language` | string | no | Filter by language |
 | `includeGenerated` | boolean | no | Include symbols from generated sources (KSP/Dagger/annotation-processor output). Default false |
+| `compact` | boolean | no | Compact mode: returns lightweight formatted strings instead of full structured objects (default true) |
 | `limit` | integer | no | Deprecated alias for `pageSize`. Default 25, max 500 |
 | `cursor` | string | no | Pagination cursor from a previous response. When provided, search parameters are ignored; `project_path` and `pageSize` may still be provided. |
 | `pageSize` | integer | no | Results per page. Default 25, max 500 |
@@ -422,8 +425,8 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's request 
 |-----------|------|----------|-------------|
 | `project_path` | string | no | Project root path |
 | `paths` | string[] | no | Files or directories relative to the project root; omit to analyze every file in the project's content roots |
-| `severity` | enum | no | `all` (default), `errors`, `warnings` |
-| `maxFiles` | integer | no | Max files to analyze (default 1000, max 10000). Overflow files are reported `not_analyzed` and `complete` becomes false |
+| `severity` | enum | no | `errors` (default), `warnings`, `all` |
+| `maxFiles` | integer | no | Max files to analyze (default 50, max 10000). Overflow files are reported `not_analyzed` and `complete` becomes false |
 | `maxProblems` | integer | no | Max problems returned across all files (default 1000, max 5000). `problemCount` keeps counting beyond it |
 | `timeoutSeconds` | integer | no | Max seconds for the whole analysis (default 600, max 3600). Remaining files are reported `not_analyzed` when it elapses. Ignored with `analysisId` |
 | `analysisId` | string | no | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis and keeps waiting |
@@ -783,6 +786,7 @@ Each call blocks at most `waitSeconds` (default 45) so the MCP client's request 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_path` | string | no | For workspace sub-projects |
+| `module` | string | no | Module name to build. If omitted, the entire project is built |
 | `rebuild` | boolean | no | Full rebuild (default false = incremental) |
 | `includeRawOutput` | boolean | no | Include raw build log (default false) |
 | `timeoutSeconds` | integer | no | Max seconds for the whole build before it is reported timed out, enforced across polls (no limit if omitted). Ignored with `buildId` |
@@ -804,7 +808,7 @@ List all test methods/classes discovered by the IDE's test framework extension p
 | `module` | string | no | IntelliJ module name to filter tests |
 | `classPattern` | string | no | Glob pattern to match test class names (e.g. `*UnitTest` or `**/*Test`) |
 | `framework` | string | no | Test framework name filter (e.g. `JUnit4`, `JUnit5`, `TestNG`) |
-| `maxResults` | integer | no | Maximum number of tests to return per page (default: 500, max: 10000) |
+| `maxResults` | integer | no | Maximum number of tests to return per page (default: 30, max: 10000) |
 | `offset` | integer | no | Zero-based index of the first test to return (default: 0) |
 
 **Returns**: `{ tests: [{framework, className, methodName, displayName, file, line}], count, total, offset, truncated }`

@@ -63,6 +63,7 @@ class FindSymbolHierarchyBehaviorTest : McpPlatformTestCase() {
         val result = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "getAllPublishers")
             put("pageSize", 50)
+            put("compact", false)
         })
         assertToolSucceeded("find_symbol should succeed for an unqualified method query", result)
 
@@ -98,6 +99,7 @@ class FindSymbolHierarchyBehaviorTest : McpPlatformTestCase() {
 
         val result = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "TRCDaoImpl.getAllPublishers")
+            put("compact", false)
         })
         assertToolSucceeded("find_symbol should succeed for a qualified method query", result)
 

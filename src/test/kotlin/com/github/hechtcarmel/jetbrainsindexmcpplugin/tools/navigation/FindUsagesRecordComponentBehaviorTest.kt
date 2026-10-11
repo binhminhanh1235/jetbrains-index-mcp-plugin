@@ -63,7 +63,11 @@ class FindUsagesRecordComponentBehaviorTest : McpPlatformTestCase() {
     private fun testRecordComponentSymbol(args: JsonObject) = runBlocking {
         writeRecordFixture()
 
-        val result = FindUsagesTool().execute(project, args)
+        val fullArgs = buildJsonObject {
+            args.forEach { (k, v) -> put(k, v) }
+            put("compact", false)
+        }
+        val result = FindUsagesTool().execute(project, fullArgs)
         assertToolSucceeded("find_references (symbol) on Java record component", result)
         val parsed = json.decodeFromString<FindUsagesResult>(toolText(result))
 

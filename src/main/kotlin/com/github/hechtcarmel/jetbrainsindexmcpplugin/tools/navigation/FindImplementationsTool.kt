@@ -8,6 +8,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.LanguageHandlerRe
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.PaginationService
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.CompactImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationLocation
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.ImplementationResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.schema.SchemaBuilder
@@ -19,6 +20,7 @@ import com.intellij.psi.util.PsiModificationTracker
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -35,7 +37,7 @@ import kotlinx.serialization.json.put
 class FindImplementationsTool : AbstractMcpTool() {
 
     companion object {
-        private const val DEFAULT_PAGE_SIZE = 100
+        private const val DEFAULT_PAGE_SIZE = 25
         private const val MAX_PAGE_SIZE = PaginationService.MAX_PAGE_SIZE
     }
 
@@ -57,7 +59,7 @@ class FindImplementationsTool : AbstractMcpTool() {
         - top-level language + symbol: fully qualified symbol reference (supported languages: ${supportedSymbolReferenceLanguagesDescription()}; necessary for fresh search, ignored when cursor is provided)
         - cursor: pagination cursor from a previous response
 
-        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), pageSize (optional, default: 100, max: 500).
+        Parameters: scope (optional, default: "project_files"; supported: project_files, project_and_libraries, project_production_files, project_test_files), compact (optional, default: true), pageSize (optional, default: 25, max: 500).
 
         Example: {"file": "src/Repository.java", "line": 8, "column": 18}
         Example: {"target": {"qualifiedName": "com.example.Repository", "language": "Java"}}
@@ -75,25 +77,39 @@ class FindImplementationsTool : AbstractMcpTool() {
         .languageAndSymbol(required = false)
         .scopeProperty("Search scope. Default: project_files.")
         .booleanProperty(ParamNames.INCLUDE_GENERATED, "Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default: false.")
+        .booleanProperty("compact", "Compact mode: returns lightweight formatted strings (file:line:col [kind] symbol) instead of full structured JSON objects, reducing output tokens by 50-70%. Default: true.", required = false)
         .stringProperty("cursor", "Pagination cursor from a previous response. When provided, returns the next page of results. Search parameters are ignored; project_path and pageSize may still be provided.")
         .intProperty("pageSize", "Results per page. Default: $DEFAULT_PAGE_SIZE, max: $MAX_PAGE_SIZE.")
         .build()
 
     override suspend fun doExecute(project: Project, arguments: JsonObject): CallToolResult {
+        val compact = arguments["compact"]?.jsonPrimitive?.booleanOrNull ?: true
         val cursor = optionalStringArg(arguments, ParamNames.CURSOR)
         if (cursor != null) {
             val pageSize = resolveExplicitPageSize(arguments)
-            return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(cursor, pageSize, project)) { items, page ->
-                ImplementationResult(
-                    implementations = items,
-                    totalCount = page.totalCollected,
-                    nextCursor = page.nextCursor,
-                    hasMore = page.hasMore,
-                    totalCollected = page.totalCollected,
-                    offset = page.offset,
-                    pageSize = page.pageSize,
-                    stale = page.stale
-                )
+            val pageResult = getPageFromCache(cursor, pageSize, project)
+            return if (compact) {
+                buildPaginatedResult<ImplementationLocation, CompactImplementationResult>(pageResult) { items, page ->
+                    CompactImplementationResult(
+                        implementations = items.map { "${it.file}:${it.line}:${it.column} [${it.kind}] ${it.qualifiedName ?: it.name}" },
+                        totalCount = page.totalCollected,
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore
+                    )
+                }
+            } else {
+                buildPaginatedResult<ImplementationLocation, ImplementationResult>(pageResult) { items, page ->
+                    ImplementationResult(
+                        implementations = items,
+                        totalCount = page.totalCollected,
+                        nextCursor = page.nextCursor,
+                        hasMore = page.hasMore,
+                        totalCollected = page.totalCollected,
+                        offset = page.offset,
+                        pageSize = page.pageSize,
+                        stale = page.stale
+                    )
+                }
             }
         }
 
@@ -176,17 +192,29 @@ class FindImplementationsTool : AbstractMcpTool() {
         val (token, errorResult) = cursorToken
         if (errorResult != null) return errorResult
 
-        return buildPaginatedResult<ImplementationLocation, ImplementationResult>(getPageFromCache(token!!, pageSize, project)) { items, page ->
-            ImplementationResult(
-                implementations = items,
-                totalCount = page.totalCollected,
-                nextCursor = page.nextCursor,
-                hasMore = page.hasMore,
-                totalCollected = page.totalCollected,
-                offset = page.offset,
-                pageSize = page.pageSize,
-                stale = page.stale
-            )
+        val pageResult = getPageFromCache(token!!, pageSize, project)
+        return if (compact) {
+            buildPaginatedResult<ImplementationLocation, CompactImplementationResult>(pageResult) { items, page ->
+                CompactImplementationResult(
+                    implementations = items.map { "${it.file}:${it.line}:${it.column} [${it.kind}] ${it.qualifiedName ?: it.name}" },
+                    totalCount = page.totalCollected,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore
+                )
+            }
+        } else {
+            buildPaginatedResult<ImplementationLocation, ImplementationResult>(pageResult) { items, page ->
+                ImplementationResult(
+                    implementations = items,
+                    totalCount = page.totalCollected,
+                    nextCursor = page.nextCursor,
+                    hasMore = page.hasMore,
+                    totalCollected = page.totalCollected,
+                    offset = page.offset,
+                    pageSize = page.pageSize,
+                    stale = page.stale
+                )
+            }
         }
     }
 

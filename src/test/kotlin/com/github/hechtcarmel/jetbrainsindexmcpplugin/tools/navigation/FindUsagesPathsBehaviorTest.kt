@@ -70,6 +70,7 @@ class FindUsagesPathsBehaviorTest : McpPlatformTestCase() {
             put("file", "fu-paths-src/fupaths/FuPathsService.java")
             put("line", 4)
             put("column", 25)
+            put("compact", false)
             if (paths != null) {
                 putJsonArray("paths") { paths.forEach { add(it) } }
             }

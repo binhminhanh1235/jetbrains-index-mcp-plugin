@@ -71,6 +71,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
         val search = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "choose")
             put("pageSize", 50)
+            put("compact", false)
         })
         assertToolSucceeded("find_symbol should find both overloads", search)
         val matches = decode<FindSymbolResult>(search).symbols
@@ -107,6 +108,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
         val firstResult = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "uniquelyPagedHandle")
             put("pageSize", 1)
+            put("compact", false)
         })
         assertToolSucceeded("First symbol page should succeed", firstResult)
         val firstPage = decode<FindSymbolResult>(firstResult)
@@ -120,6 +122,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
 
         val secondResult = FindSymbolTool().execute(project, buildJsonObject {
             put("cursor", secondCursor)
+            put("compact", false)
         })
         assertToolSucceeded("Second symbol page should succeed", secondResult)
         val secondPage = decode<FindSymbolResult>(secondResult)
@@ -129,6 +132,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
         registry.invalidate(originalSecondId)
         val retriedResult = FindSymbolTool().execute(project, buildJsonObject {
             put("cursor", secondCursor)
+            put("compact", false)
         })
         assertToolSucceeded("Retrying the page should rebind an evicted handle", retriedResult)
         val reboundId = decode<FindSymbolResult>(retriedResult).symbols.single().symbolId
@@ -160,6 +164,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
 
         val usagesResult = FindUsagesTool().execute(project, buildJsonObject {
             put("symbolId", definition.symbolId)
+            put("compact", false)
         })
         assertToolSucceeded("find_references should resolve the shifted local by ID", usagesResult)
         val usages = decode<FindUsagesResult>(usagesResult)
@@ -288,6 +293,7 @@ class SymbolIdBehaviorTest : McpPlatformTestCase() {
         val searchResult = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "uniqueRestartCursor")
             put("pageSize", 1)
+            put("compact", false)
         })
         assertToolSucceeded("Search should produce a continuation", searchResult)
         val cursor = requireNotNull(decode<FindSymbolResult>(searchResult).nextCursor)

@@ -170,7 +170,8 @@ class McpToolDispatcher @JvmOverloads constructor(
                 return CallToolResult.error(it.message ?: ErrorMessages.symbolIdExpired(symbolId))
             }
         } else {
-            val projectResult = ProjectResolver.resolveOrOpen(projectPath)
+            val awaitSmartMode = toolName != ToolNames.INDEX_STATUS
+            val projectResult = ProjectResolver.resolveOrOpen(projectPath, awaitSmartMode = awaitSmartMode)
             if (projectResult.isError) return projectResult.errorResult!!
             projectResult.project!!
         }

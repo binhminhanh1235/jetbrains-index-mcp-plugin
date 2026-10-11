@@ -30,6 +30,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
@@ -74,17 +75,22 @@ class BuildProjectTool : AbstractMcpTool() {
         Returns: success status, error/warning counts, and structured build messages with file locations.
         Note: errors/warnings are null when no compiler messages were captured (e.g. no-op incremental build where nothing was recompiled, or build system without compiler message integration). null does NOT mean 0.
 
-        When project_path points to a workspace sub-project, that module and its dependencies are built.
+        When project_path points to a workspace sub-project or module is specified, that module and its dependencies are built.
 
-        Parameters: project_path (optional), rebuild (optional, default false), includeRawOutput (optional, default false),
+        Parameters: project_path (optional), module (optional IntelliJ module name to build; when omitted builds whole project or workspace sub-project), rebuild (optional, default false), includeRawOutput (optional, default false),
         timeoutSeconds (optional, max seconds for the whole build before it is reported timed out; no limit if omitted),
         waitSeconds (optional, default ${LongPoll.DEFAULT_WAIT_SECONDS}, max ${LongPoll.MAX_WAIT_SECONDS}), buildId (optional, polls a running build; excludes all other parameters).
 
-        Example: {} or {"rebuild": true} — then if a "running" status comes back: {"buildId": "<buildId from that response>"}
+        Example: {} or {"module": "my-service"} or {"rebuild": true} — then if a "running" status comes back: {"buildId": "<buildId from that response>"}
     """.trimIndent()
 
     override val inputSchema: ToolSchema = SchemaBuilder.tool()
         .projectPath()
+        .stringProperty(
+            ParamNames.MODULE,
+            "IntelliJ module name to build (e.g. 'sam2-customer-service'). When specified, builds only this " +
+                    "module and its dependencies. If omitted, builds the whole project (or workspace sub-project if project_path points to one)."
+        )
         .booleanProperty(ParamNames.REBUILD, "Full rebuild instead of incremental build. Default: false.")
         .booleanProperty(ParamNames.INCLUDE_RAW_OUTPUT, "Include raw build output log in response. Default: false.")
         .intProperty(
@@ -133,7 +139,13 @@ class BuildProjectTool : AbstractMcpTool() {
         BuildDiagnosticsCacheService.getInstance(project).initialize()
 
         val projectPathArg = arguments[ParamNames.PROJECT_PATH]?.jsonPrimitive?.content
-        val targetModule = resolveTargetModule(project, projectPathArg)
+        val moduleArg = arguments[ParamNames.MODULE]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+        val targetModule = if (moduleArg != null) {
+            ModuleManager.getInstance(project).findModuleByName(moduleArg)
+                ?: return createErrorResult("Module '$moduleArg' not found in project '${project.name}'.")
+        } else {
+            resolveTargetModule(project, projectPathArg)
+        }
 
         val sessionId = UUID.randomUUID().toString()
         val context = ProjectTaskContext(sessionId)

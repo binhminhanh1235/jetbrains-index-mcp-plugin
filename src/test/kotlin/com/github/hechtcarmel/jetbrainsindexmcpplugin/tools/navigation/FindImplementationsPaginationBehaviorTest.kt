@@ -65,6 +65,8 @@ class FindImplementationsPaginationBehaviorTest : McpPlatformTestCase() {
             put("file", "impl-pagination-src/implcap/Payload.java")
             put("line", 3)
             put("column", 18)
+            put("pageSize", 100)
+            put("compact", false)
         })
         assertToolSucceeded("first page of implementations", firstPage)
         val first = decode(toolText(firstPage))
@@ -87,7 +89,10 @@ class FindImplementationsPaginationBehaviorTest : McpPlatformTestCase() {
         var guard = 0
         while (page.nextCursor != null) {
             assertTrue("Cursor iteration must terminate", guard++ < 20)
-            val next = tool.execute(project, buildJsonObject { put("cursor", page.nextCursor!!) })
+            val next = tool.execute(project, buildJsonObject {
+                put("cursor", page.nextCursor!!)
+                put("compact", false)
+            })
             assertToolSucceeded("cursor page $guard", next)
             page = decode(toolText(next))
             seen += page.implementations

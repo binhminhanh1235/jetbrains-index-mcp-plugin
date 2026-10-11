@@ -64,6 +64,7 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
             put("file", "resolved-echo-src/echo/UserService.java")
             put("line", 4)
             put("column", 10)
+            put("compact", false)
         })
         assertToolSucceeded("find_references from a comment position", result)
         val parsed = decode(toolText(result))
@@ -95,6 +96,7 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
             put("file", "resolved-echo-src/echo/UserService.java")
             put("line", 5)
             put("column", 19)
+            put("compact", false)
         })
         assertToolSucceeded("find_references from the identifier position", result)
         val parsed = decode(toolText(result))
@@ -150,6 +152,7 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
             put("line", 4)
             put("column", 17)
             put("pageSize", 2)
+            put("compact", false)
         })
         assertToolSucceeded("first page", firstPage)
         val first = decode(toolText(firstPage))
@@ -165,6 +168,7 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
 
         val secondPage = tool.execute(project, buildJsonObject {
             put("cursor", first.nextCursor!!)
+            put("compact", false)
         })
         assertToolSucceeded("second page", secondPage)
         val second = decode(toolText(secondPage))
@@ -210,6 +214,7 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
             put("file", "capped-total-src/capped/Hot.java")
             put("line", 4)
             put("column", 17)
+            put("compact", false)
         })
         assertToolSucceeded("first capped page", firstPage)
         val first = decode(toolText(firstPage))
@@ -227,7 +232,10 @@ class FindUsagesResolvedSymbolBehaviorTest : McpPlatformTestCase() {
         var guard = 0
         while (page.nextCursor != null) {
             assertTrue("Cursor iteration must terminate", guard++ < 50)
-            val next = tool.execute(project, buildJsonObject { put("cursor", page.nextCursor!!) })
+            val next = tool.execute(project, buildJsonObject {
+                put("cursor", page.nextCursor!!)
+                put("compact", false)
+            })
             assertFalse("Cursor page should succeed: ${toolText(next)}", next.isFailure)
             page = decode(toolText(next))
             seen += page.usages

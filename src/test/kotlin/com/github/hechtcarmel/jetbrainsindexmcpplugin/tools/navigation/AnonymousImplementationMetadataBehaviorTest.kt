@@ -72,6 +72,7 @@ class AnonymousImplementationMetadataBehaviorTest : McpPlatformTestCase() {
             put("file", "anonymous-impl-src/anonimpl/Task.java")
             put("line", 3)
             put("column", 18)
+            put("compact", false)
         })
         assertToolSucceeded("find_implementations should include anonymous classes", result)
 

@@ -65,6 +65,7 @@ class FindFileToolBehaviorTest : McpPlatformTestCase() {
                 put("query", "properties")
                 put("scope", "project_test_files")
                 put("pageSize", PAGE_SIZE)
+                put("compact", false)
             })
         }
         assertToolSucceeded("ide_find_file over project_test_files", result)
@@ -96,6 +97,7 @@ class FindFileToolBehaviorTest : McpPlatformTestCase() {
                 put("query", "*.properties")
                 put("scope", "project_files")
                 put("pageSize", PAGE_SIZE)
+                put("compact", false)
             })
         }
         assertToolSucceeded("ide_find_file wildcard search", first)
@@ -114,6 +116,7 @@ class FindFileToolBehaviorTest : McpPlatformTestCase() {
             val next = runBlocking {
                 tool.execute(project, buildJsonObject {
                     put("cursor", token)
+                    put("compact", false)
                 })
             }
             assertToolSucceeded("ide_find_file page $pagesFollowed", next)
@@ -141,6 +144,7 @@ class FindFileToolBehaviorTest : McpPlatformTestCase() {
             tool.execute(project, buildJsonObject {
                 put("query", "BG")
                 put("scope", "project_files")
+                put("compact", false)
             })
         }
         assertToolSucceeded("ide_find_file camelCase search", result)

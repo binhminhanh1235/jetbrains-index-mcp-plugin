@@ -31,6 +31,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxIncNeedle")
+            put("compact", false)
             putJsonArray("paths") { add("stx-inc-src/alpha/**") }
         })
 
@@ -50,6 +51,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxExcNeedle")
+            put("compact", false)
             putJsonArray("paths") { add("!**/drop/**") }
         })
 
@@ -69,6 +71,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxDirNeedle")
+            put("compact", false)
             putJsonArray("paths") { add("stx-dir-src/a") }
         })
 
@@ -90,6 +93,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxMaskNeedle")
             put("filePattern", "*.java")
+            put("compact", false)
             putJsonArray("paths") { add("stx-mask-src/alpha/**") }
         })
 
@@ -114,6 +118,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxWinNeedle")
+            put("compact", false)
             putJsonArray("paths") { add("stx-win-src\\alpha\\**") }
         })
 
@@ -150,6 +155,7 @@ class SearchTextPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "stxAllNeedle")
+            put("compact", false)
         })
 
         assertToolSucceeded("Search without paths should succeed", result)

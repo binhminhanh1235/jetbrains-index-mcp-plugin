@@ -36,6 +36,7 @@ class TypeScriptSearchQualifiedNameBehaviorTest : McpPlatformTestCase() {
     fun testFindClassRetainsTypeScriptQualifiedName() = runBlocking {
         val result = FindClassTool().execute(project, buildJsonObject {
             put("query", "AdoptionQualifiedTarget")
+            put("compact", false)
         })
         assertToolSucceeded("Find the TypeScript class", result)
         val match = json.decodeFromString<FindClassResult>(toolText(result)).classes.single { it.name == "AdoptionQualifiedTarget" }
@@ -45,6 +46,7 @@ class TypeScriptSearchQualifiedNameBehaviorTest : McpPlatformTestCase() {
     fun testFindSymbolRetainsTypeScriptQualifiedName() = runBlocking {
         val result = FindSymbolTool().execute(project, buildJsonObject {
             put("query", "AdoptionQualifiedTarget")
+            put("compact", false)
         })
         assertToolSucceeded("Find the TypeScript symbol", result)
         val match = json.decodeFromString<FindSymbolResult>(toolText(result)).symbols.single { it.name == "AdoptionQualifiedTarget" }

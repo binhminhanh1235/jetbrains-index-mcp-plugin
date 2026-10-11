@@ -97,6 +97,8 @@ These tools work in all supported JetBrains IDEs; defaults are listed per tool.
 **Claude Code users:** To enforce IDE tool usage and prevent agents from falling back to grep/sed/Edit,
 see [Claude Code Hooks](docs/claude-code-hooks.md) for ready-to-use `PreToolUse` hook scripts.
 
+**Feature Exploration in Large Codebases:** For a systematic guide on navigating unfamiliar codebases and tracing feature entry points without vector search, see the [Feature Exploration Workflow](docs/feature-exploration-workflow.md).
+
 ---
 
 ## Table of Contents
@@ -345,11 +347,11 @@ Finds all references to a symbol across the entire project using IntelliJ's sema
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include references in generated sources (KSP/Dagger/annotation-processor output). **Default: true** — keeps valid runtime references from generated DI factories, MapStruct mappers, gRPC stubs, and serializers. Set `false` to drop generated call sites when they dominate results. |
 | `paths` | array | No | Project-relative path globs restricting results, e.g. `["src/main/**", "!**/generated/**"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `scope`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero results. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
-| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: false) |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: true) |
 | `includeAstPath` | boolean | No | Include AST ancestor path for each usage (default: false) |
-| `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
+| `maxResults` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
-| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
+| `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
 
 **Example Request (position-based):**
 
@@ -684,6 +686,7 @@ Searches for classes and interfaces by name using the IDE's class index.
 | `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`, `"Python"`). Case-insensitive |
 | `includeGenerated` | boolean | No | Include classes from generated sources (KSP/Dagger/annotation-processor output). Default: false |
 | `matchMode` | string | No | `"substring"` (default), `"prefix"`, or `"exact"` |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: true) |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -745,7 +748,7 @@ Searches for files by name using the IDE's file index.
 | `query` | string | Yes | File name pattern |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include files under generated sources (KSP/Dagger/annotation-processor output). Default: false |
-| `compact` | boolean | No | Compact mode: returns string array of relative paths instead of file objects (default: false) |
+| `compact` | boolean | No | Compact mode: returns string array of relative paths instead of file objects (default: true) |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -805,10 +808,10 @@ Searches for text using IntelliJ's Find in Files engine, matching the IDE's own 
 | `wholeWord` | boolean | No | Match whole words only (default: false — substring match) |
 | `filePattern` | string | No | IntelliJ file mask to filter files by name (e.g., `"*.kt"`, `"*.gradle.kts"`, `"*.java,!*Test.java"`) |
 | `paths` | array | No | Project-relative path globs restricting the search, e.g. `["src/main/kotlin/**/handlers/**", "!**/*Test.kt"]`. `*` matches within a path segment, `**` crosses directories, a plain directory path includes everything beneath it, and a leading `!` excludes. Includes are unioned, then excludes subtracted; with only excludes, everything else is searched. Composes with `filePattern`. An include glob whose literal directory prefix does not exist — or resolves under a different relative name than written — fails with an error instead of returning zero matches. Because globs are project-relative, an include glob also drops library/jar hits under `project_and_libraries`; an exclude-only filter leaves them. Windows-style `\` separators are normalized to `/`. |
-| `compact` | boolean | No | Compact mode: returns lightweight formatted strings (file:line: match) instead of structured match objects (default: false) |
-| `limit` | integer | No | Deprecated alias for `pageSize` (default: 100, max: 500) |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings (file:line: match) instead of structured match objects (default: true) |
+| `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
-| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
+| `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
 
 Supports cursor-based pagination: the first call returns results plus `nextCursor`; pass `cursor` to get the next page.
 
@@ -1055,8 +1058,8 @@ Long analyses use the same long-poll pattern as `ide_build_project`: each call b
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `paths` | string[] | No | Files or directories relative to the project root; omit to analyze every file in the project's content roots |
-| `severity` | string | No | Filter problems by `all`, `errors`, or `warnings` (default: `all`) |
-| `maxFiles` | integer | No | Maximum files to analyze (default: 1000, max: 10000). Overflow files are reported `not_analyzed` and `complete` becomes `false` |
+| `severity` | string | No | Filter problems by `all`, `errors`, or `warnings` (default: `errors`) |
+| `maxFiles` | integer | No | Maximum files to analyze (default: 50, max: 10000). Overflow files are reported `not_analyzed` and `complete` becomes `false` |
 | `maxProblems` | integer | No | Maximum problems returned across all files (default: 1000, max: 5000). `problemCount` keeps counting beyond it |
 | `timeoutSeconds` | integer | No | Maximum seconds for the whole analysis (default: 600, max: 3600). Remaining files are reported `not_analyzed` when it elapses |
 | `analysisId` | string | No | `analysisId` from a previous `{"status": "running"}` response — attaches to that analysis instead of starting a new one |
@@ -1690,6 +1693,8 @@ Build the project using the IDE's build system (supports JPS, Gradle, Maven, CMa
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `project_path` | string | No | Absolute path to project root (for workspace sub-projects) |
+| `module` | string | No | Module name to build. If omitted, the entire project is built |
 | `rebuild` | boolean | No | Full rebuild instead of incremental build (default: false) |
 | `includeRawOutput` | boolean | No | Include raw build output log (default: false) |
 | `timeoutSeconds` | integer | No | Max seconds the whole build may take before it is reported timed out, enforced across polls. No limit if omitted. Ignored with `buildId` |
@@ -2036,6 +2041,7 @@ Searches for code symbols (classes, interfaces, methods, fields, and functions) 
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `language` | string | No | Filter by language (e.g., `"Kotlin"`, `"Java"`). Case-insensitive |
 | `includeGenerated` | boolean | No | Include symbols from generated sources (KSP/Dagger/annotation-processor output). Default: false |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: true) |
 | `limit` | integer | No | Deprecated alias for `pageSize` (default: 25, max: 500) |
 | `cursor` | string | No | Pagination cursor from a previous response |
 | `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
@@ -3659,8 +3665,9 @@ Finds all concrete implementations of an interface, abstract class, or abstract 
 | `symbol` | string | Conditional | Fully qualified symbol reference. Required for symbol-based lookup. |
 | `scope` | string | No | Built-in search scope. One of `project_files` (default), `project_and_libraries`, `project_production_files`, `project_test_files` |
 | `includeGenerated` | boolean | No | Include implementations in generated sources (KSP/Dagger/annotation-processor output). Default: false |
+| `compact` | boolean | No | Compact mode: returns lightweight formatted strings instead of full structured JSON objects (default: true) |
 | `cursor` | string | No | Pagination cursor from a previous response |
-| `pageSize` | integer | No | Number of results per page (default: 100, max: 500) |
+| `pageSize` | integer | No | Number of results per page (default: 25, max: 500) |
 
 **Example Request (position-based):**
 
@@ -3958,7 +3965,7 @@ List test methods and classes discovered by the IDE's test framework extension p
 | `module` | string | No | IntelliJ module name to filter tests |
 | `classPattern` | string | No | Glob pattern to match test class names (e.g. `*UnitTest` or `**/*Test`) |
 | `framework` | string | No | Test framework name filter (e.g. `JUnit4`, `JUnit5`, `TestNG`) |
-| `maxResults` | integer | No | Maximum number of tests to return per page (default: 500, max: 10000) |
+| `maxResults` | integer | No | Maximum number of tests to return per page (default: 30, max: 10000) |
 | `offset` | integer | No | Zero-based index of the first test to return (default: 0) |
 
 **Example Request:**

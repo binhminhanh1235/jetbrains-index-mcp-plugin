@@ -98,6 +98,7 @@ class SearchCursorStalenessBehaviorTest : McpPlatformTestCase() {
         val firstResult = tool.execute(project, buildJsonObject {
             arguments.forEach { (key, value) -> put(key, value) }
             put("pageSize", 1)
+            put("compact", false)
         })
         assertToolSucceeded("${tool.name} must produce a real first page", firstResult)
         val first = Json.parseToJsonElement(toolText(firstResult)).jsonObject
@@ -112,7 +113,10 @@ class SearchCursorStalenessBehaviorTest : McpPlatformTestCase() {
             PsiDocumentManager.getInstance(project).commitDocument(document)
         }
 
-        val nextResult = tool.execute(project, buildJsonObject { put("cursor", cursor) })
+        val nextResult = tool.execute(project, buildJsonObject {
+            put("cursor", cursor)
+            put("compact", false)
+        })
         assertToolSucceeded("${tool.name} must preserve the legacy stale-page contract after edits", nextResult)
         val next = Json.parseToJsonElement(toolText(nextResult)).jsonObject
         assertTrue("The old search snapshot must be explicitly marked stale", next.getValue("stale").jsonPrimitive.boolean)

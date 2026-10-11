@@ -797,3 +797,11 @@ data class CompactSearchTextResult(
     val nextCursor: String? = null,
     val hasMore: Boolean = false
 )
+
+@Serializable
+data class CompactImplementationResult(
+    val implementations: List<String>,
+    val totalCount: Int,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false
+)

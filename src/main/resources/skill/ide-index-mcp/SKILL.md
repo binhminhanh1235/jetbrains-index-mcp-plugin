@@ -157,6 +157,15 @@ responses report `symbolIdsTruncated` and `symbolIdsOmitted`.
 1. `ide_get_project_overview` - overview of modules, languages, frameworks, build system, entry points
 2. `ide_get_dependencies` - inspect module and library dependencies with scopes (`compile`, `test`, `runtime`)
 
+### "I need to explore an unfamiliar feature / cold-start navigation"
+When investigating a feature with only a vague functional description (without known symbol or file names):
+1. `ide_get_project_overview` - narrow down to the responsible module, framework, and top packages
+2. Domain Expansion - brainstorm 4–8 domain synonyms (e.g., `wallet`, `balance`, `deduct`, `charge`)
+3. Boundary Hunting - find entry points via `ide_find_file` (e.g., `*Wallet*Controller*`, `*Job*`) or `ide_find_symbol`
+4. AST Tracing - trace execution flow via `ide_call_hierarchy` (`direction: "callees"`) and `ide_type_hierarchy`
+5. Surgical Reading - read only targeted line ranges of core business logic via `ide_read_file`
+See [feature-exploration-workflow.md](https://github.com/hechtcarmel/jetbrains-index-mcp-plugin/blob/main/docs/feature-exploration-workflow.md) for the full guide.
+
 ### "I need to refactor"
 1. Preview a rename, safe delete, or signature change with `dryRun: true`; inspect blockers and affected files
 2. `ide_refactor_rename` - rename symbol + all references atomically

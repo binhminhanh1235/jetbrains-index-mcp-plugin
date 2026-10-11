@@ -414,7 +414,7 @@ object ProjectResolver {
      *
      * Falls back to [resolve] for all other cases.
      */
-    suspend fun resolveOrOpen(projectPath: String?): Result {
+    suspend fun resolveOrOpen(projectPath: String?, awaitSmartMode: Boolean = true): Result {
         // Fast path: project is already open
         val standard = resolve(projectPath)
         if (!standard.isError) return standard
@@ -441,7 +441,7 @@ object ProjectResolver {
                     )
                 }
                 LOG.info("Auto-opening closed managed project: $normalizedPath")
-                val project = reopenAndAwaitSmartMode(normalizedPath)
+                val project = reopenAndAwaitSmartMode(normalizedPath, awaitSmartMode)
                     ?: run {
                         LOG.warn("reopenAndAwaitSmartMode returned null for managed-closed project: $normalizedPath — ProjectManagerEx.openProjectAsync failed or was cancelled")
                         return buildErrorResult("Failed to reopen managed project: $normalizedPath", projectPath)
@@ -489,7 +489,7 @@ object ProjectResolver {
                 }, format = responseFormat()))
             }
             LOG.info("No open projects and no project_path — auto-opening managed project: $fallbackPath")
-            val project = reopenAndAwaitSmartMode(fallbackPath)
+            val project = reopenAndAwaitSmartMode(fallbackPath, awaitSmartMode)
             if (project != null) {
                 modeService?.markReopened(fallbackPath)
                 modeService?.resetInactivityTimer(project, "auto-open")
@@ -501,7 +501,7 @@ object ProjectResolver {
         return standard
     }
 
-    private suspend fun reopenAndAwaitSmartMode(path: String): Project? {
+    private suspend fun reopenAndAwaitSmartMode(path: String, awaitSmartMode: Boolean = true): Project? {
         // Only serialise the openProjectAsync call itself, not the indexing wait.
         //
         // The burst problem: multiple Claude sessions starting simultaneously each call
@@ -533,6 +533,10 @@ object ProjectResolver {
                     }
                 }
         } ?: return null
+
+        if (!awaitSmartMode) {
+            return project
+        }
 
         // Wait for indexing outside the Mutex so other callers can start opening their own
         // projects in parallel. If the HTTP caller cancels (timeout), still return the project

@@ -38,7 +38,7 @@ object TestResultsCollector {
      * Per-test cap for ide_run_tests stack traces (issue #316). Generous enough that real traces
      * pass through untouched; only pathological ones (deeply chained causes) are trimmed.
      */
-    internal const val MAX_RUN_ENTRY_STACKTRACE_LENGTH = 10_000
+    internal const val MAX_RUN_ENTRY_STACKTRACE_LENGTH = 2_500
 
     /**
      * Aggregate stack-trace budget for one ide_run_tests result. A mass failure (broken shared
@@ -46,27 +46,27 @@ object TestResultsCollector {
      * truncate mid-JSON: earlier failures keep their traces, later ones fall back to
      * errorMessage only once the budget is spent.
      */
-    internal const val MAX_RUN_TOTAL_STACKTRACE_CHARS = 100_000
+    internal const val MAX_RUN_TOTAL_STACKTRACE_CHARS = 15_000
 
     /**
      * Per-test cap for ide_run_tests console output (issue #346), head+tail truncated like
      * stack traces: a normal logging test passes through untouched, a spraying one keeps its
      * start and its end.
      */
-    internal const val MAX_RUN_ENTRY_OUTPUT_LENGTH = 10_000
+    internal const val MAX_RUN_ENTRY_OUTPUT_LENGTH = 2_500
 
     /**
      * Aggregate console-output budget for one ide_run_tests result, in run order — same
      * anti-multi-MB-response rationale as [MAX_RUN_TOTAL_STACKTRACE_CHARS]: once spent, later
      * tests carry no output field.
      */
-    internal const val MAX_RUN_TOTAL_OUTPUT_CHARS = 100_000
+    internal const val MAX_RUN_TOTAL_OUTPUT_CHARS = 15_000
 
     /**
      * Cap for run-level output not attributed to any test (framework/suite messages, build-runner
      * log lines). Larger than the per-test cap because a Gradle-run build log lands here.
      */
-    internal const val MAX_RUN_LEVEL_OUTPUT_LENGTH = 20_000
+    internal const val MAX_RUN_LEVEL_OUTPUT_LENGTH = 5_000
 
     /**
      * Cap on the failure entries a still-running ide_run_tests poll carries (issue #426). Every
