@@ -127,14 +127,22 @@ internal class HeadlessRenameProcessor(
     /** Like preparePreviewRenaming, language preparation needs EDT without an outer read lock. */
     fun preparePreviewAutomaticRenames(): Map<PsiElement, String> {
         val additional = linkedMapOf<PsiElement, String>()
+        val elementsToRename = linkedMapOf<PsiElement, String>()
+
         for (renamer in previewRenamers) {
             for (element in renamer.elements) {
+                if (elementsToRename.containsKey(element)) continue
                 val newName = renamer.getNewName(element) ?: continue
-                checkPreviewPreparationIsHeadless(element)
-                addElement(element, newName)
-                prepareRenaming(element, newName, additional)
+                elementsToRename[element] = newName
             }
         }
+
+        for ((element, newName) in elementsToRename) {
+            checkPreviewPreparationIsHeadless(element)
+            addElement(element, newName)
+            prepareRenaming(element, newName, additional)
+        }
+
         myAllRenames.putAll(additional)
         return additional
     }
