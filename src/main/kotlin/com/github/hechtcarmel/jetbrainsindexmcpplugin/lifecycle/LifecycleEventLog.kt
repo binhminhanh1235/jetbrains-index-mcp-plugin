@@ -72,15 +72,29 @@ class LifecycleEventLog {
         }
     }
 
-    private val buffer = ArrayDeque<Entry>()
+    private var buffer = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.CircularBuffer<Entry>(DEFAULT_CAPACITY)
+    private var currentCapacity = DEFAULT_CAPACITY
+
     val logFilePath: Path = Path.of(PathManager.getLogPath(), "mcp-lifecycle.log")
+
+    private fun ensureCapacityLocked(targetCapacity: Int) {
+        if (targetCapacity != currentCapacity) {
+            val newBuffer = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.CircularBuffer<Entry>(targetCapacity)
+            val currentEntries = buffer.toList()
+            for (e in currentEntries) {
+                newBuffer.add(e)
+            }
+            buffer = newBuffer
+            currentCapacity = targetCapacity
+        }
+    }
 
     fun log(entry: Entry) {
         val capacity = runCatching { McpSettings.getInstance().lifecycleLogBufferSize }
             .getOrDefault(DEFAULT_CAPACITY)
-        synchronized(buffer) {
-            if (buffer.size >= capacity) buffer.removeFirst()
-            buffer.addLast(entry)
+        synchronized(this) {
+            ensureCapacityLocked(capacity)
+            buffer.add(entry)
         }
         val writeToFile = LOG.isDebugEnabled ||
             runCatching { McpSettings.getInstance().lifecycleLogToFile }.getOrDefault(false)
@@ -97,13 +111,16 @@ class LifecycleEventLog {
     fun recent(limit: Int = 50, pathFilter: String? = null): List<Entry> {
         val capacity = runCatching { McpSettings.getInstance().lifecycleLogBufferSize }
             .getOrDefault(DEFAULT_CAPACITY)
-        return synchronized(buffer) { buffer.toList() }
+        return synchronized(this) {
+            ensureCapacityLocked(capacity)
+            buffer.toList()
+        }
             .asReversed()
             .let { if (pathFilter != null) it.filter { e -> e.path.contains(pathFilter) } else it }
             .take(limit.coerceIn(1, capacity))
     }
 
-    val size: Int get() = synchronized(buffer) { buffer.size }
+    val size: Int get() = synchronized(this) { buffer.size }
 
     companion object {
         const val DEFAULT_CAPACITY = 500
