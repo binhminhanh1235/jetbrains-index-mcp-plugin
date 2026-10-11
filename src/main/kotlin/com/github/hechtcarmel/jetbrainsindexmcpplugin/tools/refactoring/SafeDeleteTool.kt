@@ -764,7 +764,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         // returning the class) vanish with the deletion, so they must not block it —
         // matching IntelliJ's own SafeDeleteProcessor and this tool's file-delete mode.
         val usages = try {
-            findUsages(project, element, excludeWithin = element)
+            findUsages(project, listOf(element), excludeWithin = element)
         } catch (e: UsageSearchException) {
             if (!force) {
                 return SymbolPreparationResult.UsageSearchFailed(
@@ -851,7 +851,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         val elementType = getElementType(element)
         val affectedFile = getRelativePath(project, virtualFile)
         val usages = try {
-            findUsages(project, element, excludeWithin = element)
+            findUsages(project, listOf(element), excludeWithin = element)
         } catch (e: UsageSearchException) {
             if (!force) {
                 return SymbolPreparationResult.UsageSearchFailed(
@@ -1002,7 +1002,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             // Layer 1: Search for direct references to the PsiFile itself.
             // PsiFile implements PsiNamedElement, so findUsages works directly.
             ProgressManager.checkCanceled()
-            for (usage in findUsages(project, psiFile)) {
+            for (usage in findUsages(project, listOf(psiFile))) {
                 if (usage.file != filePath) {
                     externalUsages.add(usage)
                 }
@@ -1025,11 +1025,17 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
             // Layer 3: Search top-level declarations for external usages.
             if (externalUsages.isEmpty() || allowReadOnly) {
-                for ((element, _, _) in topLevelElements) {
-                    ProgressManager.checkCanceled()
-                    for (usage in findUsages(project, element)) {
-                        if (usage.file != filePath) {
-                            externalUsages.add(usage)
+                ProgressManager.checkCanceled()
+                for (usage in findUsages(
+                    project,
+                    topLevelElements.map { it.first },
+                    abortCondition = { !allowReadOnly && it.file != filePath }
+                )) {
+                    if (usage.file != filePath) {
+                        externalUsages.add(usage)
+                        if (!allowReadOnly) {
+                            // Apply mode stops at the first blocker
+                            break
                         }
                     }
                 }
@@ -1095,7 +1101,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         if (psiFile !in probeRenames && probeRenames.isNotEmpty()) {
             val resourceElement = probeRenames.keys.firstOrNull()
             if (resourceElement is PsiNamedElement) {
-                return findUsages(project, resourceElement).filter { it.file != filePath }
+                return findUsages(project, listOf(resourceElement)).filter { it.file != filePath }
             }
         }
 
@@ -1295,95 +1301,139 @@ class SafeDeleteTool : AbstractRefactoringTool() {
      */
     private fun findUsages(
         project: Project,
-        element: PsiNamedElement,
-        excludeWithin: PsiElement? = null
+        elements: List<PsiNamedElement>,
+        excludeWithin: PsiElement? = null,
+        abortCondition: (UsageInfo) -> Boolean = { false }
     ): List<UsageInfo> {
         val usages = mutableListOf<UsageInfo>()
         val seenLocations = mutableSetOf<Pair<String, Int>>()
 
-        fun recordUsage(usageElement: PsiElement) {
+        fun recordUsage(usageElement: PsiElement): Boolean {
             if (excludeWithin != null && PsiTreeUtil.isAncestor(excludeWithin, usageElement, false)) {
-                return
+                return true
             }
             val usageFile = usageElement.containingFile
-            val virtualFile = usageFile?.virtualFile ?: return
+            val virtualFile = usageFile?.virtualFile ?: return true
             val document = PsiDocumentManager.getInstance(project).getDocument(usageFile)
             val (lineNumber, columnNumber) = positionOf(document, usageElement.textOffset)
             val filePath = getRelativePath(project, virtualFile)
             // Display coordinates degrade to 0:0 when a document is unavailable. The VFS URL and
             // PSI offset still distinguish separate usages in such files.
-            if (!seenLocations.add(virtualFile.url to usageElement.textOffset)) return
+            if (!seenLocations.add(virtualFile.url to usageElement.textOffset)) return true
 
-            usages.add(
-                UsageInfo(
-                    file = filePath,
-                    line = lineNumber,
-                    column = columnNumber,
-                    context = getContextLine(document, lineNumber)
-                )
+            val usageInfo = UsageInfo(
+                file = filePath,
+                line = lineNumber,
+                column = columnNumber,
+                context = getContextLine(document, lineNumber)
             )
+            usages.add(usageInfo)
+
+            return !abortCondition(usageInfo)
         }
 
         try {
             usageSearchHook?.invoke()
-            ReferencesSearch.search(element).forEach { reference ->
-                ProgressManager.checkCanceled() // Allow cancellation
-                recordUsage(reference.element)
+
+            val safeDeleteParameters = mutableListOf<PsiNamedElement>()
+
+            for (element in elements) {
+                var aborted = false
+
+                ReferencesSearch.search(element).forEach(com.intellij.util.Processor { reference ->
+                    ProgressManager.checkCanceled() // Allow cancellation
+                    if (!recordUsage(reference.element)) {
+                        aborted = true
+                        return@Processor false
+                    }
+                    true
+                })
+                if (aborted) break
+
+                // A Java override/implementation is a semantic dependency, not a PsiReference to
+                // the base declaration, so ReferencesSearch alone can report a dangerously clean
+                // result. The apply path performs a literal element.delete(); it cannot repair or
+                // remove overriding declarations. Treat every descendant override as blocking unless
+                // the caller explicitly opts into force=true.
+                val hierarchyMethods = if (element is PsiMethod) {
+                    listOf(element)
+                } else {
+                    // Exact Java-signature targets are normalized to their Kotlin source declaration
+                    // before this search. Convert them back to light methods solely for hierarchy
+                    // discovery so an override cannot disappear from the safety check.
+                    PsiUtils.toLightMethods(element)
+                }
+
+                for (method in hierarchyMethods.distinct()) {
+                    OverridingMethodsSearch.search(method, true).forEach(com.intellij.util.Processor { overridingMethod ->
+                        ProgressManager.checkCanceled()
+                        if (!recordUsage(overridingMethod.nameIdentifier ?: overridingMethod)) {
+                            aborted = true
+                            return@Processor false
+                        }
+                        true
+                    })
+                    if (aborted) break
+                }
+                if (aborted) break
+
+                // Call-site arguments do not reference their declaration's PsiParameter, so a plain
+                // ReferencesSearch(parameter) is always incomplete. Ask the platform safe-delete
+                // delegates for parameter-specific usages (Java call arguments, override chains, and
+                // the equivalent contributed by an installed Kotlin plugin), but keep the apply path
+                // conservative: every discovered external element blocks our literal delete unless
+                // force=true.
+                val isKotlinParameter = element.javaClass.name == "org.jetbrains.kotlin.psi.KtParameter"
+                // Java's delegate casts a parameter's declaration scope to PsiMethod. Lambda,
+                // catch and foreach parameters are local bindings and need only ReferencesSearch.
+                val isJavaMethodParameter = element is PsiParameter && element.declarationScope is PsiMethod
+                if (isJavaMethodParameter) {
+                    val method = (element as PsiParameter).declarationScope as PsiMethod
+                    val parameterIndex = method.parameterList.getParameterIndex(element)
+                    fun recordHierarchyParameter(related: PsiMethod): Boolean {
+                        ProgressManager.checkCanceled()
+                        val relatedParam = related.parameterList.parameters.getOrNull(parameterIndex)
+                        return if (relatedParam != null) recordUsage(relatedParam) else true
+                    }
+                    // The public safe-delete usage query does not run getElementsToSearch(), which
+                    // is where Java's processor collects related parameters. Our literal deletion
+                    // cannot change the hierarchy, so both super and overriding parameters block it.
+                    for (superMethod in method.findSuperMethods()) {
+                        if (!recordHierarchyParameter(superMethod)) {
+                            aborted = true
+                            break
+                        }
+                    }
+                    if (aborted) break
+
+                    OverridingMethodsSearch.search(method, true).forEach(com.intellij.util.Processor { overriding ->
+                        if (!recordHierarchyParameter(overriding)) {
+                            aborted = true
+                            return@Processor false
+                        }
+                        true
+                    })
+                    if (aborted) break
+                }
+                if (aborted) break
+
+                if (isJavaMethodParameter || isKotlinParameter) {
+                    safeDeleteParameters.add(element)
+                }
             }
 
-            // A Java override/implementation is a semantic dependency, not a PsiReference to
-            // the base declaration, so ReferencesSearch alone can report a dangerously clean
-            // result. The apply path performs a literal element.delete(); it cannot repair or
-            // remove overriding declarations. Treat every descendant override as blocking unless
-            // the caller explicitly opts into force=true.
-            val hierarchyMethods = if (element is PsiMethod) {
-                listOf(element)
-            } else {
-                // Exact Java-signature targets are normalized to their Kotlin source declaration
-                // before this search. Convert them back to light methods solely for hierarchy
-                // discovery so an override cannot disappear from the safety check.
-                PsiUtils.toLightMethods(element)
-            }
-            hierarchyMethods.distinct().forEach { method ->
-                OverridingMethodsSearch.search(method, true).forEach { overridingMethod ->
-                    ProgressManager.checkCanceled()
-                    recordUsage(overridingMethod.nameIdentifier ?: overridingMethod)
-                }
-            }
-
-            // Call-site arguments do not reference their declaration's PsiParameter, so a plain
-            // ReferencesSearch(parameter) is always incomplete. Ask the platform safe-delete
-            // delegates for parameter-specific usages (Java call arguments, override chains, and
-            // the equivalent contributed by an installed Kotlin plugin), but keep the apply path
-            // conservative: every discovered external element blocks our literal delete unless
-            // force=true.
-            val isKotlinParameter = element.javaClass.name == "org.jetbrains.kotlin.psi.KtParameter"
-            // Java's delegate casts a parameter's declaration scope to PsiMethod. Lambda,
-            // catch and foreach parameters are local bindings and need only ReferencesSearch.
-            val isJavaMethodParameter = element is PsiParameter && element.declarationScope is PsiMethod
-            if (isJavaMethodParameter) {
-                val method = (element as PsiParameter).declarationScope as PsiMethod
-                val parameterIndex = method.parameterList.getParameterIndex(element)
-                fun recordHierarchyParameter(related: PsiMethod) {
-                    ProgressManager.checkCanceled()
-                    related.parameterList.parameters.getOrNull(parameterIndex)?.let(::recordUsage)
-                }
-                // The public safe-delete usage query does not run getElementsToSearch(), which
-                // is where Java's processor collects related parameters. Our literal deletion
-                // cannot change the hierarchy, so both super and overriding parameters block it.
-                method.findSuperMethods().forEach(::recordHierarchyParameter)
-                OverridingMethodsSearch.search(method, true).forEach { overriding ->
-                    recordHierarchyParameter(overriding)
-                }
-            }
-            if (isJavaMethodParameter || isKotlinParameter) {
-                val refactoring = RefactoringFactory.getInstance(project).createSafeDelete(arrayOf(element))
+            if (safeDeleteParameters.isNotEmpty()) {
+                val refactoring = RefactoringFactory.getInstance(project).createSafeDelete(safeDeleteParameters.toTypedArray())
                 refactoring.setSearchInComments(false)
                 refactoring.setSearchInNonJavaFiles(false)
-                refactoring.findUsages().forEach { usage ->
+                for (usage in refactoring.findUsages()) {
                     ProgressManager.checkCanceled()
-                    val usageElement = usage.element ?: return@forEach
-                    if (usageElement !== element) recordUsage(usageElement)
+                    val usageElement = usage.element ?: continue
+                    if (usageElement !in safeDeleteParameters) {
+                        if (!recordUsage(usageElement)) {
+                            break
+                        }
+                    }
                 }
             }
         } catch (e: ProcessCanceledException) {
