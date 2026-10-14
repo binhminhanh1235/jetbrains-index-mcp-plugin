@@ -765,6 +765,7 @@ class RunTestsTool : AbstractMcpTool() {
         val psiElement = suspendingReadAction {
             findClassByName(project, className)
                 ?.let { if (methodName == null) it else findMethodElement(it, methodName) }
+                ?: resolveFile(project, target)?.let { PsiManager.getInstance(project).findFile(it) }
         } ?: return null
 
         return edtAction {

@@ -20,6 +20,7 @@ import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ImageContent
@@ -79,6 +80,9 @@ class McpToolDispatcher @JvmOverloads constructor(
         private val LONG_POLL_TOOLS = setOf(
             ToolNames.BUILD_PROJECT, ToolNames.RUN_TESTS, ToolNames.PROJECT_DIAGNOSTICS,
             ToolNames.OPEN_PROJECT, ToolNames.OPEN_WORKSPACE
+        )
+        private val TOOLS_NOT_REQUIRING_OPEN_PROJECT = setOf(
+            ToolNames.OPEN_PROJECT, ToolNames.OPEN_WORKSPACE, ToolNames.PROJECT_STATUS
         )
         private fun defaultEdtCheck(): Long? {
             val app = ApplicationManager.getApplication() ?: return null
@@ -165,7 +169,14 @@ class McpToolDispatcher @JvmOverloads constructor(
             }
         }
 
-        val project = if (projectPath == null && symbolId != null) {
+        val project = if (toolName in TOOLS_NOT_REQUIRING_OPEN_PROJECT) {
+            val projectResult = ProjectResolver.resolveOrOpen(projectPath, awaitSmartMode = false)
+            if (!projectResult.isError && projectResult.project != null) {
+                projectResult.project
+            } else {
+                ProjectManager.getInstance().defaultProject
+            }
+        } else if (projectPath == null && symbolId != null) {
             symbolIdRegistryProvider().projectFor(symbolId).getOrElse {
                 return CallToolResult.error(it.message ?: ErrorMessages.symbolIdExpired(symbolId))
             }

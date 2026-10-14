@@ -17,6 +17,10 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 class VerifyChangeTool : AbstractMcpTool() {
+    private companion object {
+        val json = Json { ignoreUnknownKeys = true }
+    }
+
     override val requiresPsiSync: Boolean = false // We handle VFS sync manually
     override val participatesInLifecycle: Boolean = true
 
@@ -73,9 +77,14 @@ class VerifyChangeTool : AbstractMcpTool() {
             if (testFile != null) {
                 testsRun = true
                 
+                val testTarget = com.intellij.openapi.application.ReadAction.compute<String, Exception> {
+                    val psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(testFile)
+                    (psiFile as? com.intellij.psi.PsiClassOwner)?.classes?.firstOrNull()?.qualifiedName
+                } ?: getRelativePath(project, testFile)
+
                 // Construct args for RunTestsTool
                 val testArgs = kotlinx.serialization.json.buildJsonObject {
-                    put("file", kotlinx.serialization.json.JsonPrimitive(getRelativePath(project, testFile)))
+                    put("target", kotlinx.serialization.json.JsonPrimitive(testTarget))
                     put("timeoutSeconds", kotlinx.serialization.json.JsonPrimitive(timeoutSeconds))
                 }
                 
@@ -86,7 +95,7 @@ class VerifyChangeTool : AbstractMcpTool() {
                     } else {
                         val jsonStr = (runTestsToolResult.content.firstOrNull() as? TextContent)?.text ?: ""
                         if (jsonStr.startsWith("{")) {
-                            testResult = Json { ignoreUnknownKeys = true }.decodeFromString<RunTestsResult>(jsonStr)
+                            testResult = json.decodeFromString<RunTestsResult>(jsonStr)
                         }
                     }
                 } catch (e: Exception) {
@@ -114,22 +123,30 @@ class VerifyChangeTool : AbstractMcpTool() {
 
     private fun findNearbyTestFile(project: Project, sourceFile: com.intellij.openapi.vfs.VirtualFile): com.intellij.openapi.vfs.VirtualFile? {
         val basename = sourceFile.nameWithoutExtension
-        val possibleNames = listOf("${basename}Test", "Test${basename}", "${basename}Tests", "${basename}Spec")
+        val ext = sourceFile.extension?.let { ".$it" } ?: ""
+        val candidateNames = listOf(
+            "${basename}Test$ext",
+            "Test${basename}$ext",
+            "${basename}Tests$ext",
+            "${basename}Spec$ext",
+            "test_${basename}$ext",
+            "${basename}.test$ext",
+            "${basename}.spec$ext"
+        )
         
         var foundFile: com.intellij.openapi.vfs.VirtualFile? = null
         val searchScope = com.intellij.psi.search.GlobalSearchScope.projectScope(project)
         
         com.intellij.openapi.application.ReadAction.run<Exception> {
             val fileIndex = com.intellij.openapi.roots.ProjectRootManager.getInstance(project).fileIndex
-            val psiManager = com.intellij.psi.PsiManager.getInstance(project)
-            
-            com.intellij.psi.search.FilenameIndex.getAllFilesByExt(project, sourceFile.extension ?: "", searchScope).forEach { file ->
-                if (fileIndex.isInTestSourceContent(file)) {
-                    val nameWithoutExt = file.nameWithoutExtension
-                    if (possibleNames.contains(nameWithoutExt)) {
-                        foundFile = file
-                        return@run
-                    }
+            for (candidate in candidateNames) {
+                val files = com.intellij.psi.search.FilenameIndex.getVirtualFilesByName(candidate, searchScope)
+                val testCandidate = files.firstOrNull { fileIndex.isInTestSourceContent(it) }
+                    ?: files.firstOrNull { it.path.contains("/test") || it.path.contains("/tests") }
+                    ?: files.firstOrNull()
+                if (testCandidate != null) {
+                    foundFile = testCandidate
+                    return@run
                 }
             }
         }

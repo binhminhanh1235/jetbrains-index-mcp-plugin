@@ -17,6 +17,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import com.intellij.find.FindModel
 import com.intellij.find.impl.FindInProjectUtil
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
@@ -314,7 +315,9 @@ class SearchTextTool : AbstractMcpTool() {
         ) { usageInfo: UsageInfo ->
             if (count.get() >= limit) return@findUsages false
 
-            val match = convertToTextMatch(project, usageInfo, searchContext) ?: return@findUsages true
+            val match = ReadAction.compute<TextMatch?, Exception> {
+                convertToTextMatch(project, usageInfo, searchContext)
+            } ?: return@findUsages true
             val lineKey = "${match.file}:${match.line}"
             if (seenLines.add(lineKey)) {
                 if (count.incrementAndGet() <= limit) results.add(match)

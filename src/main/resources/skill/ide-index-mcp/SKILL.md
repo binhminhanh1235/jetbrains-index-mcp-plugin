@@ -30,7 +30,7 @@ If both `mcp__intellij-index__*` (this plugin) and `mcp__intellij__*` (JetBrains
 | Build | `ide_build_project` (this plugin — returns structured errors/warnings); `mcp__intellij__*` only when it is not enabled |
 | Terminal, run non-test processes, formatting beyond code style | `mcp__intellij__*` only |
 
-**Always use `mcp__intellij-index__` for code intelligence. At least one project must be open in IntelliJ. If your target project is not open but another one is, call `ide_open_project` with the working directory path (requires at least one project to already be open as the JSON-RPC context). IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration. Only ask the user to open a project manually when zero projects are open.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
+**Always use `mcp__intellij-index__` for code intelligence. If your target project is not open, call `ide_open_project` with the working directory path — it works even from the Welcome Screen with zero projects open. IntelliJ does NOT require `.idea` to exist — it opens any directory and creates its own project configuration.** Do not fall back to bash for semantic operations — IDE tools understand types, references, and inheritance; grep does not.
 
 ## Core Rule
 

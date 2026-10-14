@@ -65,7 +65,7 @@ object ProjectUtils {
                 } else {
                     if (continuation.isActive) continuation.resume(false)
                 }
-            }, ModalityState.nonModal())
+            }, ModalityState.defaultModalityState())
         }
 
     fun openTask(): OpenProjectTask =

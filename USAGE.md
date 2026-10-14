@@ -1215,8 +1215,8 @@ Run diagnostics on multiple files in a single MCP call. Returns errors and warni
 
 > **Availability**: Universal Tool - works in all JetBrains IDEs
 
-Apply an available quick fix or intention action at a specific position in an open file.
-The file must be open in the editor. Use `ide_diagnostics` first to discover available intentions/quick fixes at a position, then call this tool to apply one.
+Apply an available quick fix or intention action at a specific position in a file.
+Automatically opens the file in the editor if not already open. Use `ide_diagnostics` first to discover available intentions/quick fixes at a position, then call this tool to apply one.
 
 **Use when:**
 - Automatically fixing compile errors or warnings discovered by `ide_diagnostics`
@@ -2346,7 +2346,7 @@ Note: indexing is async — call ide_index_status if subsequent tools hit dumb m
 
 Open a project by filesystem path and wait until indexing is complete, so subsequent MCP tool calls against the opened project succeed immediately. If the project is already open, returns successfully right away.
 
-Requires at least one project to already be open (needed as the JSON-RPC context). Opening a project the IDE has not seen before may show the modal "Trust project?" dialog, which only a human can answer; the call fails after `timeoutSeconds` if the project has not opened by then. If the project opens but indexing outlasts the timeout, the tool returns success with a note to check `ide_index_status`.
+Can be called even with zero projects open (directly from the Welcome Screen). Opening a project the IDE has not seen before may show the modal "Trust project?" dialog, which only a human can answer; the call fails after `timeoutSeconds` if the project has not opened by then. If the project opens but indexing outlasts the timeout, the tool returns success with a note to check `ide_index_status`.
 
 **Use when:**
 - Opening a project that is not currently open in the IDE

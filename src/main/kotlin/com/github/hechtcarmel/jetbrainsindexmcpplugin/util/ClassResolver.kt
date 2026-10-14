@@ -198,21 +198,21 @@ object ClassResolver {
         )
         val javaFiles = getFilesByNameMethod.invoke(null, "$simpleClassName.java", everythingScope) as Collection<*>
 
+        val getPackageNameMethod = psiJavaFileClass.getMethod("getPackageName")
+        val getClassesMethod = psiJavaFileClass.getMethod("getClasses")
+
         val psiManager = PsiManager.getInstance(project)
         for (virtualFile in javaFiles) {
             val psiFile = psiManager.findFile(virtualFile as VirtualFile) ?: continue
             if (!psiJavaFileClass.isInstance(psiFile)) continue
-
-            val getPackageNameMethod = psiJavaFileClass.getMethod("getPackageName")
-            val getClassesMethod = psiJavaFileClass.getMethod("getClasses")
 
             val packageName = getPackageNameMethod.invoke(psiFile) as String
             if (packageName == expectedPackage) {
                 val classes = getClassesMethod.invoke(psiFile) as Array<*>
                 for (psiClass in classes) {
                     val psiElement = psiClass as PsiElement
-                    val getNameMethod = psiElement.javaClass.getMethod("getName")
-                    val className = getNameMethod.invoke(psiElement) as String?
+                    val getNameMethod = ReflectionCache.getMethod(psiElement.javaClass, "getName")
+                    val className = getNameMethod?.invoke(psiElement) as String?
                     if (className == simpleClassName) return psiElement
                 }
             }

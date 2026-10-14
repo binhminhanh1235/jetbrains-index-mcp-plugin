@@ -51,7 +51,7 @@ class OpenProjectTool : AbstractMcpTool() {
         happens automatically on the first real semantic tool call (find references,
         diagnostics, refactoring, etc.) after the project is open — not on open/close itself.
 
-        Requires at least one project to already be open (needed as the JSON-RPC context).
+        Can be called even with zero projects open (directly from the Welcome Screen).
 
         Opening a project the IDE has not seen before may show the modal "Trust project?"
         dialog, which only a human can answer; the call fails after timeoutSeconds if the

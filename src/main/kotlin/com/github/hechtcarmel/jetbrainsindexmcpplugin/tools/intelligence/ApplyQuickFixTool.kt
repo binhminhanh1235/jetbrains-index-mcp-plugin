@@ -7,6 +7,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtil
@@ -79,16 +80,19 @@ class ApplyQuickFixTool : AbstractMcpTool() {
 
         // 2. Ensure file is open — quick-fix invocation requires a live editor
         val fileEditorManager = FileEditorManager.getInstance(project)
-        val editor: Editor? = fileEditorManager.getEditors(virtualFile)
+        var editor: Editor? = fileEditorManager.getEditors(virtualFile)
             .filterIsInstance<TextEditor>()
             .firstOrNull()
             ?.editor
 
         if (editor == null) {
-            return createErrorResult(
-                "File '$filePath' is not open in the editor. " +
-                "Open the file first (ide_open_file), or use ide_diagnostics to read errors and fix them manually."
-            )
+            editor = edtAction {
+                fileEditorManager.openTextEditor(OpenFileDescriptor(project, virtualFile), true)
+            }
+        }
+
+        if (editor == null) {
+            return createErrorResult("Could not open editor for '$filePath'.")
         }
 
         // 3. Sync VFS to pick up any external changes

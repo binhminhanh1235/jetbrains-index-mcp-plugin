@@ -450,7 +450,7 @@ Run diagnostics on multiple files in a single MCP call. Returns errors and warni
 **Returns**: `{ filesChecked, hasErrors, results: [{ file, problemCount, analysisFresh, analysisTimedOut, analysisMessage?, problems?: [{ message, severity, line, column }] }] }`
 
 ### ide_apply_quick_fix
-Apply an available quick fix or intention action at a specific position in a file. The file must be open in the editor. Use `ide_diagnostics` first to discover available intentions/quick fixes.
+Apply an available quick fix or intention action at a specific position in a file. Automatically opens the file in the editor if not already open. Use `ide_diagnostics` first to discover available intentions/quick fixes.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

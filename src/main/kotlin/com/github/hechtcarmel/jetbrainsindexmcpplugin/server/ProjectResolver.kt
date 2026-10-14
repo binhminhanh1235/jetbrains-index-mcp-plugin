@@ -557,7 +557,7 @@ object ProjectResolver {
                         } else {
                             continuation.cancel()
                         }
-                    }, ModalityState.nonModal())
+                    }, ModalityState.defaultModalityState())
                 }
             }
         }
