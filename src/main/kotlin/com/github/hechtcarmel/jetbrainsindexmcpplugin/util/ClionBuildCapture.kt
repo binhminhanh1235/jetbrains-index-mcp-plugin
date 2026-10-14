@@ -204,28 +204,28 @@ object ClionBuildCapture {
 
     private fun buildIdOf(event: Any?): Any? =
         try {
-            event?.javaClass?.getMethod("getBuildId")?.invoke(event)
+            event?.let { ReflectionCache.getMethod(it.javaClass, "getBuildId")?.invoke(it) }
         } catch (_: Exception) {
             null
         }
 
     private fun invokeBoolean(target: Any?, methodName: String): Boolean? =
         try {
-            target?.javaClass?.getMethod(methodName)?.invoke(target) as? Boolean
+            target?.let { ReflectionCache.getMethod(it.javaClass, methodName)?.invoke(it) } as? Boolean
         } catch (_: Exception) {
             null
         }
 
     private fun invokeInt(target: Any?, methodName: String): Int? =
         try {
-            target?.javaClass?.getMethod(methodName)?.invoke(target) as? Int
+            target?.let { ReflectionCache.getMethod(it.javaClass, methodName)?.invoke(it) } as? Int
         } catch (_: Exception) {
             null
         }
 
     private fun invokeString(target: Any?, methodName: String): String? =
         try {
-            target?.javaClass?.getMethod(methodName)?.invoke(target) as? String
+            target?.let { ReflectionCache.getMethod(it.javaClass, methodName)?.invoke(it) } as? String
         } catch (_: Exception) {
             null
         }
