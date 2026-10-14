@@ -43,13 +43,12 @@ internal object PythonDefinitionResolver {
         if (callee !== referenceElement) return null
 
         val resolveContext = runCatching {
-            resolveContextClass.getMethod("defaultContext").invoke(null)
+            ReflectionCache.getMethod(resolveContextClass, "defaultContext")?.invoke(null)
         }.getOrNull() ?: return null
 
         val resolved = runCatching {
-            callExpression.javaClass
-                .getMethod("multiResolveCalleeFunction", resolveContextClass)
-                .invoke(callExpression, resolveContext) as? Collection<*>
+            ReflectionCache.getMethod(callExpression.javaClass, "multiResolveCalleeFunction", resolveContextClass)
+                ?.invoke(callExpression, resolveContext) as? Collection<*>
         }.getOrNull().orEmpty()
 
         return resolved
@@ -89,7 +88,7 @@ internal object PythonDefinitionResolver {
 
     private fun invokeNoArg(target: Any, methodName: String): Any? {
         return runCatching {
-            target.javaClass.getMethod(methodName).invoke(target)
+            ReflectionCache.getMethod(target.javaClass, methodName)?.invoke(target)
         }.getOrNull()
     }
 
