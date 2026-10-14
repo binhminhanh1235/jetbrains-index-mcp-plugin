@@ -262,7 +262,7 @@ class McpToolDispatcher @JvmOverloads constructor(
     private suspend fun <T> withIdeModality(block: suspend () -> T): T {
         // Null in plain unit tests that never boot the platform.
         ApplicationManager.getApplication() ?: return block()
-        return withContext(toolExecutionDispatcher + ModalityState.any().asContextElement()) { block() }
+        return withContext(toolExecutionDispatcher + ModalityState.defaultModalityState().asContextElement()) { block() }
     }
 
     private fun recordHistorySafely(project: Project, commandEntry: CommandEntry) {

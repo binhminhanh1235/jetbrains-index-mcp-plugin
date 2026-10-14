@@ -51,9 +51,8 @@ class VerifyChangeTool : AbstractMcpTool() {
         val virtualFile = resolveFile(project, filePath)
             ?: return createErrorResult("File not found: $filePath")
         
-        edtAction {
-            VfsUtil.markDirtyAndRefresh(false, true, true, virtualFile)
-        }
+        VfsUtil.markDirtyAndRefresh(false, true, true, virtualFile)
+        commitDocuments(project)
 
         // 2. Diagnostics
         val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(

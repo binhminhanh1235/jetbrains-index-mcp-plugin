@@ -2,6 +2,8 @@ package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,7 +18,7 @@ internal suspend fun <T> cancellableEdtAction(action: () -> T): T {
         // dispatches it. Keep the request context (including its server epoch), but link
         // cancellation explicitly so the waiting caller can finish before EDT is available.
         val queuedAction = CoroutineScope(continuation.context.minusKey(Job)).launch(
-            Dispatchers.EDT
+            Dispatchers.EDT + ModalityState.defaultModalityState().asContextElement()
         ) {
             continuation.resumeWith(runCatching(action))
         }

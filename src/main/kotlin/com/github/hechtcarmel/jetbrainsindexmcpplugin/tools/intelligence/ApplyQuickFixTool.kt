@@ -96,9 +96,8 @@ class ApplyQuickFixTool : AbstractMcpTool() {
         }
 
         // 3. Sync VFS to pick up any external changes
-        edtAction {
-            VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile)
-        }
+        VfsUtil.markDirtyAndRefresh(false, false, false, virtualFile)
+        commitDocuments(project)
 
         // 4. Collect highlights + intentions (reusing DiagnosticsAnalysisService)
         val analysisResult = DiagnosticsAnalysisService.getInstance(project).analyzeFile(
