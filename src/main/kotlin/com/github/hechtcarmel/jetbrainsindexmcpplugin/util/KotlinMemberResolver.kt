@@ -113,9 +113,9 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
                 requireNotNull(anchor) { "anchor required for 'after' position" }
                 anchor.endOffset
             }
-            "first" -> {
                     // OPTIMIZATION: Use ReflectionCache instead of javaClass.getMethod to avoid performance bottlenecks
                     // from repeated lookups and expensive NoSuchMethodException stack trace captures.
+            "first" -> {
                 if (ktClassOrObjectClass?.isInstance(scope) == true) {
                     val body = getBody(scope) ?: return null
                     val lBrace = try {
