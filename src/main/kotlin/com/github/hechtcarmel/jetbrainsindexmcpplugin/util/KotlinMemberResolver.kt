@@ -4,6 +4,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 
 class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
@@ -112,11 +113,13 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
                 requireNotNull(anchor) { "anchor required for 'after' position" }
                 anchor.endOffset
             }
+                    // OPTIMIZATION: Use ReflectionCache instead of javaClass.getMethod to avoid performance bottlenecks
+                    // from repeated lookups and expensive NoSuchMethodException stack trace captures.
             "first" -> {
                 if (ktClassOrObjectClass?.isInstance(scope) == true) {
                     val body = getBody(scope) ?: return null
                     val lBrace = try {
-                        body.javaClass.getMethod("getLBrace").invoke(body) as? PsiElement
+                        ReflectionCache.getMethod(body.javaClass, "getLBrace")?.invoke(body) as? PsiElement
                     } catch (e: Exception) {
                         e.rethrowIfControlFlow()
                         null
@@ -133,7 +136,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
                 if (ktClassOrObjectClass?.isInstance(scope) == true) {
                     val body = getBody(scope) ?: return null
                     val rBrace = try {
-                        body.javaClass.getMethod("getRBrace").invoke(body) as? PsiElement
+                        ReflectionCache.getMethod(body.javaClass, "getRBrace")?.invoke(body) as? PsiElement
                     } catch (e: Exception) {
                         e.rethrowIfControlFlow()
                         null
@@ -157,7 +160,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getChildElement(element: PsiElement, accessor: String): PsiElement? {
         return try {
-            element.javaClass.getMethod(accessor).invoke(element) as? PsiElement
+            ReflectionCache.getMethod(element.javaClass, accessor)?.invoke(element) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -221,9 +224,9 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getDeclarations(element: PsiElement): List<PsiElement> {
         return try {
-            val method = element.javaClass.getMethod("getDeclarations")
+            val method = ReflectionCache.getMethod(element.javaClass, "getDeclarations")
             @Suppress("UNCHECKED_CAST")
-            (method.invoke(element) as? List<PsiElement>) ?: emptyList()
+            (method?.invoke(element) as? List<PsiElement>) ?: emptyList()
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             emptyList()
@@ -233,9 +236,9 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
     private fun getBodyDeclarations(classElement: PsiElement): List<PsiElement> {
         val body = getBody(classElement) ?: return emptyList()
         return try {
-            val method = body.javaClass.getMethod("getDeclarations")
+            val method = ReflectionCache.getMethod(body.javaClass, "getDeclarations")
             @Suppress("UNCHECKED_CAST")
-            (method.invoke(body) as? List<PsiElement>) ?: emptyList()
+            (method?.invoke(body) as? List<PsiElement>) ?: emptyList()
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             body.children.toList()
@@ -244,7 +247,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getBody(element: PsiElement): PsiElement? {
         return try {
-            element.javaClass.getMethod("getBody").invoke(element) as? PsiElement
+            ReflectionCache.getMethod(element.javaClass, "getBody")?.invoke(element) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -253,7 +256,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getBodyExpression(function: PsiElement): PsiElement? {
         return try {
-            function.javaClass.getMethod("getBodyExpression").invoke(function) as? PsiElement
+            ReflectionCache.getMethod(function.javaClass, "getBodyExpression")?.invoke(function) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -269,8 +272,8 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
         if (!ktBlockExprClass.isInstance(bodyExpr)) return null
 
         return try {
-            val lBrace = bodyExpr.javaClass.getMethod("getLBrace").invoke(bodyExpr) as? PsiElement
-            val rBrace = bodyExpr.javaClass.getMethod("getRBrace").invoke(bodyExpr) as? PsiElement
+            val lBrace = ReflectionCache.getMethod(bodyExpr.javaClass, "getLBrace")?.invoke(bodyExpr) as? PsiElement
+            val rBrace = ReflectionCache.getMethod(bodyExpr.javaClass, "getRBrace")?.invoke(bodyExpr) as? PsiElement
             if (lBrace != null && rBrace != null) {
                 Pair(lBrace.textRange.endOffset, rBrace.textRange.startOffset)
             } else null
@@ -282,7 +285,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getInitializer(property: PsiElement): PsiElement? {
         return try {
-            property.javaClass.getMethod("getInitializer").invoke(property) as? PsiElement
+            ReflectionCache.getMethod(property.javaClass, "getInitializer")?.invoke(property) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -292,7 +295,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
     private fun getName(element: PsiElement): String? {
         if (ktNamedDeclarationClass?.isInstance(element) != true) return null
         return try {
-            element.javaClass.getMethod("getName").invoke(element) as? String
+            ReflectionCache.getMethod(element.javaClass, "getName")?.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -301,9 +304,9 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getParameterCount(function: PsiElement): Int? {
         return try {
-            val paramList = function.javaClass.getMethod("getValueParameterList").invoke(function) as? PsiElement
+            val paramList = ReflectionCache.getMethod(function.javaClass, "getValueParameterList")?.invoke(function) as? PsiElement
                 ?: return 0
-            val params = paramList.javaClass.getMethod("getParameters").invoke(paramList) as? List<*>
+            val params = ReflectionCache.getMethod(paramList.javaClass, "getParameters")?.invoke(paramList) as? List<*>
             params?.size ?: 0
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -313,7 +316,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getTypeReference(property: PsiElement): String? {
         return try {
-            val typeRef = property.javaClass.getMethod("getTypeReference").invoke(property) as? PsiElement
+            val typeRef = ReflectionCache.getMethod(property.javaClass, "getTypeReference")?.invoke(property) as? PsiElement
             typeRef?.text
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -323,9 +326,9 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun buildFunctionSignature(function: PsiElement): String {
         return try {
-            val paramList = function.javaClass.getMethod("getValueParameterList").invoke(function) as? PsiElement
+            val paramList = ReflectionCache.getMethod(function.javaClass, "getValueParameterList")?.invoke(function) as? PsiElement
             val params = if (paramList != null) {
-                val parameters = paramList.javaClass.getMethod("getParameters").invoke(paramList) as? List<*>
+                val parameters = ReflectionCache.getMethod(paramList.javaClass, "getParameters")?.invoke(paramList) as? List<*>
                 parameters?.filterIsInstance<PsiElement>()?.joinToString(", ") { it.text } ?: ""
             } else ""
             val name = getName(function) ?: "unknown"
@@ -338,7 +341,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getLBraceEnd(body: PsiElement): Int? {
         return try {
-            val lBrace = body.javaClass.getMethod("getLBrace").invoke(body) as? PsiElement
+            val lBrace = ReflectionCache.getMethod(body.javaClass, "getLBrace")?.invoke(body) as? PsiElement
             lBrace?.textRange?.endOffset
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -348,7 +351,7 @@ class KotlinMemberResolver(private val project: Project) : MemberResolver {
 
     private fun getRBraceStart(body: PsiElement): Int? {
         return try {
-            val rBrace = body.javaClass.getMethod("getRBrace").invoke(body) as? PsiElement
+            val rBrace = ReflectionCache.getMethod(body.javaClass, "getRBrace")?.invoke(body) as? PsiElement
             rBrace?.textRange?.startOffset
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
