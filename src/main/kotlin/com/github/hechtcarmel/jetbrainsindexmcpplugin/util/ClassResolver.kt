@@ -8,6 +8,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import java.lang.reflect.InvocationTargetException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 import java.util.concurrent.CancellationException
 
 /**
@@ -82,8 +83,8 @@ object ClassResolver {
         return try {
             // Load PhpIndex class via reflection
             val phpIndexClass = Class.forName("com.jetbrains.php.PhpIndex")
-            val getInstanceMethod = phpIndexClass.getMethod("getInstance", Project::class.java)
-            val phpIndex = getInstanceMethod.invoke(null, project)
+            val getInstanceMethod = ReflectionCache.getMethod(phpIndexClass, "getInstance", Project::class.java)
+            val phpIndex = getInstanceMethod?.invoke(null, project)
 
             // Normalize FQN:
             // 1. Handle double-escaped backslashes from JSON (\\) -> single backslash (\)
@@ -96,38 +97,36 @@ object ClassResolver {
             }
 
             // Try getClassesByFQN first (for classes, abstract classes)
-            val getClassesByFQNMethod = phpIndexClass.getMethod("getClassesByFQN", String::class.java)
-            val classes = getClassesByFQNMethod.invoke(phpIndex, normalizedFqn) as? Collection<*>
+            val getClassesByFQNMethod = ReflectionCache.getMethod(phpIndexClass, "getClassesByFQN", String::class.java)
+            val classes = getClassesByFQNMethod?.invoke(phpIndex, normalizedFqn) as? Collection<*>
             if (!classes.isNullOrEmpty()) {
                 return classes.firstOrNull() as? PsiElement
             }
 
             // Try getInterfacesByFQN (for interfaces)
-            val getInterfacesByFQNMethod = phpIndexClass.getMethod("getInterfacesByFQN", String::class.java)
-            val interfaces = getInterfacesByFQNMethod.invoke(phpIndex, normalizedFqn) as? Collection<*>
+            val getInterfacesByFQNMethod = ReflectionCache.getMethod(phpIndexClass, "getInterfacesByFQN", String::class.java)
+            val interfaces = getInterfacesByFQNMethod?.invoke(phpIndex, normalizedFqn) as? Collection<*>
             if (!interfaces.isNullOrEmpty()) {
                 return interfaces.firstOrNull() as? PsiElement
             }
 
             // Try getTraitsByFQN (for traits)
-            try {
-                val getTraitsByFQNMethod = phpIndexClass.getMethod("getTraitsByFQN", String::class.java)
+            val getTraitsByFQNMethod = ReflectionCache.getMethod(phpIndexClass, "getTraitsByFQN", String::class.java)
+            if (getTraitsByFQNMethod != null) {
                 val traits = getTraitsByFQNMethod.invoke(phpIndex, normalizedFqn) as? Collection<*>
                 if (!traits.isNullOrEmpty()) {
                     return traits.firstOrNull() as? PsiElement
                 }
-            } catch (e: NoSuchMethodException) {
-                // getTraitsByFQN may not exist in older PHP plugin versions
             }
 
             // Try without leading backslash if normalized version didn't work
             if (normalizedFqn != cleanedFqn) {
-                val classesAlt = getClassesByFQNMethod.invoke(phpIndex, cleanedFqn) as? Collection<*>
+                val classesAlt = getClassesByFQNMethod?.invoke(phpIndex, cleanedFqn) as? Collection<*>
                 if (!classesAlt.isNullOrEmpty()) {
                     return classesAlt.firstOrNull() as? PsiElement
                 }
 
-                val interfacesAlt = getInterfacesByFQNMethod.invoke(phpIndex, cleanedFqn) as? Collection<*>
+                val interfacesAlt = getInterfacesByFQNMethod?.invoke(phpIndex, cleanedFqn) as? Collection<*>
                 if (!interfacesAlt.isNullOrEmpty()) {
                     return interfacesAlt.firstOrNull() as? PsiElement
                 }
@@ -164,25 +163,25 @@ object ClassResolver {
         val psiJavaFileClass = Class.forName("com.intellij.psi.PsiJavaFile")
 
         // Get JavaPsiFacade instance
-        val getInstanceMethod = javaPsiFacadeClass.getMethod("getInstance", Project::class.java)
-        val javaPsiFacade = getInstanceMethod.invoke(null, project)
+        val getInstanceMethod = ReflectionCache.getMethod(javaPsiFacadeClass, "getInstance", Project::class.java)
+        val javaPsiFacade = getInstanceMethod?.invoke(null, project)
 
         // Get search scopes
-        val projectScopeMethod = globalSearchScopeClass.getMethod("projectScope", Project::class.java)
-        val allScopeMethod = globalSearchScopeClass.getMethod("allScope", Project::class.java)
-        val everythingScopeMethod = globalSearchScopeClass.getMethod("everythingScope", Project::class.java)
-        val fileScopeMethod = globalSearchScopeClass.getMethod("fileScope", PsiFile::class.java)
+        val projectScopeMethod = ReflectionCache.getMethod(globalSearchScopeClass, "projectScope", Project::class.java)
+        val allScopeMethod = ReflectionCache.getMethod(globalSearchScopeClass, "allScope", Project::class.java)
+        val everythingScopeMethod = ReflectionCache.getMethod(globalSearchScopeClass, "everythingScope", Project::class.java)
+        val fileScopeMethod = ReflectionCache.getMethod(globalSearchScopeClass, "fileScope", PsiFile::class.java)
 
-        val projectScope = projectScopeMethod.invoke(null, project)
-        val allScope = allScopeMethod.invoke(null, project)
+        val projectScope = projectScopeMethod?.invoke(null, project)
+        val allScope = allScopeMethod?.invoke(null, project)
 
         // Try indexed lookup first (fastest)
-        val findClassMethod = javaPsiFacadeClass.getMethod("findClass", String::class.java, globalSearchScopeClass)
+        val findClassMethod = ReflectionCache.getMethod(javaPsiFacadeClass, "findClass", String::class.java, globalSearchScopeClass)
 
-        val classInProject = findClassMethod.invoke(javaPsiFacade, qualifiedName, projectScope) as PsiElement?
+        val classInProject = findClassMethod?.invoke(javaPsiFacade, qualifiedName, projectScope) as PsiElement?
         if (classInProject != null) return PsiUtils.getNavigationElement(classInProject)
         // JavaPsiFace
-        val classInAll = findClassMethod.invoke(javaPsiFacade, qualifiedName, allScope) as PsiElement?
+        val classInAll = findClassMethod?.invoke(javaPsiFacade, qualifiedName, allScope) as PsiElement?
         if (classInAll != null) return PsiUtils.getNavigationElement(classInAll)
 
         // Fallback: search by filename if index lookup fails
@@ -190,25 +189,25 @@ object ClassResolver {
         val expectedPackage = qualifiedName.substringBeforeLast('.', "")
 
         // Try Java files
-        val everythingScope = everythingScopeMethod.invoke(null, project)
-        val getFilesByNameMethod = filenameIndexClass.getMethod(
+        val everythingScope = everythingScopeMethod?.invoke(null, project)
+        val getFilesByNameMethod = ReflectionCache.getMethod(filenameIndexClass,
             "getVirtualFilesByName",
             String::class.java,
             globalSearchScopeClass
         )
-        val javaFiles = getFilesByNameMethod.invoke(null, "$simpleClassName.java", everythingScope) as Collection<*>
+        val javaFiles = getFilesByNameMethod?.invoke(null, "$simpleClassName.java", everythingScope) as Collection<*>
 
-        val getPackageNameMethod = psiJavaFileClass.getMethod("getPackageName")
-        val getClassesMethod = psiJavaFileClass.getMethod("getClasses")
+        val getPackageNameMethod = ReflectionCache.getMethod(psiJavaFileClass, "getPackageName")
+        val getClassesMethod = ReflectionCache.getMethod(psiJavaFileClass, "getClasses")
 
         val psiManager = PsiManager.getInstance(project)
         for (virtualFile in javaFiles) {
             val psiFile = psiManager.findFile(virtualFile as VirtualFile) ?: continue
             if (!psiJavaFileClass.isInstance(psiFile)) continue
 
-            val packageName = getPackageNameMethod.invoke(psiFile) as String
+            val packageName = getPackageNameMethod?.invoke(psiFile) as String
             if (packageName == expectedPackage) {
-                val classes = getClassesMethod.invoke(psiFile) as Array<*>
+                val classes = getClassesMethod?.invoke(psiFile) as Array<*>
                 for (psiClass in classes) {
                     val psiElement = psiClass as PsiElement
                     val getNameMethod = ReflectionCache.getMethod(psiElement.javaClass, "getName")
@@ -219,11 +218,11 @@ object ClassResolver {
         }
 
         // Try Kotlin files
-        val ktFiles = getFilesByNameMethod.invoke(null, "$simpleClassName.kt", everythingScope) as Collection<*>
+        val ktFiles = getFilesByNameMethod?.invoke(null, "$simpleClassName.kt", everythingScope) as Collection<*>
         for (virtualFile in ktFiles) {
             val psiFile = psiManager.findFile(virtualFile as VirtualFile) ?: continue
-            val fileScope = fileScopeMethod.invoke(null, psiFile)
-            val ktClass = findClassMethod.invoke(javaPsiFacade, qualifiedName, fileScope)
+            val fileScope = fileScopeMethod?.invoke(null, psiFile)
+            val ktClass = findClassMethod?.invoke(javaPsiFacade, qualifiedName, fileScope)
             if (ktClass != null) return ktClass as PsiElement
         }
 
@@ -241,10 +240,10 @@ object ClassResolver {
         if (!PluginDetectors.java.isAvailable) return null
         return try {
             val javaPsiFacadeClass = Class.forName("com.intellij.psi.JavaPsiFacade")
-            val getInstanceMethod = javaPsiFacadeClass.getMethod("getInstance", Project::class.java)
-            val javaPsiFacade = getInstanceMethod.invoke(null, project)
-            val findPackageMethod = javaPsiFacadeClass.getMethod("findPackage", String::class.java)
-            findPackageMethod.invoke(javaPsiFacade, packageName) as? PsiElement
+            val getInstanceMethod = ReflectionCache.getMethod(javaPsiFacadeClass, "getInstance", Project::class.java)
+            val javaPsiFacade = getInstanceMethod?.invoke(null, project)
+            val findPackageMethod = ReflectionCache.getMethod(javaPsiFacadeClass, "findPackage", String::class.java)
+            findPackageMethod?.invoke(javaPsiFacade, packageName) as? PsiElement
         } catch (e: Exception) {
             rethrowControlFlowExceptions(e)
             null
