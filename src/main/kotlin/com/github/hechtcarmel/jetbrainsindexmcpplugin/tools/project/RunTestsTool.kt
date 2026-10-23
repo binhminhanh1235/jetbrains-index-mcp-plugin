@@ -571,6 +571,7 @@ class RunTestsTool : AbstractMcpTool() {
         val configName = runConfiguration.name
         val executor = DefaultRunExecutor.getRunExecutorInstance()
         val env = ExecutionEnvironmentBuilder.createOrNull(executor, runConfiguration)
+            ?.activeTarget()
             ?.build(if (activateToolWindow) null else suppressToolWindowActivation())
             ?: return createErrorResult("Could not build execution environment for '$configName'.")
 
