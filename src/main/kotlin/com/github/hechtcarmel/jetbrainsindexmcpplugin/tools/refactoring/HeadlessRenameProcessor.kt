@@ -206,6 +206,8 @@ internal class HeadlessRenameProcessor(
         return ConflictMessages.sanitizeAll(conflicts.values())
     }
 
+    override fun isPreviewUsages(usages: Array<out UsageInfo>): Boolean = false
+
     override fun showAutomaticRenamingDialog(automaticVariableRenamer: AutomaticRenamer): Boolean {
         selectSuggestedRenames(automaticVariableRenamer)
         return true
