@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.toArgumentFailure
@@ -206,7 +208,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
         return try {
             val phpIndex = getPhpIndex(project) ?: return emptyList()
 
-            val getAllSubclassesMethod = phpIndex.javaClass.getMethod("getAllSubclasses", String::class.java)
+            val getAllSubclassesMethod = ReflectionCache.getMethod(phpIndex.javaClass, "getAllSubclasses", String::class.java)
             val result = getAllSubclassesMethod.invoke(phpIndex, fqn)
 
             @Suppress("UNCHECKED_CAST")
@@ -268,7 +270,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun isEnum(phpClass: PsiElement): Boolean {
         return try {
-            phpClass.javaClass.getMethod("isEnum").invoke(phpClass) as? Boolean ?: false
+            ReflectionCache.getMethod(phpClass.javaClass, "isEnum").invoke(phpClass) as? Boolean ?: false
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
             false
@@ -317,7 +319,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getName(element: PsiElement): String? {
         return try {
-            val method = element.javaClass.getMethod("getName")
+            val method = ReflectionCache.getMethod(element.javaClass, "getName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -330,7 +332,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getFQN(element: PsiElement): String? {
         return try {
-            val method = element.javaClass.getMethod("getFQN")
+            val method = ReflectionCache.getMethod(element.javaClass, "getFQN")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -344,7 +346,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getSuperClass(phpClass: PsiElement): PsiElement? {
         return try {
-            val method = phpClass.javaClass.getMethod("getSuperClass")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "getSuperClass")
             method.invoke(phpClass) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -357,7 +359,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getImplementedInterfaces(phpClass: PsiElement): Array<*>? {
         return try {
-            val method = phpClass.javaClass.getMethod("getImplementedInterfaces")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "getImplementedInterfaces")
             method.invoke(phpClass) as? Array<*>
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -370,7 +372,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getTraits(phpClass: PsiElement): Array<*>? {
         return try {
-            val method = phpClass.javaClass.getMethod("getTraits")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "getTraits")
             method.invoke(phpClass) as? Array<*>
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -383,7 +385,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun isInterface(phpClass: PsiElement): Boolean {
         return try {
-            val method = phpClass.javaClass.getMethod("isInterface")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "isInterface")
             method.invoke(phpClass) as? Boolean ?: false
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -396,7 +398,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun isTrait(phpClass: PsiElement): Boolean {
         return try {
-            val method = phpClass.javaClass.getMethod("isTrait")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "isTrait")
             method.invoke(phpClass) as? Boolean ?: false
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -409,7 +411,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun isAbstract(phpClass: PsiElement): Boolean {
         return try {
-            val method = phpClass.javaClass.getMethod("isAbstract")
+            val method = ReflectionCache.getMethod(phpClass.javaClass, "isAbstract")
             method.invoke(phpClass) as? Boolean ?: false
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -422,7 +424,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
      */
     protected fun getContainingClass(method: PsiElement): PsiElement? {
         return try {
-            val getContainingClassMethod = method.javaClass.getMethod("getContainingClass")
+            val getContainingClassMethod = ReflectionCache.getMethod(method.javaClass, "getContainingClass")
             getContainingClassMethod.invoke(method) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -535,7 +537,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
         for (parameterType in parameterTypes) {
             val method = try {
-                val findMethodByNameMethod = phpClass.javaClass.getMethod("findMethodByName", parameterType)
+                val findMethodByNameMethod = ReflectionCache.getMethod(phpClass.javaClass, "findMethodByName", parameterType)
                 findMethodByNameMethod.invoke(phpClass, methodName) as? PsiElement
             } catch (_: NoSuchMethodException) {
                 null
@@ -566,7 +568,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
         for (collectionMethodName in collectionMethodNames) {
             val method = try {
-                val getMethodsMethod = phpClass.javaClass.getMethod(collectionMethodName)
+                val getMethodsMethod = ReflectionCache.getMethod(phpClass.javaClass, collectionMethodName)
                 toPsiElements(getMethodsMethod.invoke(phpClass)).find {
                     getName(it)?.equals(methodName, ignoreCase = true) == true
                 }
@@ -599,7 +601,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
         for (methodName in lookupMethods) {
             val element = try {
-                val method = phpIndex.javaClass.getMethod(methodName, String::class.java)
+                val method = ReflectionCache.getMethod(phpIndex.javaClass, methodName, String::class.java)
                 toPsiElements(method.invoke(phpIndex, fqn)).firstOrNull()
             } catch (e: NoSuchMethodException) {
                 LOG.debug("PhpIndex.$methodName(String) is not available")
@@ -643,7 +645,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
         for (methodName in collectionMethodNames) {
             val result = try {
-                val method = phpClass.javaClass.getMethod(methodName)
+                val method = ReflectionCache.getMethod(phpClass.javaClass, methodName)
                 toPsiElements(method.invoke(phpClass)).firstOrNull {
                     getName(it) == caseName
                 }
@@ -678,7 +680,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
         for (signature in signatureCandidates) {
             val field = try {
-                val method = phpClass.javaClass.getMethod("findFieldByName", *signature)
+                val method = ReflectionCache.getMethod(phpClass.javaClass, "findFieldByName", *signature)
                 method.invoke(phpClass, fieldName, findConstant) as? PsiElement
             } catch (_: NoSuchMethodException) {
                 null
@@ -703,7 +705,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
     ): PsiElement? {
         for (methodName in listOf("getOwnFields", "getFields")) {
             val field = try {
-                val method = phpClass.javaClass.getMethod(methodName)
+                val method = ReflectionCache.getMethod(phpClass.javaClass, methodName)
                 toPsiElements(method.invoke(phpClass)).find {
                     isField(it) && getName(it) == fieldName && isConstantField(it) == expectedConstant
                 }
@@ -725,7 +727,7 @@ abstract class BasePhpHandler<T> : LanguageHandler<T> {
 
     private fun isConstantField(field: PsiElement): Boolean {
         return try {
-            val method = field.javaClass.getMethod("isConstant")
+            val method = ReflectionCache.getMethod(field.javaClass, "isConstant")
             method.invoke(field) as? Boolean ?: false
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
@@ -1192,7 +1194,7 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
 
     private fun invokeBoolean(target: Any, methodName: String): Boolean {
         return try {
-            target.javaClass.getMethod(methodName).invoke(target) as? Boolean ?: false
+            ReflectionCache.getMethod(target.javaClass, methodName).invoke(target) as? Boolean ?: false
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             false
@@ -1205,7 +1207,7 @@ class PhpStructureHandler : BasePhpHandler<List<StructureNode>>(), StructureHand
 
     private fun invokeObject(target: Any, methodName: String): Any? {
         return try {
-            target.javaClass.getMethod(methodName).invoke(target)
+            ReflectionCache.getMethod(target.javaClass, methodName).invoke(target)
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             null
@@ -1862,7 +1864,7 @@ class PhpCallHierarchyHandler : BasePhpHandler<CallHierarchyData>(), CallHierarc
 
     private fun resolveReference(reference: PsiElement): PsiElement? {
         return try {
-            val resolveMethod = reference.javaClass.getMethod("resolve")
+            val resolveMethod = ReflectionCache.getMethod(reference.javaClass, "resolve")
             resolveMethod.invoke(reference) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -2036,20 +2038,20 @@ class PhpSuperMethodsHandler : BasePhpHandler<SuperMethodsData>(), SuperMethodsH
     private fun buildMethodSignature(method: PsiElement): String {
         return try {
             // Try to get parameters
-            val getParametersMethod = method.javaClass.getMethod("getParameters")
+            val getParametersMethod = ReflectionCache.getMethod(method.javaClass, "getParameters")
             val parameters = getParametersMethod.invoke(method) as? Array<*> ?: emptyArray<Any>()
 
             val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
                 try {
-                    val getName = param.javaClass.getMethod("getName")
+                    val getName = ReflectionCache.getMethod(param.javaClass, "getName")
                     val name = getName.invoke(param) as? String ?: return@mapNotNull null
 
                     // Try to get type
                     val type = try {
-                        val getType = param.javaClass.getMethod("getDeclaredType")
+                        val getType = ReflectionCache.getMethod(param.javaClass, "getDeclaredType")
                         val typeElement = getType.invoke(param)
                         if (typeElement != null) {
-                            val toStringMethod = typeElement.javaClass.getMethod("toString")
+                            val toStringMethod = ReflectionCache.getMethod(typeElement.javaClass, "toString")
                             toStringMethod.invoke(typeElement) as? String
                         } else null
                     } catch (e: Exception) {

@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiPolyVariantReference
@@ -9,6 +11,8 @@ import com.intellij.psi.PsiPolyVariantReference
  *
  * The generic IntelliJ PSI resolution path can resolve dotted Python expressions such as
  * `json.dumps(...)` to a module/package directory when invoked on the member token. This helper
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
  * refines those cases by reusing PyCharm's own qualified-reference and call-resolution APIs via
  * reflection, while preserving normal qualifier navigation semantics.
  */
@@ -89,7 +93,7 @@ internal object PythonDefinitionResolver {
 
     private fun invokeNoArg(target: Any, methodName: String): Any? {
         return runCatching {
-            target.javaClass.getMethod(methodName).invoke(target)
+            ReflectionCache.getMethod(target.javaClass, methodName).invoke(target)
         }.getOrNull()
     }
 

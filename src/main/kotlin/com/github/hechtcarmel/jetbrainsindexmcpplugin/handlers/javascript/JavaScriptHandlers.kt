@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
@@ -1046,7 +1048,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun getName(element: PsiElement): String? {
         return try {
-            val method = element.javaClass.getMethod("getName")
+            val method = ReflectionCache.getMethod(element.javaClass, "getName")
             method.invoke(element) as? String
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
@@ -1059,7 +1061,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun getQualifiedName(element: PsiElement): String? {
         return try {
-            val method = element.javaClass.getMethod("getQualifiedName")
+            val method = ReflectionCache.getMethod(element.javaClass, "getQualifiedName")
             method.invoke(element) as? String
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
@@ -1072,7 +1074,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun getClassKind(jsClass: PsiElement): String {
         return try {
-            val isInterfaceMethod = jsClass.javaClass.getMethod("isInterface")
+            val isInterfaceMethod = ReflectionCache.getMethod(jsClass.javaClass, "isInterface")
             val isInterface = isInterfaceMethod.invoke(jsClass) as? Boolean ?: false
             if (isInterface) "INTERFACE" else "CLASS"
         } catch (failure: Exception) {
@@ -1096,7 +1098,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun getSuperClasses(jsClass: PsiElement): Array<*>? {
         return try {
-            val method = jsClass.javaClass.getMethod("getSuperClasses")
+            val method = ReflectionCache.getMethod(jsClass.javaClass, "getSuperClasses")
             method.invoke(jsClass) as? Array<*>
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
@@ -1109,7 +1111,7 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun getImplementedInterfaces(jsClass: PsiElement): Array<*>? {
         return try {
-            val method = jsClass.javaClass.getMethod("getImplementedInterfaces")
+            val method = ReflectionCache.getMethod(jsClass.javaClass, "getImplementedInterfaces")
             method.invoke(jsClass) as? Array<*>
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
@@ -1122,12 +1124,12 @@ abstract class BaseJavaScriptHandler<T> : LanguageHandler<T> {
      */
     protected fun findMethodInClass(jsClass: PsiElement, methodName: String): PsiElement? {
         return try {
-            val findFunctionMethod = jsClass.javaClass.getMethod("findFunctionByName", String::class.java)
+            val findFunctionMethod = ReflectionCache.getMethod(jsClass.javaClass, "findFunctionByName", String::class.java)
             findFunctionMethod.invoke(jsClass, methodName) as? PsiElement
         } catch (failure: Exception) {
             failure.rethrowIfControlFlow()
             try {
-                val getFunctionsMethod = jsClass.javaClass.getMethod("getFunctions")
+                val getFunctionsMethod = ReflectionCache.getMethod(jsClass.javaClass, "getFunctions")
                 val functions = getFunctionsMethod.invoke(jsClass) as? Array<*> ?: return null
                 functions.filterIsInstance<PsiElement>().find { getName(it) == methodName }
             } catch (failure: Exception) {
@@ -1334,7 +1336,7 @@ class JavaScriptTypeHierarchyHandler : BaseJavaScriptHandler<TypeHierarchyData>(
         val query = searchMethod.invoke(null, jsClass)
 
         val results = mutableListOf<TypeElementData>()
-        val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
+        val forEachMethod = ReflectionCache.getMethod(query.javaClass, "forEach", Processor::class.java)
         forEachMethod.invoke(query, Processor<Any> { inheritor ->
             if (
                 inheritor is PsiElement &&
@@ -1473,7 +1475,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
         val query = searchMethod.invoke(null, jsFunction)
 
         val results = mutableListOf<ImplementationData>()
-        val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
+        val forEachMethod = ReflectionCache.getMethod(query.javaClass, "forEach", Processor::class.java)
         forEachMethod.invoke(query, Processor<Any> { overridingMethod ->
             if (overridingMethod is PsiElement && shouldIncludeNavigationElement(searchScope, overridingMethod)) {
                 val file = overridingMethod.containingFile?.virtualFile
@@ -1541,7 +1543,7 @@ class JavaScriptImplementationsHandler : BaseJavaScriptHandler<List<Implementati
         val query = searchMethod.invoke(null, jsClass)
 
         val results = mutableListOf<ImplementationData>()
-        val forEachMethod = query.javaClass.getMethod("forEach", Processor::class.java)
+        val forEachMethod = ReflectionCache.getMethod(query.javaClass, "forEach", Processor::class.java)
         forEachMethod.invoke(query, Processor<Any> { inheritor ->
             if (inheritor is PsiElement && shouldIncludeNavigationElement(searchScope, inheritor)) {
                 val file = inheritor.containingFile?.virtualFile
@@ -2246,10 +2248,10 @@ class JavaScriptCallHierarchyHandler : BaseJavaScriptHandler<CallHierarchyData>(
 
     private fun resolveCallExpression(callExpr: PsiElement): PsiElement? {
         return try {
-            val methodExprMethod = callExpr.javaClass.getMethod("getMethodExpression")
+            val methodExprMethod = ReflectionCache.getMethod(callExpr.javaClass, "getMethodExpression")
             val methodExpr = methodExprMethod.invoke(callExpr) as? PsiElement ?: return null
 
-            val referenceMethod = methodExpr.javaClass.getMethod("getReference")
+            val referenceMethod = ReflectionCache.getMethod(methodExpr.javaClass, "getReference")
             val reference = referenceMethod.invoke(methodExpr) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (failure: Exception) {
@@ -2411,18 +2413,18 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
 
     private fun buildMethodSignature(jsFunction: PsiElement): String {
         return try {
-            val getParameterListMethod = jsFunction.javaClass.getMethod("getParameterList")
+            val getParameterListMethod = ReflectionCache.getMethod(jsFunction.javaClass, "getParameterList")
             val parameterList = getParameterListMethod.invoke(jsFunction)
-            val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
+            val getParametersMethod = ReflectionCache.getMethod(parameterList.javaClass, "getParameters")
             val parameters = getParametersMethod.invoke(parameterList) as? Array<*> ?: emptyArray<Any>()
 
             val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
                 try {
-                    val getNameMethod = param.javaClass.getMethod("getName")
+                    val getNameMethod = ReflectionCache.getMethod(param.javaClass, "getName")
                     val name = getNameMethod.invoke(param) as? String
 
                     val type = try {
-                        val getTypeMethod = param.javaClass.getMethod("getType")
+                        val getTypeMethod = ReflectionCache.getMethod(param.javaClass, "getType")
                         val typeElement = getTypeMethod.invoke(param)
                         typeElement?.toString()
                     } catch (failure: Exception) {
@@ -2440,7 +2442,7 @@ class JavaScriptSuperMethodsHandler : BaseJavaScriptHandler<SuperMethodsData>(),
             val functionName = getName(jsFunction) ?: "unknown"
 
             val returnType = try {
-                val getReturnTypeMethod = jsFunction.javaClass.getMethod("getReturnType")
+                val getReturnTypeMethod = ReflectionCache.getMethod(jsFunction.javaClass, "getReturnType")
                 val returnTypeElement = getReturnTypeMethod.invoke(jsFunction)
                 returnTypeElement?.toString()
             } catch (failure: Exception) {
@@ -2578,7 +2580,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
 
         try {
             // Get class methods via getFunctions()
-            val getFunctionsMethod = jsClass.javaClass.getMethod("getFunctions")
+            val getFunctionsMethod = ReflectionCache.getMethod(jsClass.javaClass, "getFunctions")
             val functions = getFunctionsMethod.invoke(jsClass) as? Array<*> ?: emptyArray<Any?>()
             for (func in functions) {
                 if (func is PsiElement) {
@@ -2606,7 +2608,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
 
         try {
             // Get class fields via getFields()
-            val getFieldsMethod = jsClass.javaClass.getMethod("getFields")
+            val getFieldsMethod = ReflectionCache.getMethod(jsClass.javaClass, "getFields")
             val fields = getFieldsMethod.invoke(jsClass) as? Array<*> ?: emptyArray<Any?>()
             for (field in fields) {
                 if (field is PsiElement) {
@@ -2692,10 +2694,10 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
     private fun getJavaScriptModifiers(element: PsiElement): List<String> {
         val modifiers = mutableListOf<String>()
         try {
-            val attrListMethod = element.javaClass.getMethod("getAttributeList")
+            val attrListMethod = ReflectionCache.getMethod(element.javaClass, "getAttributeList")
             val attrList = attrListMethod.invoke(element) ?: return modifiers
 
-            val accessTypeMethod = attrList.javaClass.getMethod("getAccessType")
+            val accessTypeMethod = ReflectionCache.getMethod(attrList.javaClass, "getAccessType")
             val accessType = accessTypeMethod.invoke(attrList)
             val accessName = accessType?.toString()?.lowercase()
             if (accessName != null && accessName != "public" && accessName != "package_local") {
@@ -2703,7 +2705,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             }
 
             try {
-                val isStaticMethod = attrList.javaClass.getMethod("hasModifier", String::class.java)
+                val isStaticMethod = ReflectionCache.getMethod(attrList.javaClass, "hasModifier", String::class.java)
                 if (isStaticMethod.invoke(attrList, "static") as? Boolean == true) {
                     modifiers.add("static")
                 }
@@ -2741,14 +2743,14 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
 
     private fun buildFunctionSignature(jsFunction: PsiElement): String {
         return try {
-            val getParameterListMethod = jsFunction.javaClass.getMethod("getParameterList")
+            val getParameterListMethod = ReflectionCache.getMethod(jsFunction.javaClass, "getParameterList")
             val parameterList = getParameterListMethod.invoke(jsFunction) ?: return "()"
-            val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
+            val getParametersMethod = ReflectionCache.getMethod(parameterList.javaClass, "getParameters")
             val parameters = getParametersMethod.invoke(parameterList) as? Array<*> ?: return "()"
 
             val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
                 try {
-                    val getNameMethod = param.javaClass.getMethod("getName")
+                    val getNameMethod = ReflectionCache.getMethod(param.javaClass, "getName")
                     getNameMethod.invoke(param) as? String
                 } catch (failure: Exception) {
                     failure.rethrowIfControlFlow()

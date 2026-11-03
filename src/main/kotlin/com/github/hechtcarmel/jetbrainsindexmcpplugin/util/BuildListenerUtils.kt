@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
@@ -238,24 +240,24 @@ object BuildListenerUtils {
 
         if (!msgEventClass.isInstance(event)) return null
 
-        val kindEnum = event.javaClass.getMethod("getKind").invoke(event)
+        val kindEnum = ReflectionCache.getMethod(event.javaClass, "getKind").invoke(event)
         val kindName = kindEnum.toString()
 
         if (kindName != "ERROR" && kindName != "WARNING") return null
 
-        val message = event.javaClass.getMethod("getMessage").invoke(event) as? String ?: return null
+        val message = ReflectionCache.getMethod(event.javaClass, "getMessage").invoke(event) as? String ?: return null
         var file: String? = null
         var line: Int? = null
         var column: Int? = null
 
         if (fileMsgEventClass.isInstance(event)) {
             try {
-                val filePosition = event.javaClass.getMethod("getFilePosition").invoke(event)
+                val filePosition = ReflectionCache.getMethod(event.javaClass, "getFilePosition").invoke(event)
                 if (filePosition != null) {
-                    val posFile = filePosition.javaClass.getMethod("getFile").invoke(filePosition) as? java.io.File
+                    val posFile = ReflectionCache.getMethod(filePosition.javaClass, "getFile").invoke(filePosition) as? java.io.File
                     file = posFile?.absolutePath?.let { ProjectUtils.getRelativePath(project, it) }
-                    line = (filePosition.javaClass.getMethod("getStartLine").invoke(filePosition) as? Int)?.plus(1)
-                    column = (filePosition.javaClass.getMethod("getStartColumn").invoke(filePosition) as? Int)?.plus(1)
+                    line = (ReflectionCache.getMethod(filePosition.javaClass, "getStartLine").invoke(filePosition) as? Int)?.plus(1)
+                    column = (ReflectionCache.getMethod(filePosition.javaClass, "getStartColumn").invoke(filePosition) as? Int)?.plus(1)
                 }
             } catch (_: Exception) { }
         }
@@ -280,7 +282,7 @@ object BuildListenerUtils {
         if (!outEventClass.isInstance(event)) return null
 
         return try {
-            val text = event.javaClass.getMethod("getMessage").invoke(event) as? String
+            val text = ReflectionCache.getMethod(event.javaClass, "getMessage").invoke(event) as? String
             if (text.isNullOrBlank()) null else text
         } catch (_: Exception) { null }
     }
@@ -291,7 +293,7 @@ object BuildListenerUtils {
         if (!finishClass.isInstance(event)) return false
 
         return try {
-            val result = event.javaClass.getMethod("getResult").invoke(event)
+            val result = ReflectionCache.getMethod(event.javaClass, "getResult").invoke(event)
             result != null && failureClass.isInstance(result)
         } catch (_: Exception) {
             false
@@ -304,10 +306,10 @@ object BuildListenerUtils {
         if (!finishClass.isInstance(event)) return emptyList()
 
         return try {
-            val result = event.javaClass.getMethod("getResult").invoke(event)
+            val result = ReflectionCache.getMethod(event.javaClass, "getResult").invoke(event)
             if (result == null || !failureClass.isInstance(result)) return emptyList()
 
-            val failures = result.javaClass.getMethod("getFailures").invoke(result) as? Iterable<*>
+            val failures = ReflectionCache.getMethod(result.javaClass, "getFailures").invoke(result) as? Iterable<*>
                 ?: return emptyList()
             val messages = linkedSetOf<BuildMessage>()
             for (failure in failures) {
@@ -340,7 +342,7 @@ object BuildListenerUtils {
         }
 
         val causes = try {
-            failure.javaClass.getMethod("getCauses").invoke(failure) as? Iterable<*>
+            ReflectionCache.getMethod(failure.javaClass, "getCauses").invoke(failure) as? Iterable<*>
         } catch (_: Exception) {
             null
         } ?: return
@@ -353,7 +355,7 @@ object BuildListenerUtils {
 
     private fun invokeString(target: Any, methodName: String): String? =
         try {
-            target.javaClass.getMethod(methodName).invoke(target) as? String
+            ReflectionCache.getMethod(target.javaClass, methodName).invoke(target) as? String
         } catch (_: Exception) {
             null
         }
@@ -370,7 +372,7 @@ object BuildListenerUtils {
         val result = mutableListOf<BuildMessage>()
         try {
             val categoryClass = Class.forName("com.intellij.openapi.compiler.CompilerMessageCategory")
-            val getMessagesMethod = compileContext.javaClass.getMethod("getMessages", categoryClass)
+            val getMessagesMethod = ReflectionCache.getMethod(compileContext.javaClass, "getMessages", categoryClass)
 
             for (categoryName in listOf("ERROR", "WARNING")) {
                 val category = java.lang.Enum.valueOf(
@@ -426,7 +428,7 @@ object BuildListenerUtils {
         val rawOutput = StringBuilder()
         try {
             val categoryClass = Class.forName("com.intellij.openapi.compiler.CompilerMessageCategory")
-            val getMessagesMethod = compileContext.javaClass.getMethod("getMessages", categoryClass)
+            val getMessagesMethod = ReflectionCache.getMethod(compileContext.javaClass, "getMessages", categoryClass)
 
             for (categoryName in listOf("INFORMATION", "STATISTICS")) {
                 try {
@@ -437,7 +439,7 @@ object BuildListenerUtils {
                     val infoMessages = getMessagesMethod.invoke(compileContext, category) as? Array<*> ?: continue
                     for (msg in infoMessages) {
                         if (msg == null) continue
-                        val text = msg.javaClass.getMethod("getMessage").invoke(msg) as? String ?: continue
+                        val text = ReflectionCache.getMethod(msg.javaClass, "getMessage").invoke(msg) as? String ?: continue
                         rawOutput.append(text).append('\n')
                     }
                 } catch (_: Exception) { }

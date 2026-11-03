@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -86,7 +88,7 @@ class GetSignatureTool : AbstractMcpTool() {
                 if (retTypeMethod != null) {
                     val typeObj = retTypeMethod.invoke(target)
                     if (typeObj != null) {
-                        returnType = typeObj.javaClass.getMethod("getPresentableText").invoke(typeObj) as? String
+                        returnType = ReflectionCache.getMethod(typeObj.javaClass, "getPresentableText").invoke(typeObj) as? String
                     }
                 }
 
@@ -95,14 +97,14 @@ class GetSignatureTool : AbstractMcpTool() {
                 if (paramListMethod != null) {
                     val paramListObj = paramListMethod.invoke(target)
                     if (paramListObj != null) {
-                        val getParamsMethod = paramListObj.javaClass.getMethod("getParameters")
+                        val getParamsMethod = ReflectionCache.getMethod(paramListObj.javaClass, "getParameters")
                         val paramsArray = getParamsMethod.invoke(paramListObj) as Array<*>
                         for (p in paramsArray) {
                             if (p != null) {
-                                val pName = p.javaClass.getMethod("getName").invoke(p) as? String ?: "unknown"
-                                val pTypeObj = p.javaClass.getMethod("getType").invoke(p)
+                                val pName = ReflectionCache.getMethod(p.javaClass, "getName").invoke(p) as? String ?: "unknown"
+                                val pTypeObj = ReflectionCache.getMethod(p.javaClass, "getType").invoke(p)
                                 val pType = if (pTypeObj != null) {
-                                    pTypeObj.javaClass.getMethod("getPresentableText").invoke(pTypeObj) as? String
+                                    ReflectionCache.getMethod(pTypeObj.javaClass, "getPresentableText").invoke(pTypeObj) as? String
                                 } else null
                                 parameters.add(ParameterInfo(pName, pType, null))
                             }
@@ -115,7 +117,7 @@ class GetSignatureTool : AbstractMcpTool() {
                 if (containingClassMethod != null) {
                     val clsObj = containingClassMethod.invoke(target)
                     if (clsObj != null) {
-                        containingClass = clsObj.javaClass.getMethod("getName").invoke(clsObj) as? String
+                        containingClass = ReflectionCache.getMethod(clsObj.javaClass, "getName").invoke(clsObj) as? String
                     }
                 }
 

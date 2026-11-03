@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -286,6 +288,8 @@ class RunTestsTool : AbstractMcpTool() {
         - targets: batch array of fully qualified class names or class#method (max 50 entries) — runs all
           specified classes in a single test run — Java/Kotlin only.
         - package: fully qualified package name (e.g. "com.example.service") — runs all tests in the package — Java/Kotlin.
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
         - directory: relative path to test source directory (e.g. "src/test/kotlin") — works for Java/Kotlin, Python, JS, Go.
         - module: IntelliJ module name — runs all tests in that module.
 
@@ -318,6 +322,8 @@ class RunTestsTool : AbstractMcpTool() {
           (com.example.MyTest#testFoo).
         - targets: array of fully qualified class names or class#method (max 50 entries) to run in a single run.
         - package: fully qualified package name to run all tests in that package.
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
         - directory: relative path to test source directory to run all tests in that directory.
         - module: IntelliJ module name to run all tests in that module.
         - runId: id from a previous {"status": "running"} response; attaches to that run and keeps waiting.
@@ -354,6 +360,8 @@ class RunTestsTool : AbstractMcpTool() {
         .stringProperty(
             ParamNames.PACKAGE,
             "Package scope: fully qualified package name (e.g. 'com.example.service'). " +
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
                     "Runs all tests in the package. Exactly one test selector is required."
         )
         .stringProperty(
@@ -474,7 +482,11 @@ class RunTestsTool : AbstractMcpTool() {
                 val runConfiguration = resolvePackageRunConfiguration(project, mode.packageName)
                     ?: return createErrorResult(
                         "Could not create a run configuration for package '${mode.packageName}'. " +
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
                                 "Ensure the package exists and contains tests."
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
                     )
 
                 startRun(
@@ -847,7 +859,7 @@ class RunTestsTool : AbstractMcpTool() {
                 try {
                     val settings = runManager.createConfiguration(name, factory)
                     val config = settings.configuration
-                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    val data = ReflectionCache.getMethod(config.javaClass, "getPersistentData").invoke(config)
                     data.javaClass.getField("TEST_OBJECT").set(data, "pattern")
 
                     val patternSet = java.util.LinkedHashSet<String>()
@@ -859,7 +871,7 @@ class RunTestsTool : AbstractMcpTool() {
                             patternSet.add(cls)
                         }
                     }
-                    val setPatternsMethod = data.javaClass.getMethod("setPatterns", java.util.LinkedHashSet::class.java)
+                    val setPatternsMethod = ReflectionCache.getMethod(data.javaClass, "setPatterns", java.util.LinkedHashSet::class.java)
                     setPatternsMethod.invoke(data, patternSet)
 
                     if (psiElements.isNotEmpty()) {
@@ -868,7 +880,7 @@ class RunTestsTool : AbstractMcpTool() {
                             val module = ProjectFileIndex.getInstance(project).getModuleForFile(firstFile)
                             if (module != null) {
                                 try {
-                                    config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
+                                    ReflectionCache.getMethod(config.javaClass, "setModule", Module::class.java).invoke(config, module)
                                 } catch (_: Exception) {}
                             }
                         }
@@ -909,6 +921,8 @@ class RunTestsTool : AbstractMcpTool() {
         }
 
         // Direct JUnit package configuration
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
         val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
         val factory = junitType?.configurationFactories?.firstOrNull()
         if (factory != null) {
@@ -916,15 +930,17 @@ class RunTestsTool : AbstractMcpTool() {
                 try {
                     val settings = runManager.createConfiguration("All in $packageName", factory)
                     val config = settings.configuration
-                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    val data = ReflectionCache.getMethod(config.javaClass, "getPersistentData").invoke(config)
                     data.javaClass.getField("TEST_OBJECT").set(data, "package")
                     data.javaClass.getField("PACKAGE_NAME").set(data, packageName)
-                    val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                    val setScopeMethod = ReflectionCache.getMethod(data.javaClass, "setScope", TestSearchScope::class.java)
                     setScopeMethod.invoke(data, TestSearchScope.WHOLE_PROJECT)
                     runManager.setTemporaryConfiguration(settings)
                     settings
                 } catch (e: Exception) {
                     LOG.warn("Failed to create package run configuration reflectively", e)
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
                     null
                 }
             }
@@ -964,14 +980,14 @@ class RunTestsTool : AbstractMcpTool() {
                 try {
                     val settings = runManager.createConfiguration("All in ${vFile.name}", factory)
                     val config = settings.configuration
-                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    val data = ReflectionCache.getMethod(config.javaClass, "getPersistentData").invoke(config)
                     data.javaClass.getField("TEST_OBJECT").set(data, "directory")
-                    data.javaClass.getMethod("setDirName", String::class.java).invoke(data, vFile.path)
+                    ReflectionCache.getMethod(data.javaClass, "setDirName", String::class.java).invoke(data, vFile.path)
                     val module = ProjectFileIndex.getInstance(project).getModuleForFile(vFile)
                     if (module != null) {
                         try {
-                            config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
-                            val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                            ReflectionCache.getMethod(config.javaClass, "setModule", Module::class.java).invoke(config, module)
+                            val setScopeMethod = ReflectionCache.getMethod(data.javaClass, "setScope", TestSearchScope::class.java)
                             setScopeMethod.invoke(data, TestSearchScope.SINGLE_MODULE)
                         } catch (_: Exception) {}
                     }
@@ -996,6 +1012,8 @@ class RunTestsTool : AbstractMcpTool() {
             ?: return null
 
         // Direct JUnit module configuration (TEST_PACKAGE with empty package name in module scope)
+
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
         val junitType = ConfigurationTypeUtil.findConfigurationType("JUnit")
         val factory = junitType?.configurationFactories?.firstOrNull()
         if (factory != null) {
@@ -1003,11 +1021,11 @@ class RunTestsTool : AbstractMcpTool() {
                 try {
                     val s = runManager.createConfiguration("All in $moduleName", factory)
                     val config = s.configuration
-                    config.javaClass.getMethod("setModule", Module::class.java).invoke(config, module)
-                    val data = config.javaClass.getMethod("getPersistentData").invoke(config)
+                    ReflectionCache.getMethod(config.javaClass, "setModule", Module::class.java).invoke(config, module)
+                    val data = ReflectionCache.getMethod(config.javaClass, "getPersistentData").invoke(config)
                     data.javaClass.getField("TEST_OBJECT").set(data, "package")
                     data.javaClass.getField("PACKAGE_NAME").set(data, "")
-                    val setScopeMethod = data.javaClass.getMethod("setScope", TestSearchScope::class.java)
+                    val setScopeMethod = ReflectionCache.getMethod(data.javaClass, "setScope", TestSearchScope::class.java)
                     setScopeMethod.invoke(data, TestSearchScope.SINGLE_MODULE)
                     runManager.setTemporaryConfiguration(s)
                     s
