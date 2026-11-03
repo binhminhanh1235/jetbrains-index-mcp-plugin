@@ -391,19 +391,22 @@ object OptimizedSymbolSearch {
         return kindByClass.get(element.javaClass)
     }
 
+    private val isClassOrTypeCache = object : ClassValue<Boolean>() {
+        override fun computeValue(type: Class<*>): Boolean {
+            val name = type.simpleName.lowercase()
+            return name.contains("class") || name.contains("type")
+        }
+    }
+
     private fun getContainerName(element: PsiElement): String? {
         return try {
             // Try to find containing class/type
             var parent = element.parent
             while (parent != null) {
-                if (parent is PsiNamedElement) {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
-                    if (parentClassName.contains("class") || parentClassName.contains("type")) {
+                if (isClassOrTypeCache.get(parent.javaClass)) {
+                    if (parent is PsiNamedElement) {
                         parent.name?.let { return it }
-                    }
-                } else {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
-                    if (parentClassName.contains("class") || parentClassName.contains("type")) {
+                    } else {
                         val nameMethod = ReflectionCache.getMethod(parent.javaClass, "getName")
                         val name = nameMethod?.invoke(parent) as? String
                         if (name != null) return name

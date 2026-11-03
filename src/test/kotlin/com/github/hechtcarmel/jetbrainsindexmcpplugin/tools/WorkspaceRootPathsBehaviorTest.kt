@@ -107,7 +107,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         registerSourceRoot("ws441-local")
         writeProjectFile("ws441-local/WsHelper441.java", "class WsHelper441 {}\n")
 
-        val result = FindFileTool().execute(project, buildJsonObject { put("query", "WsHelper441.java") })
+        val result = FindFileTool().execute(project, buildJsonObject { put("compact", false); put("query", "WsHelper441.java") })
 
         assertToolSucceeded("ide_find_file", result)
         val files = json.decodeFromString<FindFileResult>(toolText(result)).files
@@ -130,6 +130,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val inB = writeInRoot(svcB, "src/com/example/WsDup441.java", source)
 
         val result = FindClassTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("query", "WsDup441")
             put("matchMode", "exact")
         })
@@ -165,6 +166,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         )
 
         val result = FindUsagesTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("file", target.path)
             put("line", 3)
             put("column", 14)
@@ -186,7 +188,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val inA = writeInRoot(svcA, "src/com/example/WsConfig441.java", content)
         val inB = writeInRoot(svcB, "src/com/example/WsConfig441.java", content)
 
-        val search = SearchTextTool().execute(project, buildJsonObject { put("query", "wsRoundTrip441") })
+        val search = SearchTextTool().execute(project, buildJsonObject { put("compact", false); put("query", "wsRoundTrip441") })
         assertToolSucceeded("ide_search_text", search)
         val reported = json.decodeFromString<SearchTextResult>(toolText(search)).matches.map { it.file }
         assertEquals(
@@ -196,6 +198,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         )
 
         val edit = ReplaceTextInFileTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("file", reported.single { it.startsWith("${svcB.path}/") })
             put("searchText", "wsRoundTrip441")
             put("replaceText", "wsEdited441")
@@ -214,6 +217,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         writeInRoot(svcB, "src/com/example/WsGlob441.java", content)
 
         val result = SearchTextTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("query", "wsAbsoluteGlob441")
             putJsonArray("paths") { add("${svcA.path}/src") }
         })
@@ -234,6 +238,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         writeInRoot(svcA, "src/generated/WsGen441.java", "class WsGen441 { String v = \"wsExclude441\"; }\n")
 
         val result = SearchTextTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("query", "wsExclude441")
             putJsonArray("paths") { add("!**/generated/**") }
         })
@@ -251,6 +256,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         writeInRoot(svcA, "src/wsonlya441/WsOnly441.java", "class WsOnly441 {}\n")
 
         val result = SearchTextTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("query", "WsOnly441")
             putJsonArray("paths") { add("src/wsonlya441/**") }
         })
@@ -270,6 +276,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         writeProjectFile("ws441-rooted/beta/WsRootedMiss.java", "class WsRootedMiss { String v = \"wsRooted441\"; }")
 
         val result = SearchTextTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("query", "wsRooted441")
             putJsonArray("paths") { add("/ws441-rooted/alpha") }
         })

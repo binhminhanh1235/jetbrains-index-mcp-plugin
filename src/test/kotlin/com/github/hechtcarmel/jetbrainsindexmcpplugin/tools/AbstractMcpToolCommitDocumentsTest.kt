@@ -32,7 +32,7 @@ class AbstractMcpToolCommitDocumentsTest : BasePlatformTestCase() {
 
         PlatformTestUtil.callOnBgtSynchronously({
             runBlocking {
-                withContext(ModalityState.any().asContextElement()) {
+                withContext(ModalityState.defaultModalityState().asContextElement()) {
                     ExposedCommitTool().commitFromTest(project)
                 }
             }
