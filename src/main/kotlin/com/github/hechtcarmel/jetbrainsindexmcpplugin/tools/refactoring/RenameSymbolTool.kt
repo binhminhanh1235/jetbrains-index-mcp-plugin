@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -1795,7 +1793,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 return 0
             }
 
-            val declarationScope = ReflectionCache.getMethod(element.javaClass, "getDeclarationScope").invoke(element)
+            val declarationScope = element.javaClass.getMethod("getDeclarationScope").invoke(element)
             val psiMethodClass = Class.forName("com.intellij.psi.PsiMethod")
             if (!psiMethodClass.isInstance(declarationScope)) {
                 return 0

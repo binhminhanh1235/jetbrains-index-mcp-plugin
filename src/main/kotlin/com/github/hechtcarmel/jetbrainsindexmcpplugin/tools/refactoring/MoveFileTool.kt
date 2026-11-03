@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
@@ -61,8 +59,6 @@ open class MoveFileTool : AbstractRefactoringTool() {
 
     override val description = """
         Move a file to a new directory using the IDE's refactoring engine. Applies language-aware reference and namespace/package updates when the IDE provides a semantic move backend for that file type.
-
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 
         Use when relocating files to maintain correct imports and references.
 
@@ -472,7 +468,7 @@ import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
 
             processor.javaClass.methods.firstOrNull { it.name == "setPreviewUsages" && it.parameterCount == 1 }
                 ?.invoke(processor, false)
-            ReflectionCache.getMethod(processor.javaClass, "run").invoke(processor)
+            processor.javaClass.getMethod("run").invoke(processor)
         } catch (e: ReflectiveOperationException) {
             throw IllegalStateException(
                 "PhpStorm semantic move is unavailable in this IDE build: ${e.cause?.message ?: e.message}",

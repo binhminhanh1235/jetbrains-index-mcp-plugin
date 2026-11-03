@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.go
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
@@ -277,7 +275,7 @@ abstract class BaseGoHandler<T> : LanguageHandler<T> {
      */
     protected fun getName(element: PsiElement): String? {
         return try {
-            val method = ReflectionCache.getMethod(element.javaClass, "getName")
+            val method = element.javaClass.getMethod("getName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -290,7 +288,7 @@ abstract class BaseGoHandler<T> : LanguageHandler<T> {
      */
     protected fun getQualifiedName(element: PsiElement): String? {
         return try {
-            val method = ReflectionCache.getMethod(element.javaClass, "getQualifiedName")
+            val method = element.javaClass.getMethod("getQualifiedName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -304,7 +302,7 @@ abstract class BaseGoHandler<T> : LanguageHandler<T> {
      */
     protected fun getSpecType(goTypeSpec: PsiElement): PsiElement? {
         return try {
-            val method = ReflectionCache.getMethod(goTypeSpec.javaClass, "getSpecType")
+            val method = goTypeSpec.javaClass.getMethod("getSpecType")
             method.invoke(goTypeSpec) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -456,13 +454,13 @@ class GoTypeHierarchyHandler : BaseGoHandler<TypeHierarchyData>(), TypeHierarchy
 
         try {
             // Get field declarations and look for anonymous/embedded fields
-            val getFieldDeclarationListMethod = ReflectionCache.getMethod(structType.javaClass, "getFieldDeclarationList")
+            val getFieldDeclarationListMethod = structType.javaClass.getMethod("getFieldDeclarationList")
             val fieldDeclarations = getFieldDeclarationListMethod.invoke(structType) as? List<*> ?: return emptyList()
 
             fieldDeclarations.filterIsInstance<PsiElement>().forEach { fieldDecl ->
                 try {
                     // Check if this is an anonymous field (embedded type)
-                    val getAnonymousFieldDefinitionMethod = ReflectionCache.getMethod(fieldDecl.javaClass, "getAnonymousFieldDefinition")
+                    val getAnonymousFieldDefinitionMethod = fieldDecl.javaClass.getMethod("getAnonymousFieldDefinition")
                     val anonymousField = getAnonymousFieldDefinitionMethod.invoke(fieldDecl) as? PsiElement
                     if (anonymousField != null) {
                         val embeddedTypeName = getName(anonymousField)
@@ -521,12 +519,12 @@ class GoTypeHierarchyHandler : BaseGoHandler<TypeHierarchyData>(), TypeHierarchy
 
         try {
             // Get embedded interfaces from the interface definition
-            val getMethodSpecListMethod = ReflectionCache.getMethod(interfaceType.javaClass, "getMethodSpecList")
+            val getMethodSpecListMethod = interfaceType.javaClass.getMethod("getMethodSpecList")
             val methodSpecs = getMethodSpecListMethod.invoke(interfaceType) as? List<*> ?: emptyList<Any>()
 
             // Also try to get embedded type references
             try {
-                val getTypeReferenceExpressionListMethod = ReflectionCache.getMethod(interfaceType.javaClass, "getTypeReferenceExpressionList")
+                val getTypeReferenceExpressionListMethod = interfaceType.javaClass.getMethod("getTypeReferenceExpressionList")
                 val typeRefs = getTypeReferenceExpressionListMethod.invoke(interfaceType) as? List<*>
 
                 typeRefs?.filterIsInstance<PsiElement>()?.forEach { typeRef ->
@@ -574,7 +572,7 @@ class GoTypeHierarchyHandler : BaseGoHandler<TypeHierarchyData>(), TypeHierarchy
 
     private fun resolveType(element: PsiElement): PsiElement? {
         return try {
-            val referenceMethod = ReflectionCache.getMethod(element.javaClass, "getReference")
+            val referenceMethod = element.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(element) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (e: Exception) {
@@ -921,10 +919,10 @@ class GoCallHierarchyHandler : BaseGoHandler<CallHierarchyData>(), CallHierarchy
     private fun resolveCallExpression(callExpr: PsiElement): PsiElement? {
         return try {
             // Try to get the callee expression and resolve it
-            val getExpressionMethod = ReflectionCache.getMethod(callExpr.javaClass, "getExpression")
+            val getExpressionMethod = callExpr.javaClass.getMethod("getExpression")
             val expression = getExpressionMethod.invoke(callExpr) as? PsiElement ?: return null
 
-            val referenceMethod = ReflectionCache.getMethod(expression.javaClass, "getReference")
+            val referenceMethod = expression.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(expression) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (e: Exception) {
@@ -947,7 +945,7 @@ class GoCallHierarchyHandler : BaseGoHandler<CallHierarchyData>(), CallHierarchy
         // For methods, try to get the receiver type
         val name = if (isGoMethod(goFunction)) {
             try {
-                val getReceiverMethod = ReflectionCache.getMethod(goFunction.javaClass, "getReceiver")
+                val getReceiverMethod = goFunction.javaClass.getMethod("getReceiver")
                 val receiver = getReceiverMethod.invoke(goFunction) as? PsiElement
                 val receiverTypeName = receiver?.let { getReceiverTypeName(it) }
                 if (receiverTypeName != null) "$receiverTypeName.$functionName" else functionName
@@ -972,7 +970,7 @@ class GoCallHierarchyHandler : BaseGoHandler<CallHierarchyData>(), CallHierarchy
 
     private fun getReceiverTypeName(receiver: PsiElement): String? {
         return try {
-            val getTypeMethod = ReflectionCache.getMethod(receiver.javaClass, "getType")
+            val getTypeMethod = receiver.javaClass.getMethod("getType")
             val typeElement = getTypeMethod.invoke(receiver) as? PsiElement
             typeElement?.text?.trim('*', ' ')
         } catch (e: Exception) {
@@ -1074,12 +1072,12 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
         val results = mutableListOf<SuperMethodData>()
 
         try {
-            val getFieldDeclarationListMethod = ReflectionCache.getMethod(structType.javaClass, "getFieldDeclarationList")
+            val getFieldDeclarationListMethod = structType.javaClass.getMethod("getFieldDeclarationList")
             val fieldDeclarations = getFieldDeclarationListMethod.invoke(structType) as? List<*> ?: return emptyList()
 
             fieldDeclarations.filterIsInstance<PsiElement>().forEach { fieldDecl ->
                 try {
-                    val getAnonymousFieldDefinitionMethod = ReflectionCache.getMethod(fieldDecl.javaClass, "getAnonymousFieldDefinition")
+                    val getAnonymousFieldDefinitionMethod = fieldDecl.javaClass.getMethod("getAnonymousFieldDefinition")
                     val anonymousField = getAnonymousFieldDefinitionMethod.invoke(fieldDecl) as? PsiElement
                     if (anonymousField != null) {
                         val embeddedTypeName = getName(anonymousField)
@@ -1146,10 +1144,10 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
 
     private fun resolveReceiverType(goMethod: PsiElement): PsiElement? {
         return try {
-            val getReceiverMethod = ReflectionCache.getMethod(goMethod.javaClass, "getReceiver")
+            val getReceiverMethod = goMethod.javaClass.getMethod("getReceiver")
             val receiver = getReceiverMethod.invoke(goMethod) as? PsiElement ?: return null
 
-            val getTypeMethod = ReflectionCache.getMethod(receiver.javaClass, "getType")
+            val getTypeMethod = receiver.javaClass.getMethod("getType")
             val typeElement = getTypeMethod.invoke(receiver) as? PsiElement ?: return null
 
             // Resolve the type reference
@@ -1162,7 +1160,7 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
 
     private fun resolveType(element: PsiElement): PsiElement? {
         return try {
-            val referenceMethod = ReflectionCache.getMethod(element.javaClass, "getReference")
+            val referenceMethod = element.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(element) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (e: Exception) {
@@ -1179,7 +1177,7 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
             val goFile = goType.containingFile ?: return null
 
             // Get all methods in the file and find one with matching receiver type and name
-            val getMethodsMethod = ReflectionCache.getMethod(goFile.javaClass, "getMethods")
+            val getMethodsMethod = goFile.javaClass.getMethod("getMethods")
             val methods = getMethodsMethod.invoke(goFile) as? List<*> ?: return null
 
             return methods.filterIsInstance<PsiElement>().find { method ->
@@ -1193,10 +1191,10 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
 
     private fun getReceiverTypeName(goMethod: PsiElement): String? {
         return try {
-            val getReceiverMethod = ReflectionCache.getMethod(goMethod.javaClass, "getReceiver")
+            val getReceiverMethod = goMethod.javaClass.getMethod("getReceiver")
             val receiver = getReceiverMethod.invoke(goMethod) as? PsiElement ?: return null
 
-            val getTypeMethod = ReflectionCache.getMethod(receiver.javaClass, "getType")
+            val getTypeMethod = receiver.javaClass.getMethod("getType")
             val typeElement = getTypeMethod.invoke(receiver) as? PsiElement
             typeElement?.text?.trim('*', ' ')
         } catch (e: Exception) {
@@ -1207,7 +1205,7 @@ class GoSuperMethodsHandler : BaseGoHandler<SuperMethodsData>(), SuperMethodsHan
 
     private fun buildMethodSignature(goFunction: PsiElement): String {
         return try {
-            val getSignatureMethod = ReflectionCache.getMethod(goFunction.javaClass, "getSignature")
+            val getSignatureMethod = goFunction.javaClass.getMethod("getSignature")
             val signature = getSignatureMethod.invoke(goFunction) as? PsiElement
 
             if (signature != null) {

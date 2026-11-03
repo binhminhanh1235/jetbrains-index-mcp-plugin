@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -376,7 +374,7 @@ class FindFileTool : AbstractMcpTool() {
             is PsiFile -> item.virtualFile
             else -> {
                 try {
-                    val method = ReflectionCache.getMethod(item.javaClass, "getElement")
+                    val method = item.javaClass.getMethod("getElement")
                     val element = method.invoke(item)
                     if (element is PsiFile) {
                         element.virtualFile

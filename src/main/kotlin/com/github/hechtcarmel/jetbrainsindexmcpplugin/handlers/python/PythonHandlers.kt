@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.python
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
@@ -182,7 +180,7 @@ abstract class BasePythonHandler<T> : LanguageHandler<T> {
      */
     protected fun getName(element: PsiElement): String? {
         return try {
-            val method = ReflectionCache.getMethod(element.javaClass, "getName")
+            val method = element.javaClass.getMethod("getName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -195,7 +193,7 @@ abstract class BasePythonHandler<T> : LanguageHandler<T> {
      */
     protected fun getQualifiedName(element: PsiElement): String? {
         return try {
-            val method = ReflectionCache.getMethod(element.javaClass, "getQualifiedName")
+            val method = element.javaClass.getMethod("getQualifiedName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -212,7 +210,7 @@ abstract class BasePythonHandler<T> : LanguageHandler<T> {
     ): Array<*>? {
         val typeEvalContextClass = pyTypeEvalContextClass ?: return null
         return try {
-            val method = ReflectionCache.getMethod(pyClass.javaClass, "getSuperClasses", typeEvalContextClass)
+            val method = pyClass.javaClass.getMethod("getSuperClasses", typeEvalContextClass)
             method.invoke(pyClass, context) as? Array<*>
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -232,7 +230,7 @@ abstract class BasePythonHandler<T> : LanguageHandler<T> {
 
         if (typeEvalContextClass != null) {
             try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass,
+                val method = pyClass.javaClass.getMethod(
                     "findMethodByName",
                     String::class.java,
                     java.lang.Boolean.TYPE,
@@ -249,7 +247,7 @@ abstract class BasePythonHandler<T> : LanguageHandler<T> {
         }
 
         return try {
-            val getMethodsMethod = ReflectionCache.getMethod(pyClass.javaClass, "getMethods")
+            val getMethodsMethod = pyClass.javaClass.getMethod("getMethods")
             val methods = getMethodsMethod.invoke(pyClass) as? Array<*> ?: return null
             methods.filterIsInstance<PsiElement>().find { getName(it) == methodName }
         } catch (e: Exception) {
@@ -498,7 +496,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
             val searchMethod = searchClass.getMethod("search", pyFunctionClass, java.lang.Boolean.TYPE)
             val query = searchMethod.invoke(null, pyFunction, true)
 
-            val findAllMethod = ReflectionCache.getMethod(query.javaClass, "findAll")
+            val findAllMethod = query.javaClass.getMethod("findAll")
             val overridingMethods = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
 
             overridingMethods.filterIsInstance<PsiElement>()
@@ -535,7 +533,7 @@ class PythonImplementationsHandler : BasePythonHandler<List<ImplementationData>>
             val searchMethod = searchClass.getMethod("search", pyClassClass, java.lang.Boolean.TYPE)
             val query = searchMethod.invoke(null, pyClass, true)
 
-            val findAllMethod = ReflectionCache.getMethod(query.javaClass, "findAll")
+            val findAllMethod = query.javaClass.getMethod("findAll")
             val inheritors = findAllMethod.invoke(query) as? Collection<*> ?: return emptyList()
 
             inheritors.filterIsInstance<PsiElement>()
@@ -828,10 +826,10 @@ class PythonCallHierarchyHandler : BasePythonHandler<CallHierarchyData>(), CallH
     private fun resolveCallExpression(callExpr: PsiElement): PsiElement? {
         return try {
             // Get the callee and resolve it
-            val calleeMethod = ReflectionCache.getMethod(callExpr.javaClass, "getCallee")
+            val calleeMethod = callExpr.javaClass.getMethod("getCallee")
             val callee = calleeMethod.invoke(callExpr) as? PsiElement ?: return null
 
-            val referenceMethod = ReflectionCache.getMethod(callee.javaClass, "getReference")
+            val referenceMethod = callee.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(callee) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (e: Exception) {
@@ -958,14 +956,14 @@ class PythonSuperMethodsHandler : BasePythonHandler<SuperMethodsData>(), SuperMe
 
     private fun buildMethodSignature(pyFunction: PsiElement): String {
         return try {
-            val getParameterListMethod = ReflectionCache.getMethod(pyFunction.javaClass, "getParameterList")
+            val getParameterListMethod = pyFunction.javaClass.getMethod("getParameterList")
             val parameterList = getParameterListMethod.invoke(pyFunction)
-            val getParametersMethod = ReflectionCache.getMethod(parameterList.javaClass, "getParameters")
+            val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
             val parameters = getParametersMethod.invoke(parameterList) as? Array<*> ?: emptyArray<Any>()
 
             val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
                 try {
-                    val getNameMethod = ReflectionCache.getMethod(param.javaClass, "getName")
+                    val getNameMethod = param.javaClass.getMethod("getName")
                     getNameMethod.invoke(param) as? String
                 } catch (e: Exception) {
                     e.rethrowIfControlFlow()
@@ -1077,7 +1075,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
 
         try {
             // Get class methods
-            val getMethodsMethod = ReflectionCache.getMethod(pyClass.javaClass, "getMethods")
+            val getMethodsMethod = pyClass.javaClass.getMethod("getMethods")
             val methods = getMethodsMethod.invoke(pyClass) as? Array<*> ?: emptyArray<Any?>()
 
             for (method in methods) {
@@ -1087,7 +1085,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
             }
 
             // Get nested classes
-            val getInnerClassesMethod = ReflectionCache.getMethod(pyClass.javaClass, "getInnerClasses")
+            val getInnerClassesMethod = pyClass.javaClass.getMethod("getInnerClasses")
             val innerClasses = getInnerClassesMethod.invoke(pyClass) as? List<*> ?: emptyList<Any?>()
 
             for (innerClass in innerClasses) {
@@ -1134,7 +1132,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
 
         try {
             // Check for decorators using reflection
-            val hasDecoratorMethod = ReflectionCache.getMethod(element.javaClass, "hasDecorator", String::class.java)
+            val hasDecoratorMethod = element.javaClass.getMethod("hasDecorator", String::class.java)
 
             if (hasDecoratorMethod.invoke(element, "property") as? Boolean == true) {
                 modifiers.add("@property")
@@ -1175,14 +1173,14 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
 
     private fun buildFunctionSignature(pyFunction: PsiElement): String {
         return try {
-            val getParameterListMethod = ReflectionCache.getMethod(pyFunction.javaClass, "getParameterList")
+            val getParameterListMethod = pyFunction.javaClass.getMethod("getParameterList")
             val parameterList = getParameterListMethod.invoke(pyFunction)
-            val getParametersMethod = ReflectionCache.getMethod(parameterList.javaClass, "getParameters")
+            val getParametersMethod = parameterList.javaClass.getMethod("getParameters")
             val parameters = getParametersMethod.invoke(parameterList) as? Array<*> ?: emptyArray<Any?>()
 
             val params = parameters.filterIsInstance<PsiElement>().mapNotNull { param ->
                 try {
-                    val getNameMethod = ReflectionCache.getMethod(param.javaClass, "getName")
+                    val getNameMethod = param.javaClass.getMethod("getName")
                     getNameMethod.invoke(param) as? String
                 } catch (e: Exception) {
                     e.rethrowIfControlFlow()
@@ -1340,7 +1338,7 @@ class PythonSymbolReferenceHandler(
         private fun findMethodInClassInherited(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
             val contextClass = pythonTypeEvalContextClass ?: return null
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "findMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                val method = pyClass.javaClass.getMethod("findMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
                 method.invoke(pyClass, name, true, context) as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 multiFindMethodByNameReflective(pyClass, name, context)
@@ -1353,7 +1351,7 @@ class PythonSymbolReferenceHandler(
         private fun multiFindMethodByNameReflective(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
             val contextClass = pythonTypeEvalContextClass ?: return null
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "multiFindMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                val method = pyClass.javaClass.getMethod("multiFindMethodByName", String::class.java, java.lang.Boolean.TYPE, contextClass)
                 @Suppress("UNCHECKED_CAST")
                 (method.invoke(pyClass, name, true, context) as? List<*>)?.firstOrNull() as? PsiNamedElement
             } catch (e: Exception) {
@@ -1365,7 +1363,7 @@ class PythonSymbolReferenceHandler(
         private fun findClassAttributeReflective(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
             val contextClass = pythonTypeEvalContextClass ?: return null
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "findClassAttribute", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                val method = pyClass.javaClass.getMethod("findClassAttribute", String::class.java, java.lang.Boolean.TYPE, contextClass)
                 method.invoke(pyClass, name, true, context) as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 null
@@ -1377,7 +1375,7 @@ class PythonSymbolReferenceHandler(
 
         private fun findInstanceAttributeReflective(pyClass: PsiElement, name: String): PsiNamedElement? {
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "findInstanceAttribute", String::class.java, java.lang.Boolean.TYPE)
+                val method = pyClass.javaClass.getMethod("findInstanceAttribute", String::class.java, java.lang.Boolean.TYPE)
                 method.invoke(pyClass, name, true) as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 null
@@ -1390,11 +1388,11 @@ class PythonSymbolReferenceHandler(
         private fun findPropertyReflective(pyClass: PsiElement, name: String, context: Any?): PsiNamedElement? {
             val contextClass = pythonTypeEvalContextClass ?: return null
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "findProperty", String::class.java, java.lang.Boolean.TYPE, contextClass)
+                val method = pyClass.javaClass.getMethod("findProperty", String::class.java, java.lang.Boolean.TYPE, contextClass)
                 val property = method.invoke(pyClass, name, true, context) ?: return null
                 // Property.getGetter() returns com.jetbrains.python.toolbox.Maybe<PyCallable>; unwrap via valueOrNull().
-                val maybe = ReflectionCache.getMethod(property.javaClass, "getGetter").invoke(property) ?: return null
-                val getter = ReflectionCache.getMethod(maybe.javaClass, "valueOrNull").invoke(maybe) ?: return null
+                val maybe = property.javaClass.getMethod("getGetter").invoke(property) ?: return null
+                val getter = maybe.javaClass.getMethod("valueOrNull").invoke(maybe) ?: return null
                 getter as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 null
@@ -1406,7 +1404,7 @@ class PythonSymbolReferenceHandler(
 
         private fun findNestedClassReflective(pyClass: PsiElement, name: String): PsiNamedElement? {
             return try {
-                val method = ReflectionCache.getMethod(pyClass.javaClass, "findNestedClass", String::class.java, java.lang.Boolean.TYPE)
+                val method = pyClass.javaClass.getMethod("findNestedClass", String::class.java, java.lang.Boolean.TYPE)
                 method.invoke(pyClass, name, true) as? PsiNamedElement
             } catch (e: NoSuchMethodException) {
                 null
@@ -1431,7 +1429,7 @@ class PythonSymbolReferenceHandler(
         }
 
         private fun getQualifiedNameReflective(element: PsiElement): String? = try {
-            val m = ReflectionCache.getMethod(element.javaClass, "getQualifiedName")
+            val m = element.javaClass.getMethod("getQualifiedName")
             m.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()

@@ -1,7 +1,5 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.rust
 
-import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ReflectionCache
-
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
@@ -227,7 +225,7 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
      */
     protected fun getName(element: PsiElement): String? {
         return try {
-            val method = ReflectionCache.getMethod(element.javaClass, "getName")
+            val method = element.javaClass.getMethod("getName")
             method.invoke(element) as? String
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -241,7 +239,7 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
      */
     protected fun getTraitRef(implItem: PsiElement): PsiElement? {
         return try {
-            val method = ReflectionCache.getMethod(implItem.javaClass, "getTraitRef")
+            val method = implItem.javaClass.getMethod("getTraitRef")
             method.invoke(implItem) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -255,7 +253,7 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
      */
     protected fun getTypeReference(implItem: PsiElement): PsiElement? {
         return try {
-            val method = ReflectionCache.getMethod(implItem.javaClass, "getTypeReference")
+            val method = implItem.javaClass.getMethod("getTypeReference")
             method.invoke(implItem) as? PsiElement
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
@@ -268,14 +266,14 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
      */
     protected fun getSuperTraits(traitItem: PsiElement): List<PsiElement>? {
         return try {
-            val method = ReflectionCache.getMethod(traitItem.javaClass, "getSuperTraits")
+            val method = traitItem.javaClass.getMethod("getSuperTraits")
             @Suppress("UNCHECKED_CAST")
             method.invoke(traitItem) as? List<PsiElement>
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             // Try alternative method names
             try {
-                val method = ReflectionCache.getMethod(traitItem.javaClass, "getTypeParamBounds")
+                val method = traitItem.javaClass.getMethod("getTypeParamBounds")
                 @Suppress("UNCHECKED_CAST")
                 method.invoke(traitItem) as? List<PsiElement>
             } catch (e2: Exception) {
@@ -290,14 +288,14 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
      */
     protected fun resolveReference(element: PsiElement): PsiElement? {
         return try {
-            val referenceMethod = ReflectionCache.getMethod(element.javaClass, "getReference")
+            val referenceMethod = element.javaClass.getMethod("getReference")
             val reference = referenceMethod.invoke(element) as? com.intellij.psi.PsiReference
             reference?.resolve()
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
             // Try resolve() directly if available
             try {
-                val resolveMethod = ReflectionCache.getMethod(element.javaClass, "resolve")
+                val resolveMethod = element.javaClass.getMethod("resolve")
                 resolveMethod.invoke(element) as? PsiElement
             } catch (e2: Exception) {
                 e2.rethrowIfControlFlow()
@@ -315,7 +313,7 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
             val methodNames = listOf("getFunctions", "getMembers", "getExpandedMembers")
             for (methodName in methodNames) {
                 try {
-                    val method = ReflectionCache.getMethod(container.javaClass, methodName)
+                    val method = container.javaClass.getMethod(methodName)
                     val result = method.invoke(container)
                     @Suppress("UNCHECKED_CAST")
                     val list = result as? List<*>
@@ -373,7 +371,7 @@ abstract class BaseRustHandler<T> : LanguageHandler<T> {
             val methodNames = listOf("getQualifiedName", "getName")
             for (methodName in methodNames) {
                 try {
-                    val method = ReflectionCache.getMethod(element.javaClass, methodName)
+                    val method = element.javaClass.getMethod(methodName)
                     val result = method.invoke(element) as? String
                     if (result != null) return result
                 } catch (e: NoSuchMethodException) {
@@ -1132,12 +1130,12 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
         return try {
             // Strategy 1: For RsCallExpr, get expr (RsPathExpr) then resolve its path
             try {
-                val exprMethod = ReflectionCache.getMethod(callExpr.javaClass, "getExpr")
+                val exprMethod = callExpr.javaClass.getMethod("getExpr")
                 val expr = exprMethod.invoke(callExpr) as? PsiElement
                 if (expr != null) {
                     // Try to get the path from RsPathExpr
                     try {
-                        val pathMethod = ReflectionCache.getMethod(expr.javaClass, "getPath")
+                        val pathMethod = expr.javaClass.getMethod("getPath")
                         val path = pathMethod.invoke(expr) as? PsiElement
                         if (path != null) {
                             val resolved = resolveReference(path)
@@ -1159,7 +1157,7 @@ class RustCallHierarchyHandler : BaseRustHandler<CallHierarchyData>(), CallHiera
 
             // Strategy 2: For RsMethodCall, resolve via reference or identifier
             try {
-                val identifierMethod = ReflectionCache.getMethod(callExpr.javaClass, "getIdentifier")
+                val identifierMethod = callExpr.javaClass.getMethod("getIdentifier")
                 val identifier = identifierMethod.invoke(callExpr) as? PsiElement
                 if (identifier != null) {
                     val resolved = resolveReference(identifier)
@@ -1412,7 +1410,7 @@ class RustSuperMethodsHandler : BaseRustHandler<SuperMethodsData>(), SuperMethod
             val methodNames = listOf("getValueParameterList", "getParameterList")
             for (methodName in methodNames) {
                 try {
-                    val method = ReflectionCache.getMethod(function.javaClass, methodName)
+                    val method = function.javaClass.getMethod(methodName)
                     val paramList = method.invoke(function) as? PsiElement
                     if (paramList != null) {
                         val params = paramList.text ?: "()"
