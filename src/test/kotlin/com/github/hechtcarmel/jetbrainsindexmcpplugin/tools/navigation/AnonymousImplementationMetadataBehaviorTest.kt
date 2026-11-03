@@ -69,6 +69,7 @@ class AnonymousImplementationMetadataBehaviorTest : McpPlatformTestCase() {
         )
 
         val result = FindImplementationsTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("file", "anonymous-impl-src/anonimpl/Task.java")
             put("line", 3)
             put("column", 18)
@@ -100,6 +101,7 @@ class AnonymousImplementationMetadataBehaviorTest : McpPlatformTestCase() {
         assertNull("Anonymous implementations must not get a fabricated qualified name", qualifiedName)
 
         val methodResult = FindImplementationsTool().execute(project, buildJsonObject {
+            put("compact", false)
             put("file", "anonymous-impl-src/anonimpl/Task.java")
             put("line", 4)
             put("column", 10)
