@@ -1,0 +1,41 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.6.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+Calculating task graph as configuration cache cannot be reused because Gradle property 'tier' has changed.
+Following 1 plugins could not be created: plugins/fullLine/lib/modules/intellij.fullLine.yaml.jar
+> Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :koverFindJar UP-TO-DATE
+> Task :initializeIntellijPlatformPlugin
+> Task :generateManifest UP-TO-DATE
+> Task :patchPluginXml UP-TO-DATE
+> Task :processTestResources UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :compileKotlin UP-TO-DATE
+> Task :compileJava NO-SOURCE
+> Task :classes UP-TO-DATE
+> Task :instrumentCode UP-TO-DATE
+> Task :jar UP-TO-DATE
+> Task :instrumentedJar UP-TO-DATE
+> Task :composedJar UP-TO-DATE
+> Task :compileTestKotlin UP-TO-DATE
+> Task :compileTestJava NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :instrumentTestCode UP-TO-DATE
+> Task :prepareTestSandbox UP-TO-DATE
+> Task :prepareTest
+
+> Task :test
+[0.020s][warning][cds] Archived non-system classes are disabled because the java.system.class.loader property is specified (value = "com.intellij.util.lang.PathClassLoader"). To use archived non-system classes, this property must not be set
+
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+[Incubating] Problems report is available at: file:///app/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.6.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 46m 31s
+15 actionable tasks: 2 executed, 13 up-to-date
+Configuration cache entry stored.

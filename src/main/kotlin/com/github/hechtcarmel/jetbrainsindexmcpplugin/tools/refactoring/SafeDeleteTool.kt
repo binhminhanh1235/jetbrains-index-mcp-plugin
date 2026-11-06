@@ -755,7 +755,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         if (element == null) {
             val suggestions = findNearbySymbols(psiFile, line, maxDistance = 10)
             return SymbolPreparationResult.NoSymbolFound(
-                leafElement.javaClass.simpleName.removePrefix("Psi").lowercase(),
+                com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(leafElement.javaClass).removePrefix("Psi").lowercase(),
                 suggestions
             )
         }
@@ -1456,7 +1456,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
 
     private fun searchFailureReason(e: UsageSearchException): String {
         val cause = e.cause
-        return cause?.message ?: cause?.javaClass?.simpleName ?: "unknown error"
+        return cause?.message ?: cause?.let { com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(it.javaClass) } ?: "unknown error"
     }
 
     private fun getContextLine(document: Document?, line: Int): String {
@@ -1474,7 +1474,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             element is com.intellij.psi.PsiField -> "field"
             element is com.intellij.psi.PsiLocalVariable -> "variable"
             element is com.intellij.psi.PsiParameter -> "parameter"
-            else -> element.javaClass.simpleName.removePrefix("Psi").lowercase()
+            else -> com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(element.javaClass).removePrefix("Psi").lowercase()
         }
     }
 }

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Performance improvement: cached PSI simple name reflections across codebase to reduce string allocations.
+
 ### Fixed
 
 - **`ide_run_tests` can start Android run configurations** — the execution environment was built without an execution target, so every Android App / Android Test configuration failed with `Cannot run '<name>' on '<default>'`. The environment now runs on the active execution target, the same one the Run action uses; Gradle and JVM configurations are unaffected.

@@ -167,7 +167,7 @@ object OptimizedSymbolSearch {
                 throw e
             } catch (e: Exception) {
                 e.rethrowIfControlFlow()
-                LOG.debug("Error processing contributor ${contributor.javaClass.simpleName}: ${e.message}")
+                LOG.debug("Error processing contributor ${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(contributor.javaClass)}: ${e.message}")
             }
         }
 
@@ -361,7 +361,7 @@ object OptimizedSymbolSearch {
 
     private val kindByClass = object : ClassValue<String>() {
         override fun computeValue(clazz: Class<*>): String {
-            val className = clazz.simpleName.lowercase()
+            val className = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(clazz)
             return when {
                 // Rust types
                 className.contains("structitem") -> "STRUCT"
@@ -397,12 +397,12 @@ object OptimizedSymbolSearch {
             var parent = element.parent
             while (parent != null) {
                 if (parent is PsiNamedElement) {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    val parentClassName = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         parent.name?.let { return it }
                     }
                 } else {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    val parentClassName = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         val nameMethod = ReflectionCache.getMethod(parent.javaClass, "getName")
                         val name = nameMethod?.invoke(parent) as? String

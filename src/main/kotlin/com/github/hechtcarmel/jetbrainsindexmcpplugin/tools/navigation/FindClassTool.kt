@@ -288,7 +288,7 @@ class FindClassTool : AbstractMcpTool() {
                 throw e
             } catch (e: Exception) {
                 e.rethrowIfControlFlow()
-                LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
+                LOG.debug("Contributor ${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(contributor.javaClass)} failed for pattern '$pattern'", e)
             }
         }
 
@@ -464,7 +464,7 @@ class FindClassTool : AbstractMcpTool() {
             probe("isInterface") -> "INTERFACE"
             probe("isTrait") -> "TRAIT"
             else -> {
-                val className = element.javaClass.simpleName.lowercase()
+                val className = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(element.javaClass)
                 when {
                     className.contains("interface") -> "INTERFACE"
                     className.contains("enum") -> "ENUM"

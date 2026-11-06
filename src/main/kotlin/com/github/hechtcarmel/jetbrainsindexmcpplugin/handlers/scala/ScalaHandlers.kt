@@ -86,7 +86,7 @@ object ScalaHandlers {
  */
 class ScalaPluginApiMismatchException(operation: String, cause: LinkageError) : IllegalStateException(
     "Scala $operation failed: the installed Scala plugin is not compatible with this version of " +
-        "IDE Index MCP Server (${cause.javaClass.simpleName}: ${cause.message}). " +
+        "IDE Index MCP Server (${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(cause.javaClass)}: ${cause.message}). " +
         "Update the Scala plugin or IDE Index MCP Server.",
     cause
 )

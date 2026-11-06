@@ -671,7 +671,7 @@ class RenameSymbolTool : AbstractMcpTool() {
             discoveryComplete = false
             val cause = (e as? java.lang.reflect.InvocationTargetException)?.cause ?: e
             warnings.add(
-                "Usage/conflict discovery failed: ${cause.message ?: cause.javaClass.simpleName}. " +
+                "Usage/conflict discovery failed: ${cause.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(cause.javaClass)}. " +
                     "The preview is not safe to apply."
             )
         }
@@ -990,7 +990,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                     oldName = oldName,
                     previewDiscoveryWarnings = listOf(
                         "Java file rename retargeting discovery failed: " +
-                            "${cause.message ?: cause.javaClass.simpleName}. The preview is not safe to apply."
+                            "${cause.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(cause.javaClass)}. The preview is not safe to apply."
                     )
                 )
             }
@@ -1424,7 +1424,7 @@ class RenameSymbolTool : AbstractMcpTool() {
                 }
 
                 val importerPath = resolveImporterPath(project, referencePointer, referenceElement)
-                val reason = e.message ?: e.javaClass.simpleName
+                val reason = e.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(e.javaClass)
                 val warningMsg = "Semantic JS/TS file rename failed after rename" +
                     importerPath?.let { " for '$it'" }.orEmpty() +
                     ": $reason"
@@ -1585,7 +1585,7 @@ class RenameSymbolTool : AbstractMcpTool() {
      * Matches by class name suffix to remain language-agnostic (works for Java, Kotlin, etc.).
      */
     private fun isAccessorOrTestFactory(factory: AutomaticRenamerFactory): Boolean {
-        val className = factory.javaClass.simpleName
+        val className = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(factory.javaClass)
         return className.contains("GetterSetter") ||
             className.contains("Accessor") ||
             className.contains("Test")

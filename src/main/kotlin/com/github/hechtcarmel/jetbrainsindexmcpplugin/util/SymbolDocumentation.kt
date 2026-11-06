@@ -82,7 +82,7 @@ object SymbolDocumentation {
                 // A provider that fails on an element it does not really handle is not a tool
                 // failure — but it is worth a log line, because a provider failing on an element
                 // it *does* handle silently degrades the result to the text fallback.
-                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${element.javaClass.simpleName}", e)
+                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(element.javaClass)}", e)
                 null
             }
             if (!answer.isNullOrBlank()) return answer

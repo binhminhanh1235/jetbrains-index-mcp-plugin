@@ -58,7 +58,7 @@ class FindUsagesTool : AbstractMcpTool() {
 
         internal fun searchInfrastructureErrorMessage(error: Throwable): String {
             val detail = error.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
-            return "Reference search failed due to IDE/plugin API incompatibility (${error::class.simpleName}$detail). " +
+            return "Reference search failed due to IDE/plugin API incompatibility (${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(error::class.java)}$detail). " +
                 "Try ide_search_text as a fallback and check plugin compatibility against the current IDE build."
         }
 
@@ -433,7 +433,7 @@ class FindUsagesTool : AbstractMcpTool() {
 
     private fun classifyUsage(element: PsiElement): String {
         val parent = element.parent
-        val parentClass = parent?.javaClass?.simpleName ?: "Unknown"
+        val parentClass = parent?.let { com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(it.javaClass) } ?: "Unknown"
 
         return when {
             parentClass.contains("MethodCall") -> UsageTypes.METHOD_CALL
