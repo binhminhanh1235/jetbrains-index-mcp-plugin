@@ -13,7 +13,7 @@ object ClassNameCache {
 
     private val lowercaseSimpleNameCache = object : ClassValue<String>() {
         override fun computeValue(type: Class<*>): String {
-            return com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(type)
+            return type.simpleName.lowercase()
         }
     }
 
