@@ -120,7 +120,7 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             appendRawOutput(rawOutput)
         }
 
-        val eventClassName = event.javaClass.simpleName
+        val eventClassName = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(event.javaClass)
         if (eventClassName.contains("Finish") || eventClassName.contains("Success") || eventClassName.contains("Failure")) {
             publishActiveMessages(BuildListenerUtils.isFailureResultEvent(event))
         }

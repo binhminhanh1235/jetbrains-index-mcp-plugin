@@ -414,7 +414,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 discoveryComplete = false
                 val cause = (e as? java.lang.reflect.InvocationTargetException)?.cause ?: e
                 warnings.add(
-                    "Usage/conflict discovery failed: ${cause.message ?: cause.javaClass.simpleName}. " +
+                    "Usage/conflict discovery failed: ${cause.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(cause.javaClass)}. " +
                         "The preview is not safe to apply."
                 )
             }

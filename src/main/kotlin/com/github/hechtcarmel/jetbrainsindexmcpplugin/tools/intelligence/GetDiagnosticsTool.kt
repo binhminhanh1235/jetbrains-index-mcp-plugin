@@ -327,7 +327,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(failure.javaClass)}"
                     )
                     continue
                 } catch (failure: CancellationException) {
@@ -337,7 +337,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(failure.javaClass)}"
                     )
                     continue
                 }

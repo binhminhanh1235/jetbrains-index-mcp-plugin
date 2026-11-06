@@ -260,7 +260,7 @@ class FindFileTool : AbstractMcpTool() {
                 // truncated result set as a complete page.
                 throw e
             } catch (e: Exception) {
-                LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
+                LOG.debug("Contributor ${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(contributor.javaClass)} failed for pattern '$pattern'", e)
             }
         }
 

@@ -386,7 +386,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                 // file is reported failed and coverage stays fail-closed. A cancelled registry
                 // scope exits via ensureActive() above.
                 failed++
-                recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
+                recordIncomplete(target, STATE_FAILED, e.message ?: com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(e.javaClass))
                 analysis.filesProcessed.incrementAndGet()
                 continue
             }

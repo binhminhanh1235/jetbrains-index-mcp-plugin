@@ -252,7 +252,7 @@ class McpToolDispatcher @JvmOverloads constructor(
             is TextContent -> block.text.take(HISTORY_RESULT_LIMIT)
             is ImageContent -> "[Image]"
             null -> null
-            else -> "[${block::class.simpleName}]"
+            else -> "[${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(block::class.java)}]"
         }
 
     private val toolExecutionDispatcher by lazy {

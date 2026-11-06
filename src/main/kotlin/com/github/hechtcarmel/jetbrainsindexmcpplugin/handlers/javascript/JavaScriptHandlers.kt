@@ -2556,7 +2556,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             LOG.warn("JavaScript PSI class not found: ${e.message}")
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
-            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${e.javaClass.simpleName}")
+            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getSimpleName(e.javaClass)}")
         }
 
         return structure.sortedBy { it.line }
