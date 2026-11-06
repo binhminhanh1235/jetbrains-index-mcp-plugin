@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createMatcher
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.createNameFilter
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.BuiltInSearchScope
@@ -464,7 +465,7 @@ class FindClassTool : AbstractMcpTool() {
             probe("isInterface") -> "INTERFACE"
             probe("isTrait") -> "TRAIT"
             else -> {
-                val className = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(element.javaClass)
+                val className = ClassNameCache.getLowercaseSimpleName(element.javaClass)
                 when {
                     className.contains("interface") -> "INTERFACE"
                     className.contains("enum") -> "ENUM"

@@ -1,5 +1,6 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.java.JavaHierarchyMethodComplement
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PluginDetectors
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ProjectUtils
@@ -361,7 +362,7 @@ object OptimizedSymbolSearch {
 
     private val kindByClass = object : ClassValue<String>() {
         override fun computeValue(clazz: Class<*>): String {
-            val className = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(clazz)
+            val className = ClassNameCache.getLowercaseSimpleName(clazz)
             return when {
                 // Rust types
                 className.contains("structitem") -> "STRUCT"
@@ -397,12 +398,12 @@ object OptimizedSymbolSearch {
             var parent = element.parent
             while (parent != null) {
                 if (parent is PsiNamedElement) {
-                    val parentClassName = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(parent.javaClass)
+                    val parentClassName = ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         parent.name?.let { return it }
                     }
                 } else {
-                    val parentClassName = com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache.getLowercaseSimpleName(parent.javaClass)
+                    val parentClassName = ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         val nameMethod = ReflectionCache.getMethod(parent.javaClass, "getName")
                         val name = nameMethod?.invoke(parent) as? String
