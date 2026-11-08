@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -755,7 +757,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
         if (element == null) {
             val suggestions = findNearbySymbols(psiFile, line, maxDistance = 10)
             return SymbolPreparationResult.NoSymbolFound(
-                leafElement.javaClass.simpleName.removePrefix("Psi").lowercase(),
+                ClassNameCache.getSimpleName(leafElement).removePrefix("Psi").lowercase(),
                 suggestions
             )
         }
@@ -1474,7 +1476,7 @@ class SafeDeleteTool : AbstractRefactoringTool() {
             element is com.intellij.psi.PsiField -> "field"
             element is com.intellij.psi.PsiLocalVariable -> "variable"
             element is com.intellij.psi.PsiParameter -> "parameter"
-            else -> element.javaClass.simpleName.removePrefix("Psi").lowercase()
+            else -> ClassNameCache.getSimpleName(element).removePrefix("Psi").lowercase()
         }
     }
 }

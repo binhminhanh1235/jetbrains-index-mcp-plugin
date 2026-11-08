@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.server
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.BuildMessage
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.project.BuildProjectResultSelector
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.BuildListenerUtils
@@ -120,7 +122,7 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             appendRawOutput(rawOutput)
         }
 
-        val eventClassName = event.javaClass.simpleName
+        val eventClassName = ClassNameCache.getSimpleName(event)
         if (eventClassName.contains("Finish") || eventClassName.contains("Success") || eventClassName.contains("Failure")) {
             publishActiveMessages(BuildListenerUtils.isFailureResultEvent(event))
         }
