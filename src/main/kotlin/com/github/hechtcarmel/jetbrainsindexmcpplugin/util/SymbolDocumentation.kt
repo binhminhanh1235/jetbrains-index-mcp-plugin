@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.util
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.intellij.lang.LanguageDocumentation
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.openapi.diagnostic.logger
@@ -82,7 +84,7 @@ object SymbolDocumentation {
                 // A provider that fails on an element it does not really handle is not a tool
                 // failure — but it is worth a log line, because a provider failing on an element
                 // it *does* handle silently degrades the result to the text fallback.
-                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${element.javaClass.simpleName}", e)
+                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${ClassNameCache.getSimpleName(element)}", e)
                 null
             }
             if (!answer.isNullOrBlank()) return answer

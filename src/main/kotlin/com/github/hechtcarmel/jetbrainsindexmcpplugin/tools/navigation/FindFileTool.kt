@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.navigation
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.SchemaConstants
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
@@ -260,7 +262,7 @@ class FindFileTool : AbstractMcpTool() {
                 // truncated result set as a complete page.
                 throw e
             } catch (e: Exception) {
-                LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
+                LOG.debug("Contributor ${ClassNameCache.getSimpleName(contributor)} failed for pattern '$pattern'", e)
             }
         }
 

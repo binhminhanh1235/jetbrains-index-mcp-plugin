@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.exceptions.AmbiguousFileException
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.server.BuildDiagnosticsCacheService
@@ -327,7 +329,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: ClassNameCache.getSimpleName(failure)}"
                     )
                     continue
                 } catch (failure: CancellationException) {
@@ -337,7 +339,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: ClassNameCache.getSimpleName(failure)}"
                     )
                     continue
                 }
