@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.PsiUtils
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
@@ -2556,7 +2558,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             LOG.warn("JavaScript PSI class not found: ${e.message}")
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
-            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${e.javaClass.simpleName}")
+            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${ClassNameCache.getSimpleName(e.javaClass)}")
         }
 
         return structure.sortedBy { it.line }

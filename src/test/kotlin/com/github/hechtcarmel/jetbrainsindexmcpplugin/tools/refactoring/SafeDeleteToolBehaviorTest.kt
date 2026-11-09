@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.refactoring
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.McpPlatformTestCase
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.RefactoringResult
@@ -1068,7 +1070,7 @@ class SafeDeleteToolBehaviorTest : McpPlatformTestCase() {
         }
         val namedChildren = psiFile.children
             .filter { it is PsiNamedElement && it !is PsiFile && it.name != null }
-            .map { "${it.javaClass.simpleName}(${(it as PsiNamedElement).name})" }
+            .map { "${ClassNameCache.getSimpleName(it.javaClass)}(${(it as PsiNamedElement).name})" }
         assertEquals(
             "$relativePath must nest its declaration below the file node for this fixture to " +
                 "reproduce #336, but the file declares these directly",

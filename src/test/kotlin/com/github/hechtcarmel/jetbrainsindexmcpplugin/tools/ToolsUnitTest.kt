@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.testutil.get
 
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
@@ -119,13 +121,13 @@ class ToolsUnitTest : TestCase() {
     fun testRenameSymbolToolResolvesFileModeWhenTargetTypeFileEvenWithZeroCoordinates() {
         val decision = invokeRenameModeResolver("file", 0, 0)
 
-        assertEquals("File rename should win when targetType=file", "FileRenameMode", decision.javaClass.simpleName)
+        assertEquals("File rename should win when targetType=file", "FileRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
     }
 
     fun testRenameSymbolToolRejectsZeroCoordinatesInSymbolMode() {
         val decision = invokeRenameModeResolver("symbol", 0, 0)
 
-        assertEquals("Symbol mode with 0/0 should be rejected", "InvalidRenameMode", decision.javaClass.simpleName)
+        assertEquals("Symbol mode with 0/0 should be rejected", "InvalidRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
         val errorMessage = decision.javaClass.getMethod("getError").invoke(decision) as String
         assertTrue(errorMessage.contains("1-based"))
         assertTrue(errorMessage.contains("targetType=file"))
@@ -134,7 +136,7 @@ class ToolsUnitTest : TestCase() {
     fun testRenameSymbolToolPreservesLegacyNullNullFileMode() {
         val decision = invokeRenameModeResolver(null, null, null)
 
-        assertEquals("Legacy null/null request should still be file rename", "FileRenameMode", decision.javaClass.simpleName)
+        assertEquals("Legacy null/null request should still be file rename", "FileRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
     }
 
     fun testRenameSymbolToolFileModeIgnoresMalformedCoordinates() {
@@ -146,7 +148,7 @@ class ToolsUnitTest : TestCase() {
             }
         )
 
-        assertEquals("File rename should short-circuit before parsing coordinates", "FileRenameMode", decision.javaClass.simpleName)
+        assertEquals("File rename should short-circuit before parsing coordinates", "FileRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
     }
 
     fun testRenameSymbolToolRejectsNestedPositionWithFileMode() {
@@ -163,7 +165,7 @@ class ToolsUnitTest : TestCase() {
 
         val decision = RenameSymbolTool.resolveRenameMode(normalized)
 
-        assertEquals("Nested position must retain symbol intent", "InvalidRenameMode", decision.javaClass.simpleName)
+        assertEquals("Nested position must retain symbol intent", "InvalidRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
         val errorMessage = decision.javaClass.getMethod("getError").invoke(decision) as String
         assertTrue(errorMessage.contains("target.position"))
     }
@@ -177,7 +179,7 @@ class ToolsUnitTest : TestCase() {
             }
         )
 
-        assertEquals("Symbol rename should reject malformed coordinates", "InvalidRenameMode", decision.javaClass.simpleName)
+        assertEquals("Symbol rename should reject malformed coordinates", "InvalidRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
     }
 
     fun testRenameSymbolToolQualifiedSelectorConflictNamesTheProvidedSelector() {
@@ -189,7 +191,7 @@ class ToolsUnitTest : TestCase() {
             }
         )
 
-        assertEquals("Mixed qualified selector should be rejected", "InvalidRenameMode", decision.javaClass.simpleName)
+        assertEquals("Mixed qualified selector should be rejected", "InvalidRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
         val errorMessage = decision.javaClass.getMethod("getError").invoke(decision) as String
         assertEquals(ErrorMessages.LANGUAGE_SYMBOL_AND_OTHER_TARGET_EXCLUSIVE, errorMessage)
         assertFalse("Error must not claim that symbolId was provided", errorMessage.contains("symbolId"))
@@ -211,7 +213,7 @@ class ToolsUnitTest : TestCase() {
 
         val decision = RenameSymbolTool.resolveRenameMode(normalized)
 
-        assertEquals("Nested position always denotes a symbol target", "InvalidRenameMode", decision.javaClass.simpleName)
+        assertEquals("Nested position always denotes a symbol target", "InvalidRenameMode", ClassNameCache.getSimpleName(decision.javaClass))
     }
 
     private fun invokeRenameModeResolver(targetType: String?, line: Int?, column: Int?): Any {
