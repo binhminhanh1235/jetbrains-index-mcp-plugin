@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.scala
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureKind
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.models.StructureNode
@@ -86,7 +88,7 @@ object ScalaHandlers {
  */
 class ScalaPluginApiMismatchException(operation: String, cause: LinkageError) : IllegalStateException(
     "Scala $operation failed: the installed Scala plugin is not compatible with this version of " +
-        "IDE Index MCP Server (${cause.javaClass.simpleName}: ${cause.message}). " +
+        "IDE Index MCP Server (${ClassNameCache.getSimpleName(cause.javaClass)}: ${cause.message}). " +
         "Update the Scala plugin or IDE Index MCP Server.",
     cause
 )

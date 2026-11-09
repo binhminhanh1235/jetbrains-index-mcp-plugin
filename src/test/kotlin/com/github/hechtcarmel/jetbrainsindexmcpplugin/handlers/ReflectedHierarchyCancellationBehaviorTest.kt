@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.go.GoTypeHierarchyHandler
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.javascript.JavaScriptTypeHierarchyHandler
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.php.PhpTypeHierarchyHandler
@@ -71,7 +73,7 @@ class ReflectedHierarchyCancellationBehaviorTest : McpPlatformTestCase() {
     private fun assertPropagated(expected: RuntimeException, action: () -> Any?) {
         try {
             val result = action()
-            fail("${expected.javaClass.simpleName} must propagate, not return a complete hierarchy: $result")
+            fail("${ClassNameCache.getSimpleName(expected.javaClass)} must propagate, not return a complete hierarchy: $result")
         } catch (actual: Exception) {
             // Remove only the wrapper added by this test's private-method invocation.
             val failure = if (actual is InvocationTargetException) actual.cause else actual

@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.python
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.rethrowIfControlFlow
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.handlers.*
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ErrorMessages
@@ -1049,7 +1051,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
             LOG.warn("Python PSI class not found: ${e.message}")
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
-            LOG.warn("Failed to extract Python file structure: ${e.message}, ${e.javaClass.simpleName}")
+            LOG.warn("Failed to extract Python file structure: ${e.message}, ${ClassNameCache.getSimpleName(e.javaClass)}")
         }
 
         return structure.sortedBy { it.line }

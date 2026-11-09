@@ -1,5 +1,7 @@
 package com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.intelligence
 
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
+
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ParamNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.constants.ToolNames
 import com.github.hechtcarmel.jetbrainsindexmcpplugin.tools.AbstractMcpTool
@@ -386,7 +388,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                 // file is reported failed and coverage stays fail-closed. A cancelled registry
                 // scope exits via ensureActive() above.
                 failed++
-                recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
+                recordIncomplete(target, STATE_FAILED, e.message ?: ClassNameCache.getSimpleName(e.javaClass))
                 analysis.filesProcessed.incrementAndGet()
                 continue
             }
