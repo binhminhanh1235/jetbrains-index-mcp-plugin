@@ -16,6 +16,7 @@ import com.intellij.openapi.util.Disposer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 @Service(Service.Level.PROJECT)
 class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
@@ -120,7 +121,7 @@ class BuildDiagnosticsCacheService(private val project: Project) : Disposable {
             appendRawOutput(rawOutput)
         }
 
-        val eventClassName = event.javaClass.simpleName
+        val eventClassName = ClassNameCache.getSimpleName(event.javaClass)
         if (eventClassName.contains("Finish") || eventClassName.contains("Success") || eventClassName.contains("Failure")) {
             publishActiveMessages(BuildListenerUtils.isFailureResultEvent(event))
         }

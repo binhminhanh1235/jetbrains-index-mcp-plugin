@@ -4,3 +4,7 @@
 ## 2024-05-18 - Replacing ArrayDeque with CircularBuffer
 **Learning:** Found an opportunity to improve performance and reduce memory churn. The application uses `ArrayDeque` to maintain fixed-size sliding windows (e.g., in `LifecycleEventLog` and `CommandHistoryService`). However, `ArrayDeque` performs structural modifications (growing/shrinking internal arrays, object allocations) when elements are constantly added and removed (e.g. `removeFirst()`). A pre-allocated ring buffer (CircularBuffer) can do this without any allocations after the initial setup. This makes logging and history recording faster and produces less garbage.
 **Action:** Replace `ArrayDeque` with a custom `CircularBuffer` implementation where appropriate.
+
+## 2024-05-18 - Caching Simple Class Names
+**Learning:** `.javaClass.simpleName` and `.lowercase()` allocations create significant garbage during frequent operations like PSI tree traversals.
+**Action:** Introduced `ClassNameCache` using `ClassValue` to cache class simple names and lowercase simple names, removing redundant string allocations and reflection overhead.

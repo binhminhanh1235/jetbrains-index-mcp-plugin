@@ -38,6 +38,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Tool for searching files by name.
@@ -260,7 +261,7 @@ class FindFileTool : AbstractMcpTool() {
                 // truncated result set as a complete page.
                 throw e
             } catch (e: Exception) {
-                LOG.debug("Contributor ${contributor.javaClass.simpleName} failed for pattern '$pattern'", e)
+                LOG.debug("Contributor ${ClassNameCache.getSimpleName(contributor.javaClass)} failed for pattern '$pattern'", e)
             }
         }
 

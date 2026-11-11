@@ -18,6 +18,7 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.MinusculeMatcher
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.indexing.FindSymbolParameters
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Optimized symbol search using IntelliJ's built-in infrastructure.
@@ -167,7 +168,7 @@ object OptimizedSymbolSearch {
                 throw e
             } catch (e: Exception) {
                 e.rethrowIfControlFlow()
-                LOG.debug("Error processing contributor ${contributor.javaClass.simpleName}: ${e.message}")
+                LOG.debug("Error processing contributor ${ClassNameCache.getSimpleName(contributor.javaClass)}: ${e.message}")
             }
         }
 
@@ -397,12 +398,12 @@ object OptimizedSymbolSearch {
             var parent = element.parent
             while (parent != null) {
                 if (parent is PsiNamedElement) {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    val parentClassName = ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         parent.name?.let { return it }
                     }
                 } else {
-                    val parentClassName = parent.javaClass.simpleName.lowercase()
+                    val parentClassName = ClassNameCache.getLowercaseSimpleName(parent.javaClass)
                     if (parentClassName.contains("class") || parentClassName.contains("type")) {
                         val nameMethod = ReflectionCache.getMethod(parent.javaClass, "getName")
                         val name = nameMethod?.invoke(parent) as? String

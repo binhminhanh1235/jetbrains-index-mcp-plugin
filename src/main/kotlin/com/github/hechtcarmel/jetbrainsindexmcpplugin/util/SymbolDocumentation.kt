@@ -8,6 +8,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.util.concurrency.annotations.RequiresReadLock
 import java.util.concurrent.CancellationException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Reads a symbol's hover signature and documentation from the IDE's own documentation backend,
@@ -82,7 +83,7 @@ object SymbolDocumentation {
                 // A provider that fails on an element it does not really handle is not a tool
                 // failure — but it is worth a log line, because a provider failing on an element
                 // it *does* handle silently degrades the result to the text fallback.
-                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${element.javaClass.simpleName}", e)
+                LOG.info("Documentation provider ${provider.javaClass.name} failed for ${ClassNameCache.getSimpleName(element.javaClass)}", e)
                 null
             }
             if (!answer.isNullOrBlank()) return answer

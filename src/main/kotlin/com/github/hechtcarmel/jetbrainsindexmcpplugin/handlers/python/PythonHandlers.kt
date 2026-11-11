@@ -23,6 +23,7 @@ import com.intellij.util.Processor
 import com.intellij.util.Query
 import java.lang.reflect.InvocationTargetException
 import kotlinx.coroutines.CancellationException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Registration entry point for Python language handlers.
@@ -1049,7 +1050,7 @@ class PythonStructureHandler : BasePythonHandler<List<StructureNode>>(), Structu
             LOG.warn("Python PSI class not found: ${e.message}")
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
-            LOG.warn("Failed to extract Python file structure: ${e.message}, ${e.javaClass.simpleName}")
+            LOG.warn("Failed to extract Python file structure: ${e.message}, ${ClassNameCache.getSimpleName(e.javaClass)}")
         }
 
         return structure.sortedBy { it.line }

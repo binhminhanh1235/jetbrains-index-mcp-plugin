@@ -32,6 +32,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.jetbrains.annotations.TestOnly
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 class ChangeSignatureTool : AbstractMcpTool() {
 
@@ -414,7 +415,7 @@ class ChangeSignatureTool : AbstractMcpTool() {
                 discoveryComplete = false
                 val cause = (e as? java.lang.reflect.InvocationTargetException)?.cause ?: e
                 warnings.add(
-                    "Usage/conflict discovery failed: ${cause.message ?: cause.javaClass.simpleName}. " +
+                    "Usage/conflict discovery failed: ${cause.message ?: ClassNameCache.getSimpleName(cause.javaClass)}. " +
                         "The preview is not safe to apply."
                 )
             }

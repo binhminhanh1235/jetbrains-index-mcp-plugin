@@ -13,6 +13,7 @@ import com.intellij.psi.PsiNamedElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 class GetSignatureTool : AbstractMcpTool() {
     override val requiresPsiSync: Boolean = true
@@ -43,7 +44,7 @@ class GetSignatureTool : AbstractMcpTool() {
             var current: PsiElement? = element
             while (current != null) {
                 if (current is PsiNamedElement) {
-                    val className = current.javaClass.simpleName.lowercase()
+                    val className = ClassNameCache.getLowercaseSimpleName(current.javaClass)
                     if (className.contains("method") || className.contains("function") ||
                         className.contains("class") || className.contains("interface") ||
                         className.contains("property")) {
@@ -69,7 +70,7 @@ class GetSignatureTool : AbstractMcpTool() {
             
             val language = target.language.id
             val name = target.name ?: "unknown"
-            val kind = determineKind(target.javaClass.simpleName.lowercase())
+            val kind = determineKind(ClassNameCache.getLowercaseSimpleName(target.javaClass))
 
             // Try reflection for PsiMethod (Java)
             var returnType: String? = null

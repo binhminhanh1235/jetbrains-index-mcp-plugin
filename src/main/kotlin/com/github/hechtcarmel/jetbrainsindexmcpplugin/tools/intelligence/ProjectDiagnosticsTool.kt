@@ -29,6 +29,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * MCP tool that analyzes many files — up to the whole project — for code problems, with
@@ -386,7 +387,7 @@ class ProjectDiagnosticsTool : AbstractMcpTool() {
                 // file is reported failed and coverage stays fail-closed. A cancelled registry
                 // scope exits via ensureActive() above.
                 failed++
-                recordIncomplete(target, STATE_FAILED, e.message ?: e.javaClass.simpleName)
+                recordIncomplete(target, STATE_FAILED, e.message ?: ClassNameCache.getSimpleName(e.javaClass))
                 analysis.filesProcessed.incrementAndGet()
                 continue
             }
