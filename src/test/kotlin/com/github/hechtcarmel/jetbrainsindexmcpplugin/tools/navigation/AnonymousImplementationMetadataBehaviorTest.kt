@@ -103,6 +103,7 @@ class AnonymousImplementationMetadataBehaviorTest : McpPlatformTestCase() {
             put("file", "anonymous-impl-src/anonimpl/Task.java")
             put("line", 4)
             put("column", 10)
+            put("compact", false)
         })
         assertToolSucceeded("find_implementations should include overriding methods", methodResult)
 
