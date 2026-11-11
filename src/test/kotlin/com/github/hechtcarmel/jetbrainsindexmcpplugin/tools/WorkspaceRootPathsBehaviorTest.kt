@@ -107,7 +107,8 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         registerSourceRoot("ws441-local")
         writeProjectFile("ws441-local/WsHelper441.java", "class WsHelper441 {}\n")
 
-        val result = FindFileTool().execute(project, buildJsonObject { put("query", "WsHelper441.java") })
+        val result = FindFileTool().execute(project, buildJsonObject { put("query", "WsHelper441.java")
+            put("compact", false) })
 
         assertToolSucceeded("ide_find_file", result)
         val files = json.decodeFromString<FindFileResult>(toolText(result)).files
@@ -132,6 +133,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val result = FindClassTool().execute(project, buildJsonObject {
             put("query", "WsDup441")
             put("matchMode", "exact")
+            put("compact", false)
         })
 
         assertToolSucceeded("ide_find_class", result)
@@ -168,6 +170,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
             put("file", target.path)
             put("line", 3)
             put("column", 14)
+            put("compact", false)
         })
 
         assertToolSucceeded("ide_find_references on WsTarget441", result)
@@ -186,7 +189,8 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val inA = writeInRoot(svcA, "src/com/example/WsConfig441.java", content)
         val inB = writeInRoot(svcB, "src/com/example/WsConfig441.java", content)
 
-        val search = SearchTextTool().execute(project, buildJsonObject { put("query", "wsRoundTrip441") })
+        val search = SearchTextTool().execute(project, buildJsonObject { put("query", "wsRoundTrip441")
+            put("compact", false) })
         assertToolSucceeded("ide_search_text", search)
         val reported = json.decodeFromString<SearchTextResult>(toolText(search)).matches.map { it.file }
         assertEquals(
@@ -216,6 +220,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "wsAbsoluteGlob441")
             putJsonArray("paths") { add("${svcA.path}/src") }
+            put("compact", false)
         })
 
         assertToolSucceeded("an absolute glob naming a workspace root must validate", result)
@@ -236,6 +241,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "wsExclude441")
             putJsonArray("paths") { add("!**/generated/**") }
+            put("compact", false)
         })
 
         assertToolSucceeded("an exclude-only filter must succeed", result)
@@ -271,6 +277,7 @@ class WorkspaceRootPathsBehaviorTest : McpPlatformTestCase() {
 
         val result = SearchTextTool().execute(project, buildJsonObject {
             put("query", "wsRooted441")
+            put("compact", false)
             putJsonArray("paths") { add("/ws441-rooted/alpha") }
         })
 

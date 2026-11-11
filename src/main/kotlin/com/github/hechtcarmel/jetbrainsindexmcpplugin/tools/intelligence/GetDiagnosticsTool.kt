@@ -44,6 +44,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * MCP tool that analyzes files for code problems and available intentions.
@@ -327,7 +328,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: ClassNameCache.getSimpleName(failure.javaClass)}"
                     )
                     continue
                 } catch (failure: CancellationException) {
@@ -337,7 +338,7 @@ class GetDiagnosticsTool : AbstractMcpTool() {
                     perFileAnalyses += FileDiagnosticsAnalysis(
                         file = path,
                         state = ProjectDiagnosticsTool.STATE_FAILED,
-                        reason = "Analysis failed: ${failure.message ?: failure.javaClass.simpleName}"
+                        reason = "Analysis failed: ${failure.message ?: ClassNameCache.getSimpleName(failure.javaClass)}"
                     )
                     continue
                 }

@@ -34,6 +34,7 @@ import org.jetbrains.plugins.scala.lang.psi.api.statements.ScValueOrVariable
 import org.jetbrains.plugins.scala.lang.psi.api.statements.ScVariable
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.ScNamedElement
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.*
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Registration entry point for Scala language handlers.
@@ -86,7 +87,7 @@ object ScalaHandlers {
  */
 class ScalaPluginApiMismatchException(operation: String, cause: LinkageError) : IllegalStateException(
     "Scala $operation failed: the installed Scala plugin is not compatible with this version of " +
-        "IDE Index MCP Server (${cause.javaClass.simpleName}: ${cause.message}). " +
+        "IDE Index MCP Server (${ClassNameCache.getSimpleName(cause.javaClass)}: ${cause.message}). " +
         "Update the Scala plugin or IDE Index MCP Server.",
     cause
 )

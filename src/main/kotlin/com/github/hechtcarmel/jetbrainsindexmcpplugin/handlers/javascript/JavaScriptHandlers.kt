@@ -26,6 +26,7 @@ import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.Processor
 import kotlinx.coroutines.CancellationException
+import com.github.hechtcarmel.jetbrainsindexmcpplugin.util.ClassNameCache
 
 /**
  * Registration entry point for JavaScript/TypeScript language handlers.
@@ -2556,7 +2557,7 @@ class JavaScriptStructureHandler : BaseJavaScriptHandler<List<StructureNode>>(),
             LOG.warn("JavaScript PSI class not found: ${e.message}")
         } catch (e: Exception) {
             e.rethrowIfControlFlow()
-            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${e.javaClass.simpleName}")
+            LOG.warn("Failed to extract JavaScript file structure: ${e.message}, ${ClassNameCache.getSimpleName(e.javaClass)}")
         }
 
         return structure.sortedBy { it.line }
